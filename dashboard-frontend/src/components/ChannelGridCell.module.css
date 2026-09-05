@@ -1,0 +1,47 @@
+/*
+ * DESIGN.md's `channel-grid-cell`: background {colors.surface-raised},
+ * radius {rounded.md}, border-width 1.5px. `states.ok`: border
+ * {colors.border}, background {colors.surface-raised} - dùng làm style
+ * "loaded-neutral" mặc định của story này (chưa có màu trạng thái riêng).
+ * Elevation & Depth: "Phẳng, có chủ đích ... Không animation/transition trên
+ * lưới tổng quan" (Epic 2 context) - không thêm transition/box-shadow.
+ */
+
+.cell {
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface-raised);
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--spacing-2);
+}
+
+.loaded {
+  /* Khớp DESIGN.md's channel-grid-cell.states.ok (chưa có badge/màu trạng
+     thái - Story 2.4). */
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.skeleton {
+  /* Chưa có dữ liệu thật - phân biệt trực quan khỏi ô đã loaded bằng viền
+     nét đứt mờ hơn, KHÔNG dùng bất kỳ token màu trạng thái nào (state-ok/
+     warning/critical dành riêng cho Story 2.4) và KHÔNG animation. */
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-border) 55%, transparent);
+  background: var(--color-surface-base);
+}
+
+.channelName {
+  font-family: var(--font-family-base);
+  font-size: var(--font-channel-name-size);
+  font-weight: var(--font-channel-name-weight);
+  line-height: var(--font-channel-name-line-height);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

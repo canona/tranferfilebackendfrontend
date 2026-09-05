@@ -1,0 +1,16 @@
+{
+  "example-channel-01": {
+    "station_name": "Đài Thí Nghiệm 01",
+    "contact_name": "Nguyễn Văn A",
+    "contact_phone": "0900000001",
+    "grid_position": 0,
+    "baseline_kbps": 4000
+  },
+  "example-channel-02": {
+    "station_name": "Đài Thí Nghiệm 02",
+    "contact_name": "Trần Thị B",
+    "contact_phone": "0900000002",
+    "grid_position": 1,
+    "baseline_kbps": 3500
+  }
+}

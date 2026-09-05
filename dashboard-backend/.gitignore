@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.env
+# Channel-registry config THẬT (khác channel-registry.example.json) - tự tạo
+# khi deploy, xem README.md - KHÔNG commit dữ liệu vận hành thật vào repo.
+config/channel-registry.json
+coverage/

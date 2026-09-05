@@ -1,0 +1,66 @@
+// Story 2.3: `channel-grid` - lưới tổng quan, render 1 `ChannelGridCell`/kênh
+// từ `channels` (nguồn DUY NHẤT: `registry-snapshot`, AD-26). DESIGN.md:
+// "lưới cố định 20 ô, 5 cột x 4 hàng, không có ô dự phòng, vị trí theo đài
+// không đổi khi có cảnh báo." Vị trí THẬT SỰ do từng `ChannelGridCell` tự đặt
+// (CSS Grid `grid-row`/`grid-column` từ `gridPosition`) - thứ tự phần tử
+// trong `channels`/DOM KHÔNG ảnh hưởng vị trí hiển thị (Boundaries: "không
+// phụ thuộc thứ tự event").
+
+import type { ChannelRegistryEntry } from '../state/channelStore';
+import { ChannelGridCell } from './ChannelGridCell';
+import styles from './ChannelGrid.module.css';
+
+export interface ChannelGridProps {
+  channels: ReadonlyArray<ChannelRegistryEntry>;
+  seenChannelIds: ReadonlySet<string>;
+}
+
+// Code review [patch]: trước khi client nhận `registry-snapshot` ĐẦU TIÊN
+// (channels rỗng - `ChannelStore`'s EMPTY_STATE lúc mount, chưa biết
+// channel_id/vị trí thật nào), `channels.map(...)` render 0 ô - trái AC "app
+// vừa mở (cold-load) -> toàn bộ 20 ô hiện skeleton". Vị trí 0-19 luôn CỐ ĐỊNH
+// (lưới 5x4, Boundaries) bất kể registry chứa gì, nên render trước được mà
+// không cần chờ dữ liệu registry thật - không vi phạm AD-26 (vị trí vẫn là
+// gridPosition tường minh, không suy từ thứ tự event/mảng).
+const GRID_SIZE = 20;
+
+function placeholderChannels(): ChannelRegistryEntry[] {
+  return Array.from({ length: GRID_SIZE }, (_, gridPosition) => ({
+    channelId: `placeholder-${gridPosition}`,
+    stationName: '',
+    contactName: '',
+    contactPhone: '',
+    gridPosition,
+  }));
+}
+
+export function ChannelGrid({ channels, seenChannelIds }: ChannelGridProps) {
+  // `channels` rỗng CHỈ xảy ra trước lần `registry-snapshot` đầu tiên (snapshot
+  // rỗng thật sự không thể xảy ra - fileChannelRegistryAdapter chặn registry
+  // 0 kênh ngay lúc load, xem `loadAndValidate`) - an toàn để coi length===0
+  // là tín hiệu duy nhất "chưa có dữ liệu thật", không lẫn với 1 registry hợp
+  // lệ nhưng nhỏ hơn 20 kênh (vẫn render đúng số ô hiện có, không độn thêm).
+  const displayChannels = channels.length > 0 ? channels : placeholderChannels();
+
+  return (
+    <div className={styles.grid} role="grid" aria-label="Lưới tổng quan 20 kênh">
+      {displayChannels.map((channel) => (
+        <ChannelGridCell
+          // Code review [patch, vòng 2]: key theo `gridPosition` (0-19, CỐ
+          // ĐỊNH, không đổi qua mọi trạng thái - Boundaries), KHÔNG theo
+          // `channelId` (khác hoàn toàn giữa placeholder "placeholder-N" và
+          // channel thật khi `registry-snapshot` đầu tiên tới). Key khác nhau
+          // sẽ khiến React unmount/remount toàn bộ 20 node DOM đúng lúc
+          // chuyển cold-load - epic-2-context.md: "Không animation/transition
+          // gây xao nhãng khi đổi trạng thái trên lưới". Key theo gridPosition
+          // giữ nguyên node DOM, chỉ đổi props (channelId/stationName/loaded).
+          key={channel.gridPosition}
+          channelId={channel.channelId}
+          stationName={channel.stationName}
+          gridPosition={channel.gridPosition}
+          loaded={seenChannelIds.has(channel.channelId)}
+        />
+      ))}
+    </div>
+  );
+}

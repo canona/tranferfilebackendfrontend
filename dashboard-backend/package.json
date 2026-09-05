@@ -1,0 +1,30 @@
+{
+  "name": "dashboard-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Story 2.1: ranh giới telemetry thô (transport-core) -> trạng thái hiển thị đã tính (ok/warning/critical). Hexagonal core + adapter inbound WS + adapter outbound log tạm.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test \"dist/tests/**/*.test.js\"",
+    "start": "node dist/app/main.js",
+    "service:install": "node dist/app/installService.js --install",
+    "service:uninstall": "node dist/app/installService.js --uninstall"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "ws": "^8.21.3"
+  },
+  "optionalDependencies": {
+    "node-windows": "1.0.0-beta.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/node-windows": "^0.1.6",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0"
+  }
+}

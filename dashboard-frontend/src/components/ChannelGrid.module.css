@@ -1,0 +1,23 @@
+/*
+ * DESIGN.md's `channel-grid`: background {colors.surface-base}, gap
+ * {spacing.cell-gap}, layout "lưới cố định 20 ô, 5 cột x 4 hàng, không có ô
+ * dự phòng". `grid-template-columns`/`grid-template-rows` khai báo tường
+ * minh đúng 5x4 - tỷ lệ hàng/cột `1fr` co giãn theo khung chứa, phù hợp TV
+ * wall lẫn màn hình dev thường mà vẫn giữ đúng bố cục cố định.
+ */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  /* Code review [patch]: khai báo tường minh 5 cột x 4 hàng NGAY trong CSS
+     (trước đây chỉ đúng "ngẫu nhiên" nhờ mỗi cell tự đặt grid-row/grid-column
+     qua gridPosition, .grid không tự mô tả/ràng buộc đúng layout cố định của
+     DESIGN.md). */
+  grid-template-rows: repeat(4, 1fr);
+  gap: var(--spacing-cell-gap);
+  background: var(--color-surface-base);
+  padding: var(--spacing-4);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+}

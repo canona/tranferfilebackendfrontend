@@ -1,0 +1,74 @@
+/*
+ * Story 2.3: design tokens (dark-only, KHÔNG light mode - Consistency
+ * Conventions/DESIGN.md) làm CSS custom properties. Boundaries: "copy đúng
+ * giá trị DESIGN.md" - mọi giá trị dưới đây COPY NGUYÊN VĂN từ frontmatter
+ * `_bmad-output/planning-artifacts/ux-designs/ux-TranferFiles-2026-08-27/
+ * DESIGN.md`, không tự đặt giá trị mới. Typography dùng system-ui stack,
+ * KHÔNG tải font ngoài (Boundaries/Intent).
+ */
+
+:root {
+  /* Colors */
+  --color-surface-base: #0a0e14;
+  --color-surface-raised: #121b27;
+  --color-border: #223247;
+  --color-text-primary: #eaf1fb;
+  --color-text-secondary: #8ca0be;
+  --color-accent: #2f8fff;
+  --color-state-ok: #2f8fff;
+  --color-state-warning: #f5b915;
+  --color-state-critical: #ff3b3b;
+  --color-on-state-warning: #241a00;
+  --color-on-state-critical: #000000;
+  --color-on-state-ok: #eaf1fb;
+  --color-audio-normal: #35d07f;
+  --color-focus-ring: #2f8fff;
+
+  /* Typography - system-ui stack, không tải font ngoài */
+  --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-family-numeric: 'SF Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
+
+  --font-display-size: 22px;
+  --font-display-weight: 600;
+  --font-display-line-height: 1.3;
+
+  --font-heading-size: 18px;
+  --font-heading-weight: 700;
+  --font-heading-line-height: 1.3;
+
+  --font-channel-name-size: 16px;
+  --font-channel-name-weight: 600;
+  --font-channel-name-line-height: 1.25;
+
+  --font-body-size: 14px;
+  --font-body-weight: 400;
+  --font-body-line-height: 1.45;
+
+  --font-label-caps-size: 13px;
+  --font-label-caps-weight: 700;
+  --font-label-caps-letter-spacing: 0.02em;
+
+  --font-caption-size: 12px;
+  --font-caption-weight: 500;
+  --font-caption-line-height: 1.3;
+
+  --font-numeric-size: 20px;
+  --font-numeric-weight: 600;
+  --font-numeric-line-height: 1.2;
+
+  /* Rounded */
+  --radius-sm: 4px;
+  --radius-md: 9px;
+  --radius-lg: 14px;
+  --radius-pill: 10px;
+
+  /* Spacing - bội số 4px + cell-gap/panel-padding */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 24px;
+  --spacing-6: 32px;
+  --spacing-cell-gap: 12px;
+  --spacing-panel-padding: 24px;
+}

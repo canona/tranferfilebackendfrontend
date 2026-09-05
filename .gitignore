@@ -1,0 +1,10 @@
+# Repo này (tranferfilebackendfrontend) chỉ track dashboard-backend/ và
+# dashboard-frontend/ (Epic 2 - dashboard giám sát). Các thư mục khác trong
+# TranferFiles/ thuộc project/tool riêng, không phải phần của repo này:
+# - transport-core/, vcpkg/ : mỗi cái đã có git repo riêng của chính nó
+# - _bmad/, _bmad-output/, .claude/ : BMAD tooling/artifacts, không phải code
+# - smoke-test-2/, smoke-test-3/, build-provision*.log : thử nghiệm tạm
+/*
+!/dashboard-backend/
+!/dashboard-frontend/
+!/.gitignore
