@@ -10,11 +10,7 @@
 // trị cố định; page.tsx tự truyền elapsedSeconds từ interval."
 
 import { hashString } from './hashString';
-
-// Thang cố định -60..0 dBFS, khớp `ChannelGridCell.tsx`'s mapping dBFS->%
-// (Boundaries: "khoảng hiển thị cố định -60 -> 0 dBFS").
-const AUDIO_LEVEL_MIN_DBFS = -60;
-const AUDIO_LEVEL_MAX_DBFS = 0;
+import { AUDIO_LEVEL_MIN_DBFS, AUDIO_LEVEL_MAX_DBFS } from './audioLevelRange';
 
 // Biên độ dao động quanh baseline riêng/kênh - giá trị demo, không có ý nghĩa
 // nghiệp vụ nào ngoài việc tạo chuyển động trực quan giả lập real-time.
@@ -31,7 +27,16 @@ const RIGHT_CHANNEL_PHASE_OFFSET = Math.PI / 4;
 const BASELINE_SAFE_MIN_DBFS = AUDIO_LEVEL_MIN_DBFS + OSCILLATION_AMPLITUDE_DB; // -45
 const BASELINE_SAFE_RANGE_DB = AUDIO_LEVEL_MAX_DBFS - OSCILLATION_AMPLITUDE_DB - BASELINE_SAFE_MIN_DBFS; // 30
 
+// Code review [patch]: guard `NaN` tường minh, nhất quán với sibling
+// `dbfsToPercent` (`ChannelGridCell.tsx`) - hiện `elapsedSeconds` luôn hữu hạn
+// (page.tsx tính từ `Date.now()`), nên nhánh này chưa reachable qua caller
+// thật, nhưng hàm export công khai và Story 2.6 sẽ nối dữ liệu mạng thật vào
+// pipeline audioLevel; giữ hành vi "invalid -> về đáy thang đo" nhất quán
+// ngay từ bây giờ rẻ hơn là vá sau khi đã có input malformed thật.
 function clampDbfs(value: number): number {
+  if (Number.isNaN(value)) {
+    return AUDIO_LEVEL_MIN_DBFS;
+  }
   return Math.min(AUDIO_LEVEL_MAX_DBFS, Math.max(AUDIO_LEVEL_MIN_DBFS, value));
 }
 

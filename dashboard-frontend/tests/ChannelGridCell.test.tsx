@@ -217,6 +217,47 @@ describe('ChannelGridCell - audioLevel / vu-meter (Story 2.5)', () => {
     expect(screen.queryByTestId('thumbnail-chan-4')).toBeNull();
   });
 
+  // Code review [patch]: Boundaries yêu cầu vu-meter độc lập với MỌI
+  // displayState, nhưng trước đây chỉ có 1 test kết hợp cho `critical` - thêm
+  // case `ok`/`warning` để phủ đủ cả 3 trạng thái cùng lúc có `audioLevel`.
+  it('displayState="ok" vẫn có audioLevel -> vu-meter hiển thị đúng mức, đồng thời vẫn giữ thumbnail (không color-bars/icon cảnh báo)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-4b"
+        stationName="Đài 04b"
+        gridPosition={3}
+        loaded={true}
+        displayState="ok"
+        audioLevel={[-30, -20]}
+      />,
+    );
+    expect(screen.getByTestId('vu-meter-row-chan-4b')).toBeInTheDocument();
+    expect(screen.getByTestId('vu-meter-left-chan-4b')).toHaveAttribute('data-level-dbfs', '-30');
+    expect(screen.getByTestId('vu-meter-right-chan-4b')).toHaveAttribute('data-level-dbfs', '-20');
+    expect(screen.getByTestId('thumbnail-chan-4b')).toBeInTheDocument();
+    expect(screen.queryByTestId('thumbnail-warning-icon-chan-4b')).toBeNull();
+    expect(screen.queryByTestId('color-bars-chan-4b')).toBeNull();
+  });
+
+  it('displayState="warning" vẫn có audioLevel -> vu-meter hiển thị đúng mức, đồng thời vẫn giữ thumbnail + icon cảnh báo', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-4c"
+        stationName="Đài 04c"
+        gridPosition={3}
+        loaded={true}
+        displayState="warning"
+        audioLevel={[-15, -10]}
+      />,
+    );
+    expect(screen.getByTestId('vu-meter-row-chan-4c')).toBeInTheDocument();
+    expect(screen.getByTestId('vu-meter-left-chan-4c')).toHaveAttribute('data-level-dbfs', '-15');
+    expect(screen.getByTestId('vu-meter-right-chan-4c')).toHaveAttribute('data-level-dbfs', '-10');
+    expect(screen.getByTestId('thumbnail-chan-4c')).toBeInTheDocument();
+    expect(screen.getByTestId('thumbnail-warning-icon-chan-4c')).toBeInTheDocument();
+    expect(screen.queryByTestId('color-bars-chan-4c')).toBeNull();
+  });
+
   // Code review [patch, finding #1]: `.cell` là flex row + `.vuMeterRow` có
   // `margin-left: auto` - margin đó hấp thụ khoảng trống bên TRÁI CHÍNH NÓ,
   // đẩy chính nó và MỌI flex item đứng SAU nó trong DOM sang phải. `channelName`

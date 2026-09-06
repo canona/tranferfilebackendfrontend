@@ -26,6 +26,7 @@
 
 import styles from './ChannelGridCell.module.css';
 import { hashString } from '../fixtures/hashString';
+import { AUDIO_LEVEL_MIN_DBFS, AUDIO_LEVEL_MAX_DBFS } from '../fixtures/audioLevelRange';
 
 const GRID_COLUMNS = 5;
 
@@ -61,8 +62,9 @@ const CELL_STATE_CLASS: Record<DisplayState, string> = {
 // Design Notes: "Mapping dBFS→%: percent = clamp((level - (-60)) / (0 -
 // (-60)), 0, 1) * 100" - thang cố định -60..0 dBFS (Boundaries: "khoảng hiển
 // thị cố định -60 -> 0 dBFS"), ngoài khoảng clamp về 0%/100%, không NaN/crash.
-const AUDIO_LEVEL_MIN_DBFS = -60;
-const AUDIO_LEVEL_MAX_DBFS = 0;
+// Code review [patch]: hằng số thang đo (`AUDIO_LEVEL_MIN_DBFS`/`MAX_DBFS`)
+// dùng chung `fixtures/audioLevelRange.ts` - trước đây định nghĩa lặp lại
+// độc lập tại đây và `channelAudioLevels.ts`.
 // Boundaries: "warning-mark cố định tại -12 dBFS, peak-mark cố định tại -3
 // dBFS (đã chốt với người dùng)" - 2 mốc dùng chung công thức map dBFS->% ở
 // dưới, tính 1 LẦN (hằng số module-level), không phụ thuộc audioLevel hiện
@@ -213,16 +215,24 @@ export function ChannelGridCell({
       {loaded && audioLevel ? (
         <div className={styles.vuMeterRow} data-testid={`vu-meter-row-${channelId}`}>
           {VU_METER_SIDES.map((side: VuMeterSide, index) => {
-            // `noUncheckedIndexedAccess`: index 0/1 luôn hợp lệ vì audioLevel
-            // là tuple [number, number] cố định 2 phần tử.
-            const rawLevel = audioLevel[index]!;
-            const percent = dbfsToPercent(rawLevel);
+            // Code review [patch]: `noUncheckedIndexedAccess` khiến truy cập
+            // qua index trả về `T | undefined` dù kiểu tuple [number, number]
+            // đảm bảo tĩnh luôn có 2 phần tử. `audioLevel[index]!` trước đây
+            // giả định đúng điều đó vô điều kiện - an toàn với dữ liệu từ
+            // fixture thuần hiện tại, nhưng Story 2.6 sẽ nối `audioLevel` qua
+            // WebSocket thật (dữ liệu mạng/JSON.parse có thể không khớp kiểu
+            // tĩnh). Guard tường minh ở đây để giá trị non-number lộ ra thành
+            // "0%"/"NaN" có kiểm soát qua `dbfsToPercent`, không phải crash im
+            // lặng do đọc `undefined` đã bị ép kiểu `number`.
+            const rawLevel = audioLevel[index];
+            const safeLevel = typeof rawLevel === 'number' ? rawLevel : NaN;
+            const percent = dbfsToPercent(safeLevel);
             return (
               <div
                 key={side}
                 className={styles.vuMeter}
                 data-testid={`vu-meter-${side}-${channelId}`}
-                data-level-dbfs={rawLevel}
+                data-level-dbfs={safeLevel}
                 data-percent={percent}
               >
                 <div className={styles.vuMeterFill} style={{ height: `${percent}%` }} />

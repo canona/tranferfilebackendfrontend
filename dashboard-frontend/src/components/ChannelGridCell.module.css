@@ -73,6 +73,15 @@
      absolute, inset:0) trong cùng stacking context của `.cell`. */
   position: relative;
   z-index: 1;
+  /* Code review [patch]: `.colorBars` (dải SMPTE, dải đầu #c0c0c0 xám sáng)
+     đứng ngay dưới `channelName` ở trạng thái `critical` - text-primary gần
+     trắng trên nền xám sáng cho contrast ~1.6:1 (dưới AA rất xa), đúng lúc
+     tên đài quan trọng nhất cần đọc được (mất tín hiệu). Scrim mờ phía sau
+     chữ khôi phục contrast mà không đổi layout/kích thước ô. */
+  background: color-mix(in srgb, var(--color-surface-base) 70%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--spacing-1);
+  margin: -1px calc(-1 * var(--spacing-1));
 }
 
 /*
