@@ -18,6 +18,10 @@
   display: flex;
   align-items: flex-end;
   padding: var(--spacing-2);
+  /* Story 2.5: `.thumbnail`/`.colorBars` dùng inset:0 để lấp đầy ô - overflow
+     hidden giữ đúng bo góc `radius-md` của `.cell` khi lớp nền này bị bo tròn
+     kế thừa (border-radius: inherit). */
+  overflow: hidden;
 }
 
 .loaded {
@@ -65,6 +69,155 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Story 2.5: đứng trên lớp nền `.thumbnail`/`.colorBars` (position:
+     absolute, inset:0) trong cùng stacking context của `.cell`. */
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * Story 2.5: vùng thumbnail/color-bars - DESIGN.md's `channel-grid-cell`:
+ * "thumbnail/color-bars + 2 vu-meter + tên đài + alert-badge". Lấp đầy ô
+ * (inset: 0) làm LỚP NỀN, nằm dưới channelName/badge/vu-meter (z-index thấp
+ * hơn) - Boundaries: chỉ gate theo effectiveDisplayState (JSX), CSS chỉ lo
+ * hiển thị khi được render.
+ */
+.thumbnail,
+.colorBars {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  /* Không animation/transition trên lưới tổng quan (Epic 2 context) - đổi
+     trạng thái tức thời, không fade/slide. */
+}
+
+/*
+ * Thumbnail placeholder ok/warning: Design Notes - "hash chuỗi thuần theo
+ * channelId chọn 1 màu/gradient cố định ... KHÔNG mô phỏng ảnh camera thật".
+ * `backgroundImage` (gradient hue theo hash) được set inline ở component
+ * (giá trị động theo channelId, không thể biểu diễn bằng 1 class CSS Module
+ * tĩnh) - CSS ở đây chỉ định vị trí/kích thước.
+ */
+.thumbnail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thumbnailWarningIcon {
+  /* DESIGN.md's channel-grid-cell.warning: "thumbnail giữ hình thật kèm icon
+     cảnh báo chồng lên" - dùng cặp màu state-warning/on-state-warning (đã đo
+     AA) giống `alert-badge.warning`, không phải màu decor mới. */
+  font-size: 20px;
+  line-height: 1;
+  color: var(--color-on-state-warning);
+  background: var(--color-state-warning);
+  border-radius: var(--radius-pill);
+  padding: var(--spacing-1) var(--spacing-2);
+}
+
+/*
+ * Color-bars: DESIGN.md's channel-grid-cell.critical: "thumbnail thay hoàn
+ * toàn bằng color bars". Design Notes: "dải màu tĩnh dạng sọc dọc (kiểu
+ * test-pattern broadcast cổ điển), KHÔNG dùng token màu trạng thái của app
+ * (đây là placeholder 'mất tín hiệu', không phải UI theme)" - 7 màu SMPTE
+ * color-bars cổ điển, hard-coded hex, KHÔNG dùng biến --color-state-*.
+ */
+.colorBars {
+  background: linear-gradient(
+    to right,
+    #c0c0c0 0%,
+    #c0c0c0 14.28%,
+    #c0c000 14.28%,
+    #c0c000 28.57%,
+    #00c0c0 28.57%,
+    #00c0c0 42.85%,
+    #00c000 42.85%,
+    #00c000 57.14%,
+    #c000c0 57.14%,
+    #c000c0 71.42%,
+    #c00000 71.42%,
+    #c00000 85.71%,
+    #0000c0 85.71%,
+    #0000c0 100%
+  );
+}
+
+/*
+ * Story 2.5: `vu-meter` - DESIGN.md's `vu-meter`: "2 thanh mức âm/kênh,
+ * gradient 3 mốc audio-normal -> state-warning -> state-critical ... hoạt
+ * động độc lập với trạng thái SRT của kênh." Đứng cùng lớp với channelName/
+ * badge (z-index trên .thumbnail/.colorBars).
+ */
+.vuMeterRow {
+  /* Code review [patch, finding #5]: `44px` trước đây lặp lại độc lập ở 3
+     nơi (`.vuMeterRow`'s height, `.vuMeter`'s height, `.vuMeterFill`'s
+     background-size) - nếu chỉ sửa 1 chỗ, gradient 3 mốc màu + vị trí 2 vạch
+     ngưỡng sẽ LỆCH khỏi giá trị dBFS thực mà không có cảnh báo build-time.
+     Định nghĩa 1 lần tại đây, cascade xuống `.vuMeter`/`.vuMeterFill` (con
+     trong DOM) qua `var(--vu-meter-height)`. */
+  --vu-meter-height: 44px;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-1);
+  margin-left: auto;
+  height: var(--vu-meter-height);
+}
+
+.vuMeter {
+  position: relative;
+  width: 6px;
+  height: var(--vu-meter-height);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-surface-base);
+}
+
+.vuMeterFill {
+  /* Neo `background-size` đúng bằng chiều cao CỐ ĐỊNH của `.vuMeter`
+     (`--vu-meter-height`) và `background-position: bottom` - nhờ vậy 3 mốc
+     màu gradient luôn khớp đúng vị trí dBFS tuyệt đối trên toàn thang đo dù
+     chiều cao phần tử này (percent hiện tại, set qua inline style) thay đổi
+     liên tục. Đúng nguyên văn 3 mốc màu DESIGN.md's vu-meter, KHÔNG dùng
+     --color-audio-normal cho mục đích nào khác (Boundaries). */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: linear-gradient(
+    to top,
+    var(--color-audio-normal) 0%,
+    var(--color-audio-normal) 80%,
+    var(--color-state-warning) 80%,
+    var(--color-state-warning) 95%,
+    var(--color-state-critical) 95%,
+    var(--color-state-critical) 100%
+  );
+  background-size: 100% var(--vu-meter-height);
+  background-position: bottom;
+  background-repeat: no-repeat;
+}
+
+/*
+ * 2 vạch ngưỡng cố định (warning-mark/peak-mark) - DESIGN.md's
+ * threshold-tick: "vạch ngang 1px màu text-primary ... luôn hiển thị bất kể
+ * mức âm thanh hiện tại". `peak-mark` đậm/dài hơn (`.thresholdMarkPeak`) để
+ * phân biệt 2 vạch bằng HÌNH DẠNG chứ không chỉ vị trí (DESIGN.md).
+ */
+.thresholdMark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--color-text-primary);
+  z-index: 1;
+}
+
+.thresholdMarkPeak {
+  height: 2px;
 }
 
 /*
@@ -75,6 +228,7 @@
  */
 .badge {
   position: absolute;
+  z-index: 2;
   top: var(--spacing-2);
   left: var(--spacing-2);
   /* Code review [round 1, finding #2]: nhãn dài nhất "✕ MẤT TÍN HIỆU" +

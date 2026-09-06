@@ -15,21 +15,11 @@
 // luôn ra đúng 1 kết quả bất kể nó xuất hiện ở vị trí nào trong mảng đầu vào.
 
 import type { DisplayState } from '../components/ChannelGridCell';
+import { hashString } from './hashString';
 
 // Đúng 3 giá trị theo backend `AlertOutboundPort.ts` (Boundaries: "khớp đúng
 // ... không tự đặt tên khác").
 const DISPLAY_STATE_CYCLE: readonly DisplayState[] = ['ok', 'warning', 'critical'];
-
-// Hash chuỗi đơn giản, deterministic, không phụ thuộc runtime/môi trường
-// (thuần theo nội dung `channelId`) - đủ dùng cho mục đích demo/fixture, không
-// cần chống collision mật mã học.
-function hashChannelId(channelId: string): number {
-  let hash = 0;
-  for (let i = 0; i < channelId.length; i++) {
-    hash = (hash * 31 + channelId.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
-}
 
 export function buildChannelDisplayStatesFixture(
   channelIds: ReadonlyArray<string>,
@@ -38,7 +28,7 @@ export function buildChannelDisplayStatesFixture(
   for (const channelId of channelIds) {
     // `noUncheckedIndexedAccess`: index luôn hợp lệ nhờ modulo theo đúng
     // length của mảng cố định 3 phần tử - non-null assertion an toàn.
-    map.set(channelId, DISPLAY_STATE_CYCLE[hashChannelId(channelId) % DISPLAY_STATE_CYCLE.length]!);
+    map.set(channelId, DISPLAY_STATE_CYCLE[hashString(channelId) % DISPLAY_STATE_CYCLE.length]!);
   }
   return map;
 }

@@ -22,7 +22,12 @@ function makeChannels(count: number): ChannelRegistryEntry[] {
 describe('ChannelGrid', () => {
   it('render đủ 20 ô, mỗi ô skeleton khi seenChannelIds rỗng (cold-load)', () => {
     render(
-      <ChannelGrid channels={makeChannels(20)} seenChannelIds={new Set()} channelDisplayStates={new Map()} />,
+      <ChannelGrid
+        channels={makeChannels(20)}
+        seenChannelIds={new Set()}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
+      />,
     );
     const cells = screen.getAllByRole('gridcell');
     expect(cells.length).toBe(20);
@@ -35,7 +40,14 @@ describe('ChannelGrid', () => {
     const channels = makeChannels(20);
     const shuffled = [...channels].reverse();
 
-    render(<ChannelGrid channels={shuffled} seenChannelIds={new Set()} channelDisplayStates={new Map()} />);
+    render(
+      <ChannelGrid
+        channels={shuffled}
+        seenChannelIds={new Set()}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
+      />,
+    );
 
     for (const channel of channels) {
       const cell = screen.getByTestId(`channel-grid-cell-${channel.channelId}`);
@@ -53,6 +65,7 @@ describe('ChannelGrid', () => {
         channels={channels}
         seenChannelIds={new Set(['chan-7'])}
         channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
       />,
     );
 
@@ -70,7 +83,14 @@ describe('ChannelGrid', () => {
   });
 
   it('registry chưa đủ 20 kênh (vd fixture dev/test 2 kênh) -> render đúng số ô hiện có, đúng vị trí, không crash', () => {
-    render(<ChannelGrid channels={makeChannels(2)} seenChannelIds={new Set()} channelDisplayStates={new Map()} />);
+    render(
+      <ChannelGrid
+        channels={makeChannels(2)}
+        seenChannelIds={new Set()}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
+      />,
+    );
     expect(screen.getAllByRole('gridcell').length).toBe(2);
   });
 
@@ -80,7 +100,14 @@ describe('ChannelGrid', () => {
   // chưa từng verify khoảng chờ này. Trước patch: render 0 ô (trái AC "cold-
   // load -> toàn bộ 20 ô skeleton"). Sau patch: 20 ô placeholder skeleton.
   it('channels rỗng (trước khi registry-snapshot đầu tiên tới) -> vẫn render đủ 20 ô skeleton, không crash', () => {
-    render(<ChannelGrid channels={[]} seenChannelIds={new Set()} channelDisplayStates={new Map()} />);
+    render(
+      <ChannelGrid
+        channels={[]}
+        seenChannelIds={new Set()}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
+      />,
+    );
     const cells = screen.getAllByRole('gridcell');
     expect(cells.length).toBe(20);
     for (const cell of cells) {
@@ -109,6 +136,7 @@ describe('ChannelGrid', () => {
         channels={channels}
         seenChannelIds={new Set(['chan-0', 'chan-1', 'chan-2'])}
         channelDisplayStates={channelDisplayStates}
+        channelAudioLevels={new Map()}
       />,
     );
 
@@ -128,6 +156,7 @@ describe('ChannelGrid', () => {
         channels={channels}
         seenChannelIds={new Set(['chan-0', 'chan-1'])}
         channelDisplayStates={new Map([['chan-0', 'ok' as const]])}
+        channelAudioLevels={new Map()}
       />,
     );
 
@@ -135,5 +164,41 @@ describe('ChannelGrid', () => {
     const cellWithoutState = screen.getByTestId('channel-grid-cell-chan-1');
     expect(cellWithoutState).toHaveAttribute('data-state', 'loaded-neutral');
     expect(cellWithoutState).not.toHaveAttribute('data-display-state');
+  });
+
+  // Story 2.5: `channelAudioLevels` truyền đúng xuống từng cell theo
+  // channelId - độc lập hoàn toàn channelDisplayStates (Boundaries).
+  it('truyền đúng audioLevel xuống từng cell theo channelId (channelAudioLevels)', () => {
+    const channels = makeChannels(2);
+    const channelAudioLevels = new Map<string, readonly [number, number]>([
+      ['chan-0', [-30, -30]],
+      ['chan-1', [-1, -1]],
+    ]);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1'])}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={channelAudioLevels}
+      />,
+    );
+
+    expect(screen.getByTestId('vu-meter-left-chan-0')).toHaveAttribute('data-level-dbfs', '-30');
+    expect(screen.getByTestId('vu-meter-left-chan-1')).toHaveAttribute('data-level-dbfs', '-1');
+  });
+
+  it('channelAudioLevels thiếu entry cho 1 channelId đã loaded -> cell đó không render vu-meter, không crash', () => {
+    const channels = makeChannels(2);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1'])}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map([['chan-0', [-30, -30]]])}
+      />,
+    );
+
+    expect(screen.getByTestId('vu-meter-row-chan-0')).toBeInTheDocument();
+    expect(screen.queryByTestId('vu-meter-row-chan-1')).toBeNull();
   });
 });
