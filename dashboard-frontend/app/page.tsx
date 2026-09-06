@@ -9,7 +9,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChannelGrid } from '../src/components/ChannelGrid';
 import { createChannelStore, useChannelStore } from '../src/state/channelStore';
 import { connectUiWsClient } from '../src/services/uiWsClient';
-import { buildChannelDisplayStatesFixture } from '../src/fixtures/channelDisplayStates';
 import { computeAudioLevelFixture } from '../src/fixtures/channelAudioLevels';
 
 // WS UI server mới (`wsUiAdapter.ts`, `DASHBOARD_UI_WS_PORT`, mặc định 8081
@@ -32,15 +31,6 @@ export default function Page() {
     const disconnect = connectUiWsClient(url, store);
     return disconnect;
   }, [store]);
-
-  // Story 2.4: fixture giả lập (KHÔNG nối WebSocket/channelStore thật cho
-  // displayState - đó là Story 2.6) - trộn ok/warning/critical theo channelId
-  // đang hiển thị, tính lại mỗi khi danh sách kênh đổi (registry-snapshot mới
-  // hoặc chuyển từ placeholder cold-load sang kênh thật).
-  const channelDisplayStates = useMemo(
-    () => buildChannelDisplayStatesFixture(state.channels.map((channel) => channel.channelId)),
-    [state.channels],
-  );
 
   // Story 2.5: fixture audioLevel dao động theo thời gian (Boundaries: "hàm
   // thuần, độc lập hoàn toàn displayState/debounce" - đây là state RIÊNG,
@@ -69,7 +59,7 @@ export default function Page() {
     <ChannelGrid
       channels={state.channels}
       seenChannelIds={state.seenChannelIds}
-      channelDisplayStates={channelDisplayStates}
+      channelDisplayStates={state.channelDisplayStates}
       channelAudioLevels={channelAudioLevels}
     />
   );

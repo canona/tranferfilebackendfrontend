@@ -245,3 +245,117 @@ test('close(): đóng server + mọi client đang mở, không throw', async () 
   await assert.doesNotReject(() => handle.close());
   ws.close();
 });
+
+// Story 2.6: `publishStateChange` (AlertOutboundPort) - broadcast tới mọi
+// client đang mở NGAY khi backend chốt trạng thái mới (mirror
+// `publishChannelSeen` case ở trên).
+test('publishStateChange -> broadcast channel-state-change tới mọi client đang mở, đúng snake_case envelope', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messages.length > 0); // chờ registry-snapshot trước
+
+    handle.publishStateChange({
+      channelId: 'chan-0',
+      displayState: 'warning',
+      timestamp: '2026-09-06T00:00:00.000Z',
+    });
+
+    await waitUntil(() => messages.length > 1);
+    assert.deepEqual(messages[1], {
+      type: 'channel-state-change',
+      channel_id: 'chan-0',
+      display_state: 'warning',
+      timestamp: '2026-09-06T00:00:00.000Z',
+    });
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishStateChange kèm subType -> broadcast kèm sub_type; publishStateChange KHÔNG subType -> KHÔNG có field sub_type', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messages.length > 0);
+
+    handle.publishStateChange({
+      channelId: 'chan-0',
+      displayState: 'critical',
+      subType: 'config-or-security-suspected',
+      timestamp: '2026-09-06T00:00:00.000Z',
+    });
+    handle.publishStateChange({
+      channelId: 'chan-1',
+      displayState: 'critical',
+      timestamp: '2026-09-06T00:00:01.000Z',
+    });
+
+    await waitUntil(() => messages.length > 2);
+    assert.equal((messages[1] as { sub_type?: string }).sub_type, 'config-or-security-suspected');
+    assert.ok(!('sub_type' in (messages[2] as object)), 'KHÔNG có field sub_type khi ChannelStateChange không có subType');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishStateChange gọi 2 lần cho CÙNG channel_id với display_state KHÁC nhau -> broadcast CẢ 2 lần (KHÔNG idempotent-guard, khác publishChannelSeen)', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messages.length > 0);
+
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'ok', timestamp: '2026-09-06T00:00:00.000Z' });
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'critical', timestamp: '2026-09-06T00:00:05.000Z' });
+
+    await waitUntil(() => messages.length > 2);
+    assert.equal((messages[1] as { display_state: string }).display_state, 'ok');
+    assert.equal((messages[2] as { display_state: string }).display_state, 'critical');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('frontend connect MUỘN (sau khi backend đã chốt trạng thái vài kênh) -> replay channel-state-change mới nhất/kênh, NGAY SAU registry-snapshot + channel-seen replay', async () => {
+  const { handle } = await startTestServer(makeEntries(5));
+  try {
+    // Backend đã seen + chốt trạng thái cho chan-0/chan-2 TRƯỚC KHI có client
+    // nào connect - chan-0 đổi trạng thái 2 lần, chỉ giá trị MỚI NHẤT được
+    // replay (ghi đè, mirror Design Notes).
+    handle.publishChannelSeen('chan-0', '2026-09-06T00:00:00.000Z');
+    handle.publishChannelSeen('chan-2', '2026-09-06T00:00:00.000Z');
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'ok', timestamp: '2026-09-06T00:00:01.000Z' });
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'warning', timestamp: '2026-09-06T00:00:06.000Z' });
+    handle.publishStateChange({ channelId: 'chan-2', displayState: 'critical', timestamp: '2026-09-06T00:00:02.000Z' });
+
+    const { ws, messages } = await openClientWithMessages(handle.port);
+
+    // registry-snapshot(1) + channel-seen(2) + channel-state-change(2).
+    await waitUntil(() => messages.length >= 5);
+    assert.equal((messages[0] as { type: string }).type, 'registry-snapshot');
+    const seenReplayed = messages.slice(1, 3) as { type: string }[];
+    assert.ok(seenReplayed.every((m) => m.type === 'channel-seen'), 'channel-seen replay PHẢI đứng ngay sau registry-snapshot');
+    const stateReplayed = messages.slice(3) as { type: string; channel_id: string; display_state: string }[];
+    assert.ok(stateReplayed.every((m) => m.type === 'channel-state-change'));
+    assert.deepEqual(
+      stateReplayed.map((m) => m.channel_id).sort(),
+      ['chan-0', 'chan-2']
+    );
+    assert.equal(
+      stateReplayed.find((m) => m.channel_id === 'chan-0')?.display_state,
+      'warning',
+      'chan-0 phải replay giá trị MỚI NHẤT (warning), không phải giá trị đầu tiên (ok)'
+    );
+    assert.equal(stateReplayed.find((m) => m.channel_id === 'chan-2')?.display_state, 'critical');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});

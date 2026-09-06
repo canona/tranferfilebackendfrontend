@@ -69,7 +69,7 @@ describe('applyUiWsMessage', () => {
   it('JSON hỏng -> bỏ qua âm thầm, KHÔNG throw, state giữ nguyên', () => {
     const store = createChannelStore();
     expect(() => applyUiWsMessage(store, '{not-valid-json')).not.toThrow();
-    expect(store.getState()).toEqual({ channels: [], seenChannelIds: new Set() });
+    expect(store.getState()).toEqual({ channels: [], seenChannelIds: new Set(), channelDisplayStates: new Map() });
   });
 
   it('type lạ (chưa định nghĩa) -> bỏ qua âm thầm, KHÔNG throw', () => {
@@ -116,6 +116,55 @@ describe('applyUiWsMessage', () => {
       );
       expect(store.getState().channels.length).toBe(0);
     }
+  });
+
+  // Story 2.6: `channel-state-change` - I/O matrix.
+  it('channel-state-change hợp lệ -> channelStore cập nhật channelDisplayStates', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(
+      store,
+      JSON.stringify({ type: 'channel-state-change', channel_id: 'chan-1', display_state: 'warning', timestamp: '2026-09-06T00:00:00.000Z' })
+    );
+    expect(store.getState().channelDisplayStates.get('chan-1')).toBe('warning');
+  });
+
+  it('channel-state-change với sub_type -> áp dụng đúng display_state (sub_type không dùng ở store, chỉ mang qua wire)', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(
+      store,
+      JSON.stringify({
+        type: 'channel-state-change',
+        channel_id: 'chan-1',
+        display_state: 'critical',
+        sub_type: 'config-or-security-suspected',
+        timestamp: '2026-09-06T00:00:00.000Z',
+      })
+    );
+    expect(store.getState().channelDisplayStates.get('chan-1')).toBe('critical');
+  });
+
+  it('channel-state-change với display_state lạ ("unknown") -> bỏ qua âm thầm, KHÔNG cập nhật store', () => {
+    const store = createChannelStore();
+    expect(() =>
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-state-change', channel_id: 'chan-1', display_state: 'unknown', timestamp: '2026-09-06T00:00:00.000Z' })
+      )
+    ).not.toThrow();
+    expect(store.getState().channelDisplayStates.size).toBe(0);
+  });
+
+  it('channel-state-change thiếu field bắt buộc (display_state) -> bỏ qua âm thầm', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(store, JSON.stringify({ type: 'channel-state-change', channel_id: 'chan-1', timestamp: '2026-09-06T00:00:00.000Z' }));
+    expect(store.getState().channelDisplayStates.size).toBe(0);
+  });
+
+  it('channel-state-change gọi lại cho CÙNG channel_id với display_state KHÁC -> GHI ĐÈ (không idempotent-guard, khác channel-seen)', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(store, JSON.stringify({ type: 'channel-state-change', channel_id: 'chan-1', display_state: 'ok', timestamp: '2026-09-06T00:00:00.000Z' }));
+    applyUiWsMessage(store, JSON.stringify({ type: 'channel-state-change', channel_id: 'chan-1', display_state: 'critical', timestamp: '2026-09-06T00:00:05.000Z' }));
+    expect(store.getState().channelDisplayStates.get('chan-1')).toBe('critical');
   });
 
   it('registry-snapshot với grid_position hợp lệ ở biên (0 và 19) -> áp dụng bình thường', () => {
@@ -195,6 +244,22 @@ describe('connectUiWsClient', () => {
       await waitUntil(() => store.getState().channels.length > 0 && store.getState().seenChannelIds.has('chan-1'));
       expect(store.getState().channels[0]?.channelId).toBe('chan-1');
       expect(store.getState().seenChannelIds.has('chan-1')).toBe(true);
+    } finally {
+      disconnect();
+    }
+  });
+
+  it('connect thành công -> store cập nhật channelDisplayStates khi server gửi channel-state-change', async () => {
+    const { url, server } = await startFakeBackend();
+    server.on('connection', (ws) => {
+      ws.send(JSON.stringify({ type: 'channel-state-change', channel_id: 'chan-1', display_state: 'warning', timestamp: '2026-09-06T00:00:00.000Z' }));
+    });
+
+    const store = createChannelStore();
+    const disconnect = connectUiWsClient(url, store);
+    try {
+      await waitUntil(() => store.getState().channelDisplayStates.get('chan-1') === 'warning');
+      expect(store.getState().channelDisplayStates.get('chan-1')).toBe('warning');
     } finally {
       disconnect();
     }

@@ -18,7 +18,31 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import WebSocket from 'ws';
-import { parsePort, parseBearerTokens, startApp } from '../app/main.js';
+import { parsePort, parseBearerTokens, startApp, createCompositeAlertPort } from '../app/main.js';
+import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
+import type { Logger, LogEvent } from '../src/logging/logger.js';
+
+// Code review [patch]: mirror `wsUiAdapter.test.ts`'s `waitUntil` - test
+// integration mới (composite alertPort wiring thật) cần poll cho tới khi 1
+// điều kiện async (message tới qua WS) trở thành true, thay vì `setTimeout`
+// cố định dễ giòn/chậm.
+function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const tick = () => {
+      if (predicate()) {
+        resolve();
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error('waitUntil: timeout chờ điều kiện'));
+        return;
+      }
+      setTimeout(tick, 20);
+    };
+    tick();
+  });
+}
 
 function writeValidRegistryFile(): { dir: string; filePath: string } {
   const dir = mkdtempSync(path.join(tmpdir(), 'dashboard-backend-main-test-'));
@@ -268,6 +292,166 @@ test('startApp(): DASHBOARD_UI_WS_PORT không hợp lệ trong env -> reject qua
       );
     });
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Story 2.6: `createCompositeAlertPort` (composite AlertOutboundPort tại
+// composition root, fan-out log + WS UI) - test thuần, không cần start cả
+// startApp()/chờ debounce 5s thật (mirror pattern parsePort/parseBearerTokens
+// export riêng để test).
+class FakeAlertPort implements AlertOutboundPort {
+  changes: ChannelStateChange[] = [];
+  publishStateChange(change: ChannelStateChange): void {
+    this.changes.push(change);
+  }
+}
+
+class ThrowingAlertPort implements AlertOutboundPort {
+  publishStateChange(): void {
+    throw new Error('nhánh này luôn throw');
+  }
+}
+
+class FakeLogger implements Logger {
+  events: LogEvent[] = [];
+  log(event: LogEvent): void {
+    this.events.push(event);
+  }
+}
+
+test('createCompositeAlertPort: publishStateChange gọi ĐỦ CẢ 2 nhánh với đúng change', () => {
+  const logPort = new FakeAlertPort();
+  const uiPort = new FakeAlertPort();
+  const composite = createCompositeAlertPort([logPort, uiPort], new FakeLogger());
+
+  const change: ChannelStateChange = { channelId: 'chan-1', displayState: 'warning', timestamp: '2026-09-06T00:00:00.000Z' };
+  composite.publishStateChange(change);
+
+  assert.deepEqual(logPort.changes, [change]);
+  assert.deepEqual(uiPort.changes, [change]);
+});
+
+test('createCompositeAlertPort: 1 nhánh throw -> nhánh còn lại VẪN nhận change, lỗi được log, KHÔNG throw ra ngoài', () => {
+  const uiPort = new FakeAlertPort();
+  const logger = new FakeLogger();
+  const composite = createCompositeAlertPort([new ThrowingAlertPort(), uiPort], logger);
+
+  const change: ChannelStateChange = { channelId: 'chan-1', displayState: 'critical', timestamp: '2026-09-06T00:00:00.000Z' };
+  assert.doesNotThrow(() => composite.publishStateChange(change));
+
+  assert.deepEqual(uiPort.changes, [change], 'nhánh KHÔNG throw phải vẫn nhận đúng change dù nhánh kia throw TRƯỚC nó');
+  assert.ok(logger.events.some((e) => e.event_type === 'alert_publish_error'), 'lỗi của nhánh throw phải được log lại');
+});
+
+test('createCompositeAlertPort: nhánh throw đứng SAU trong danh sách -> nhánh đứng trước vẫn đã nhận change trước đó (không rollback)', () => {
+  const logPort = new FakeAlertPort();
+  const logger = new FakeLogger();
+  const composite = createCompositeAlertPort([logPort, new ThrowingAlertPort()], logger);
+
+  const change: ChannelStateChange = { channelId: 'chan-1', displayState: 'ok', timestamp: '2026-09-06T00:00:00.000Z' };
+  assert.doesNotThrow(() => composite.publishStateChange(change));
+
+  assert.deepEqual(logPort.changes, [change]);
+});
+
+// Code review [patch #7]: CẢ 2 nhánh đều throw -> 2 lỗi phải được log RIÊNG
+// BIỆT (mỗi nhánh 1 entry `alert_publish_error`, đúng port[index] của mình),
+// và không có lỗi nào thoát ra ngoài publishStateChange().
+test('createCompositeAlertPort: CẢ 2 port đều throw -> 2 lỗi được log riêng biệt, KHÔNG throw ra ngoài', () => {
+  const logger = new FakeLogger();
+  const composite = createCompositeAlertPort([new ThrowingAlertPort(), new ThrowingAlertPort()], logger);
+
+  const change: ChannelStateChange = { channelId: 'chan-1', displayState: 'critical', timestamp: '2026-09-06T00:00:00.000Z' };
+  assert.doesNotThrow(() => composite.publishStateChange(change));
+
+  const errorEvents = logger.events.filter((e) => e.event_type === 'alert_publish_error');
+  assert.equal(errorEvents.length, 2, 'mỗi port throw phải được log đúng 1 lần, không gộp/không mất');
+  assert.ok(errorEvents.some((e) => e.reason?.includes('port[0]')));
+  assert.ok(errorEvents.some((e) => e.reason?.includes('port[1]')));
+});
+
+// Code review [patch #8]: mảng ports RỖNG -> no-op, không throw, không log gì.
+test('createCompositeAlertPort: ports rỗng ([]) -> publishStateChange no-op, KHÔNG throw, KHÔNG log', () => {
+  const logger = new FakeLogger();
+  const composite = createCompositeAlertPort([], logger);
+
+  const change: ChannelStateChange = { channelId: 'chan-1', displayState: 'ok', timestamp: '2026-09-06T00:00:00.000Z' };
+  assert.doesNotThrow(() => composite.publishStateChange(change));
+  assert.equal(logger.events.length, 0);
+});
+
+// Code review [patch #6]: integration test THẬT - start `startApp()` không
+// fake, verify đúng DÒNG WIRING `createCompositeAlertPort([logAlertPort, ui],
+// logger)` tại composition root (không chỉ `createCompositeAlertPort` bằng
+// fakes như các test phía trên - nếu dòng wiring thật này bị revert/đổi thứ
+// tự tham số sai, mọi test hiện có vẫn pass mà không phát hiện được, đây là
+// gap cần lấp). `debounceMs: 10` (override mới, patch #5) để không phải chờ
+// 5s thật - gửi CÙNG 1 candidate 2 lần, cách nhau đủ lâu hơn debounceMs, để
+// `channelState.ts` chốt candidate và gọi `alertPort.publishStateChange`.
+test('startApp(): wiring thật composite alertPort -> backend chốt trạng thái mới qua telemetry WS thật -> WS UI client thật nhận đúng channel-state-change broadcast', async () => {
+  const { dir, filePath } = writeValidRegistryFile(); // chan-1, baseline_kbps=4000, grid_position=0
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+    debounceMs: 10,
+  });
+
+  try {
+    // WS UI client THẬT tới app.ui.port - nhận registry-snapshot/channel-seen/
+    // channel-state-change (mirror connectUiWsClient phía frontend, nhưng ở
+    // đây dùng thẳng thư viện `ws` như các test wsUiAdapter.test.ts khác).
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string; channel_id?: string; display_state?: string }[] = [];
+    uiWs.on('message', (data) => {
+      uiMessages.push(JSON.parse(data.toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+    await waitUntil(() => uiMessages.some((m) => m.type === 'registry-snapshot'));
+
+    // WS telemetry client THẬT tới app.ws.port (bearer token hợp lệ) - gửi
+    // telemetry CONNECTED + bitrate_kbps=4000 (=100% của baseline 4000 ->
+    // candidate 'ok') 2 LẦN, cách nhau > debounceMs (10ms), để applyCandidate()
+    // chốt trạng thái (lần 1 chỉ set pending, lần 2 mới đủ ổn định để commit).
+    const telemetryWs = new WebSocket(`ws://127.0.0.1:${app.ws.port}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      telemetryWs.once('open', resolve);
+      telemetryWs.once('error', reject);
+    });
+
+    const sendTelemetry = () =>
+      telemetryWs.send(
+        JSON.stringify({
+          schema_version: 1,
+          channel_id: 'chan-1',
+          timestamp: new Date().toISOString(),
+          event_type: 'telemetry',
+          payload: { bitrate_kbps: 4000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [-20, -18] },
+        })
+      );
+
+    sendTelemetry();
+    await new Promise((resolve) => setTimeout(resolve, 50)); // > debounceMs=10ms
+    sendTelemetry();
+
+    await waitUntil(() => uiMessages.some((m) => m.type === 'channel-state-change'));
+    const stateChange = uiMessages.find((m) => m.type === 'channel-state-change');
+    assert.equal(stateChange?.channel_id, 'chan-1');
+    assert.equal(stateChange?.display_state, 'ok');
+
+    telemetryWs.close();
+    uiWs.close();
+  } finally {
+    await app.stop();
     rmSync(dir, { recursive: true, force: true });
   }
 });

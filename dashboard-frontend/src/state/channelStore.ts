@@ -13,6 +13,7 @@
 // `useSyncExternalStore` (React 19, built-in) là đủ cho quy mô 20 kênh.
 
 import { useSyncExternalStore } from 'react';
+import type { DisplayState } from '../components/ChannelGridCell';
 
 export interface ChannelRegistryEntry {
   channelId: string;
@@ -31,11 +32,20 @@ export interface ChannelStoreState {
   // Kênh đã nhận >=1 `channel-seen` - CHỈ CỘNG THÊM, không bao giờ gỡ bỏ (1
   // ô đã rời skeleton không quay lại skeleton trong phạm vi story này).
   seenChannelIds: ReadonlySet<string>;
+  // Story 2.6: trạng thái ok/warning/critical đã tính sẵn ở backend (nguồn
+  // THẬT qua `channel-state-change`, thay fixture `buildChannelDisplayStatesFixture`
+  // của Story 2.4) - GHI ĐÈ theo channelId mỗi lần đổi, KHÔNG idempotent-guard
+  // như `seenChannelIds` (trạng thái đổi qua lại được, Boundaries).
+  channelDisplayStates: ReadonlyMap<string, DisplayState>;
 }
 
 type Listener = () => void;
 
-const EMPTY_STATE: ChannelStoreState = { channels: [], seenChannelIds: new Set() };
+const EMPTY_STATE: ChannelStoreState = {
+  channels: [],
+  seenChannelIds: new Set(),
+  channelDisplayStates: new Map(),
+};
 
 export class ChannelStore {
   private state: ChannelStoreState = EMPTY_STATE;
@@ -69,6 +79,15 @@ export class ChannelStore {
     const next = new Set(this.state.seenChannelIds);
     next.add(channelId);
     this.setState({ ...this.state, seenChannelIds: next });
+  }
+
+  // Story 2.6: `channel-state-change` GHI ĐÈ trạng thái/kênh - KHÔNG guard
+  // idempotent như `applyChannelSeen` ở trên (Boundaries: "trạng thái đổi qua
+  // lại được", khác ngữ nghĩa "đã thấy 1 lần là đủ" của seenChannelIds).
+  applyChannelDisplayStateChange(channelId: string, displayState: DisplayState): void {
+    const next = new Map(this.state.channelDisplayStates);
+    next.set(channelId, displayState);
+    this.setState({ ...this.state, channelDisplayStates: next });
   }
 }
 

@@ -10,6 +10,7 @@
 // transport-core (đó là kênh máy trung tâm -> backend, khác kênh này).
 
 import type { ChannelRegistryEntry, ChannelStore } from '../state/channelStore';
+import type { DisplayState } from '../components/ChannelGridCell';
 
 interface RawRegistrySnapshotChannel {
   channel_id: string;
@@ -27,6 +28,19 @@ interface RegistrySnapshotMessage {
 interface ChannelSeenMessage {
   type: 'channel-seen';
   channel_id: string;
+  timestamp: string;
+}
+
+// Story 2.6: envelope nhận từ `wsUiAdapter.ts` - mirror snake_case shape của
+// kênh này (KHÔNG dùng envelope schema_version/event_type đóng của
+// transport-core, lý do đã ghi rõ trong comment đầu file). `sub_type` chỉ
+// mang dữ liệu qua wire (Never: không render/xử lý subType trên UI ở story
+// này) - field optional, không dùng ở store/UI.
+interface ChannelStateChangeMessage {
+  type: 'channel-state-change';
+  channel_id: string;
+  display_state: DisplayState;
+  sub_type?: string;
   timestamp: string;
 }
 
@@ -64,6 +78,27 @@ function isChannelSeenMessage(value: unknown): value is ChannelSeenMessage {
   return v.type === 'channel-seen' && typeof v.channel_id === 'string' && typeof v.timestamp === 'string';
 }
 
+// Story 2.6 (Boundaries): phòng thủ lớp 2 (mirror `isValidGridPosition`) -
+// `display_state` phải đúng 1 trong 3 literal (`ok`/`warning`/`critical`),
+// khớp `DisplayState` backend (`AlertOutboundPort.ts`'s AD-11 mapping). Giá
+// trị lạ (vd 'unknown', field thiếu) khiến TOÀN BỘ message bị coi không hợp
+// lệ, bỏ qua âm thầm - không throw, không đóng kết nối WS.
+function isValidDisplayState(value: unknown): value is DisplayState {
+  return value === 'ok' || value === 'warning' || value === 'critical';
+}
+
+function isChannelStateChangeMessage(value: unknown): value is ChannelStateChangeMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === 'channel-state-change' &&
+    typeof v.channel_id === 'string' &&
+    isValidDisplayState(v.display_state) &&
+    typeof v.timestamp === 'string' &&
+    (v.sub_type === undefined || typeof v.sub_type === 'string')
+  );
+}
+
 function toChannelRegistryEntry(raw: RawRegistrySnapshotChannel): ChannelRegistryEntry {
   return {
     channelId: raw.channel_id,
@@ -92,6 +127,10 @@ export function applyUiWsMessage(store: ChannelStore, raw: string): void {
   }
   if (isChannelSeenMessage(parsed)) {
     store.applyChannelSeen(parsed.channel_id);
+    return;
+  }
+  if (isChannelStateChangeMessage(parsed)) {
+    store.applyChannelDisplayStateChange(parsed.channel_id, parsed.display_state);
     return;
   }
   // type lạ khác (message tương lai chưa định nghĩa ở story này) - bỏ qua.

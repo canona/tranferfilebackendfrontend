@@ -23,6 +23,11 @@ vi.mock('../src/services/uiWsClient', () => ({
     ]);
     store.applyChannelSeen('chan-1');
     store.applyChannelSeen('chan-2');
+    // Story 2.6: mirror `channel-state-change` (đã test đầy đủ qua
+    // `uiWsClient.test.ts`/`channelStore.test.ts`) - page.tsx phải đọc thẳng
+    // `state.channelDisplayStates` (bỏ fixture `buildChannelDisplayStatesFixture`
+    // của Story 2.4, đã xoá).
+    store.applyChannelDisplayStateChange('chan-1', 'warning');
     return () => {};
   }),
 }));
@@ -30,6 +35,18 @@ vi.mock('../src/services/uiWsClient', () => ({
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+});
+
+describe('Page - channelDisplayStates từ store thật (Story 2.6, thay fixture)', () => {
+  it('đọc state.channelDisplayStates trực tiếp, KHÔNG dùng fixture -> cell tương ứng hiện đúng displayState', () => {
+    render(<Page />);
+    expect(screen.getByTestId('channel-grid-cell-chan-1')).toHaveAttribute('data-display-state', 'warning');
+    // chan-2 chưa có channel-state-change nào -> fallback loaded-neutral,
+    // KHÔNG có data-display-state (khác hành vi fixture cũ vốn LUÔN gán 1
+    // trong 3 giá trị cho mọi channelId).
+    expect(screen.getByTestId('channel-grid-cell-chan-2')).not.toHaveAttribute('data-display-state');
+    cleanup();
+  });
 });
 
 describe('Page - audioLevel interval wiring (Story 2.5, code review patch #3)', () => {

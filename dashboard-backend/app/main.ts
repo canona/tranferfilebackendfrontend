@@ -14,12 +14,13 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ChannelStateService } from '../src/core/channelState.js';
+import { ChannelStateService, type Clock } from '../src/core/channelState.js';
 import { LogAlertAdapter } from '../src/adapters/outbound/logAlertAdapter.js';
 import { FileChannelRegistryAdapter } from '../src/adapters/outbound/fileChannelRegistryAdapter.js';
 import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/adapters/inbound/wsTelemetryAdapter.js';
 import { startWsUiAdapter, type WsUiAdapterHandle } from '../src/adapters/outbound/wsUiAdapter.js';
-import { defaultLogger } from '../src/logging/logger.js';
+import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
+import { defaultLogger, type Logger } from '../src/logging/logger.js';
 import { isDirectRunEntrypoint } from './isDirectRun.js';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -72,6 +73,53 @@ export function parsePort(raw: string, varName = 'DASHBOARD_WS_PORT'): number {
   return parsed;
 }
 
+// Story 2.6: composite `AlertOutboundPort` tại composition root - fan-out 1
+// `ChannelStateChange` (chốt sau debounce >=5s ở `channelState.ts`) tới CẢ
+// audit log (`LogAlertAdapter`, Story 2.1, giữ nguyên) LẪN broadcast WS UI
+// (`WsUiAdapter.publishStateChange`, MỚI). Design Notes: "không cần 1
+// port/type mới riêng (CompositeAlertOutboundPort) - 1 object literal
+// implement AlertOutboundPort ngay tại composition root là đủ cho đúng 2
+// consumer, tránh over-abstract cho use-case chưa cần tái sử dụng nơi khác."
+// Vẫn export riêng (mirror `parsePort`/`parseBearerTokens` phía trên) để test
+// được hành vi fan-out + cô lập lỗi từng nhánh mà không cần start cả
+// `startApp()`/chờ debounce 5s thật.
+//
+// Boundaries: "lỗi ở 1 nhánh không được chặn nhánh còn lại (try/catch độc lập
+// mỗi nhánh)" - 1 port throw không được ngăn các port còn lại trong danh sách
+// nhận đúng `change` này.
+export function createCompositeAlertPort(ports: readonly AlertOutboundPort[], logger: Logger): AlertOutboundPort {
+  return {
+    publishStateChange(change: ChannelStateChange): void {
+      for (const [index, port] of ports.entries()) {
+        try {
+          port.publishStateChange(change);
+        } catch (err) {
+          // Code review [patch]: `err` không được đảm bảo là `Error` (1 port
+          // có thể throw string/object/undefined) - `instanceof Error` guard
+          // trước khi đọc `.message`, fallback `String(err)` để vẫn giữ nội
+          // dung lỗi thật thay vì "undefined".
+          const message = err instanceof Error ? err.message : String(err);
+          // Code review [patch]: `logger.log(...)` tự nó CŨNG có thể throw (vd
+          // sink tuỳ biến) - phải cô lập RIÊNG bằng try/catch của chính nó,
+          // nếu không exception sẽ thoát khỏi vòng `for` và chặn luôn các
+          // port còn lại nhận `change`, vi phạm đúng invariant "1 nhánh throw
+          // không được ngăn nhánh còn lại" (Boundaries ở trên). Mirror cách
+          // `defaultWriteLine()` (logger.ts) tự swallow lỗi ghi log.
+          try {
+            logger.log({
+              channel_id: change.channelId,
+              event_type: 'alert_publish_error',
+              reason: `port[${index}] throw, các nhánh còn lại vẫn tiếp tục nhận change: ${message}`,
+            });
+          } catch {
+            // intentionally swallowed - xem comment trên
+          }
+        }
+      }
+    },
+  };
+}
+
 export interface AppHandle {
   ws: WsTelemetryAdapterHandle;
   ui: WsUiAdapterHandle;
@@ -91,6 +139,12 @@ export async function startApp(config?: {
   uiHost?: string;
   validBearerTokens?: Set<string>;
   channelRegistryFilePath?: string;
+  // Code review [patch]: override cho test - cho phép test integration thật
+  // (start cả `startApp()`) không phải chờ debounce 5s thật (`ChannelStateService`
+  // đã tự default `debounceMs=5000`/`clock=systemClock` khi omit - KHÔNG đổi
+  // behavior mặc định production).
+  debounceMs?: number;
+  clock?: Clock;
 }): Promise<AppHandle> {
   const logger = defaultLogger();
 
@@ -184,7 +238,7 @@ export async function startApp(config?: {
     );
   }
 
-  const alertPort = new LogAlertAdapter(logger);
+  const logAlertPort = new LogAlertAdapter(logger);
 
   // Story 2.3: WS UI khởi động TRƯỚC `ChannelStateService` (`uiPort` là
   // dependency bắt buộc của constructor) - cùng tinh thần dọn dẹp lỗi khởi
@@ -199,7 +253,22 @@ export async function startApp(config?: {
     throw err;
   }
 
-  const channelStateService = new ChannelStateService({ registryPort, alertPort, uiPort: ui, logger });
+  // Story 2.6: `ui` implement CẢ `UiOutboundPort` (channel-seen, Story 2.3)
+  // LẪN `AlertOutboundPort` (channel-state-change, MỚI) - composite fan-out
+  // audit log hiện có + broadcast WS UI mới, KHÔNG thay thế `LogAlertAdapter`.
+  // Code review [patch]: thứ tự phần tử trong mảng KHÔNG mang ý nghĩa
+  // ordering/invariant nào - `logAlertPort`/`ui` độc lập hoàn toàn với nhau
+  // (không có yêu cầu "log trước WS" hay ngược lại), chỉ tình cờ liệt kê theo
+  // thứ tự khai báo phía trên.
+  const alertPort = createCompositeAlertPort([logAlertPort, ui], logger);
+  const channelStateService = new ChannelStateService({
+    registryPort,
+    alertPort,
+    uiPort: ui,
+    logger,
+    debounceMs: config?.debounceMs,
+    clock: config?.clock,
+  });
 
   // Code review [patch]: nếu bind WS thất bại (vd EADDRINUSE) sau khi
   // `registryPort.start()` đã chạy thành công ở trên, `startApp()` throw

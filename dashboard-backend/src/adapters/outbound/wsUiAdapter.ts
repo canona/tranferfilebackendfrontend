@@ -20,6 +20,7 @@ import { createServer, type Server as HttpServer, type IncomingMessage } from 'n
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ChannelRegistryEntry, ChannelRegistryPort } from '../../ports/ChannelRegistryPort.js';
 import type { UiOutboundPort } from '../../ports/UiOutboundPort.js';
+import type { AlertOutboundPort, ChannelStateChange } from '../../ports/AlertOutboundPort.js';
 import type { Logger } from '../../logging/logger.js';
 
 // Code review (mirror wsTelemetryAdapter.ts): WS UI không auth (LAN-only,
@@ -35,7 +36,12 @@ export interface WsUiAdapterOptions {
   logger: Logger;
 }
 
-export interface WsUiAdapterHandle extends UiOutboundPort {
+// Story 2.6: `WsUiAdapterHandle` implement THÊM `AlertOutboundPort` - cùng 1
+// adapter giờ phát cả `channel-seen` (UiOutboundPort, đã có từ Story 2.3) LẪN
+// `channel-state-change` (AlertOutboundPort, MỚI) tới cùng tập client WS UI.
+// 2 port vẫn tách biệt về TYPE/semantic (Design Notes/Ask First) - chỉ 1
+// object implement CẢ HAI vì cả 2 đều broadcast tới cùng `wss.clients`.
+export interface WsUiAdapterHandle extends UiOutboundPort, AlertOutboundPort {
   readonly port: number;
   close(): Promise<void>;
 }
@@ -63,6 +69,30 @@ interface ChannelSeenMessage {
   timestamp: string;
 }
 
+// Story 2.6: envelope `channel-state-change` - cùng phong cách snake_case
+// đóng của kênh này (Boundaries: KHÔNG dùng envelope schema_version/event_type
+// đóng của transport-core, lý do đã ghi ở comment đầu file). `sub_type` chỉ có
+// mặt khi ChannelStateChange.subType có giá trị (undefined bị bỏ hẳn khỏi
+// JSON qua object spread có điều kiện, mirror channelState.ts's ChannelStateChange
+// build - KHÔNG gửi `sub_type: undefined` tường minh).
+interface ChannelStateChangeMessage {
+  type: 'channel-state-change';
+  channel_id: string;
+  display_state: ChannelStateChange['displayState'];
+  sub_type?: ChannelStateChange['subType'];
+  timestamp: string;
+}
+
+function toChannelStateChangeMessage(change: ChannelStateChange): ChannelStateChangeMessage {
+  return {
+    type: 'channel-state-change',
+    channel_id: change.channelId,
+    display_state: change.displayState,
+    timestamp: change.timestamp,
+    ...(change.subType ? { sub_type: change.subType } : {}),
+  };
+}
+
 function toSnapshotChannel(entry: ChannelRegistryEntry & { channelId: string }): RegistrySnapshotChannel {
   return {
     channel_id: entry.channelId,
@@ -73,7 +103,10 @@ function toSnapshotChannel(entry: ChannelRegistryEntry & { channelId: string }):
   };
 }
 
-function send(ws: WebSocket, message: RegistrySnapshotMessage | ChannelSeenMessage): void {
+function send(
+  ws: WebSocket,
+  message: RegistrySnapshotMessage | ChannelSeenMessage | ChannelStateChangeMessage
+): void {
   // Code review: chỉ gửi khi socket còn ở trạng thái OPEN - client vừa
   // connect rồi rớt ngay lập tức (trước khi kịp gửi snapshot) không được
   // throw khi gọi ws.send() trên 1 socket đã CLOSING/CLOSED.
@@ -89,6 +122,15 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
   // nghĩa "đã thấy" - 1 lần là đủ) và (b) replay đúng dữ liệu cho client
   // connect muộn (Boundaries).
   const seenChannels = new Map<string, string>();
+
+  // Story 2.6 (Design Notes): `lastState` là 1 Map ĐỘC LẬP với `seenChannels`
+  // - khác semantic: `seenChannels` chỉ ghi 1 lần/kênh (idempotent theo đúng
+  // nghĩa "đã thấy"), `lastState` GHI ĐÈ mỗi lần trạng thái đổi (không
+  // idempotent-guard - Boundaries: "trạng thái đổi qua lại được"). Dùng để
+  // replay `channel-state-change` mới nhất/kênh cho client connect muộn (nếu
+  // không, ô sẽ kẹt vĩnh viễn ở loaded-neutral vì backend chỉ phát lại khi
+  // trạng thái ĐỔI, không phát lặp khi ổn định).
+  const lastState = new Map<string, ChannelStateChange>();
 
   const httpServer: HttpServer = createServer((_req, res) => {
     res.writeHead(404).end();
@@ -134,6 +176,13 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
     // đã seen trước đó, NGAY SAU registry-snapshot, cùng 1 lần connect.
     for (const [channelId, timestamp] of seenChannels) {
       send(ws, { type: 'channel-seen', channel_id: channelId, timestamp });
+    }
+    // Story 2.6 (Design Notes): thứ tự replay là registry-snapshot ->
+    // channel-seen (đã có, không đổi) -> channel-state-change (MỚI, nối
+    // thêm bước 3) - replay trạng thái ĐÃ CHỐT gần nhất/kênh để client connect
+    // muộn hiện đúng màu ngay, không chờ backend đổi trạng thái lần nữa.
+    for (const change of lastState.values()) {
+      send(ws, toChannelStateChangeMessage(change));
     }
 
     // Adapter này chỉ PHÁT tới frontend (outbound) - story 2.3 không định
@@ -185,6 +234,20 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
           if (seenChannels.has(channelId)) return;
           seenChannels.set(channelId, timestamp);
           const message: ChannelSeenMessage = { type: 'channel-seen', channel_id: channelId, timestamp };
+          for (const client of wss.clients) {
+            send(client, message);
+          }
+        },
+
+        // Story 2.6: gọi bởi composite alertPort tại composition root
+        // (`main.ts`) mỗi khi `channelState.ts` chốt xong 1 debounce >=5s
+        // (Boundaries) - KHÔNG idempotent-guard (khác `publishChannelSeen` ở
+        // trên - `channelState.ts`'s `applyCandidate` đã tự đảm bảo chỉ gọi
+        // khi trạng thái THỰC SỰ đổi, xem `sameCandidate` guard ở đó; ghi đè
+        // `lastState` vô điều kiện ở đây để hỗ trợ trạng thái đổi qua lại).
+        publishStateChange(change: ChannelStateChange): void {
+          lastState.set(change.channelId, change);
+          const message = toChannelStateChangeMessage(change);
           for (const client of wss.clients) {
             send(client, message);
           }

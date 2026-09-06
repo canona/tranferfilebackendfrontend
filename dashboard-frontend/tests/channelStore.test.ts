@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { createChannelStore } from '../src/state/channelStore';
 
 describe('ChannelStore', () => {
-  it('trạng thái ban đầu: channels rỗng, seenChannelIds rỗng', () => {
+  it('trạng thái ban đầu: channels rỗng, seenChannelIds rỗng, channelDisplayStates rỗng', () => {
     const store = createChannelStore();
     const state = store.getState();
     expect(state.channels).toEqual([]);
     expect(state.seenChannelIds.size).toBe(0);
+    expect(state.channelDisplayStates.size).toBe(0);
   });
 
   it('applyRegistrySnapshot: ghi đè toàn bộ channels, giữ nguyên seenChannelIds hiện có', () => {
@@ -60,6 +61,38 @@ describe('ChannelStore', () => {
     store.applyChannelSeen('chan-1');
     store.applyChannelSeen('chan-2');
     expect([...store.getState().seenChannelIds].sort()).toEqual(['chan-1', 'chan-2']);
+  });
+
+  // Story 2.6: `applyChannelDisplayStateChange` - ghi đè theo channelId, KHÔNG
+  // idempotent-guard (Boundaries: "trạng thái đổi qua lại được").
+  it('applyChannelDisplayStateChange: thêm mới channelDisplayStates cho 1 channelId', () => {
+    const store = createChannelStore();
+    store.applyChannelDisplayStateChange('chan-1', 'ok');
+    expect(store.getState().channelDisplayStates.get('chan-1')).toBe('ok');
+  });
+
+  it('applyChannelDisplayStateChange gọi lại cho CÙNG channelId với giá trị KHÁC -> GHI ĐÈ (không giữ giá trị cũ)', () => {
+    const store = createChannelStore();
+    store.applyChannelDisplayStateChange('chan-1', 'ok');
+    store.applyChannelDisplayStateChange('chan-1', 'critical');
+    expect(store.getState().channelDisplayStates.get('chan-1')).toBe('critical');
+  });
+
+  it('applyChannelDisplayStateChange gọi lại với CÙNG giá trị -> vẫn setState (KHÔNG có idempotent-guard như applyChannelSeen)', () => {
+    const store = createChannelStore();
+    store.applyChannelDisplayStateChange('chan-1', 'ok');
+    const stateAfterFirst = store.getState();
+    store.applyChannelDisplayStateChange('chan-1', 'ok');
+    const stateAfterSecond = store.getState();
+    expect(stateAfterSecond).not.toBe(stateAfterFirst);
+  });
+
+  it('applyChannelDisplayStateChange không ảnh hưởng channelDisplayStates của các channelId khác', () => {
+    const store = createChannelStore();
+    store.applyChannelDisplayStateChange('chan-1', 'ok');
+    store.applyChannelDisplayStateChange('chan-2', 'warning');
+    expect(store.getState().channelDisplayStates.get('chan-1')).toBe('ok');
+    expect(store.getState().channelDisplayStates.get('chan-2')).toBe('warning');
   });
 
   it('subscribe: listener được gọi khi state đổi, không gọi khi applyChannelSeen idempotent', () => {
