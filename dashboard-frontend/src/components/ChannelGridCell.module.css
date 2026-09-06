@@ -96,7 +96,8 @@
 
 .badgeOk {
   /* DESIGN.md's alert-badge.ok: nền pha loãng state-ok (KHÔNG dùng thẳng
-     state-ok cho chữ/nền đặc - dưới AA, xem tokens.css comment). */
+     state-ok cho chữ/nền đặc - đo được chỉ 3.68:1, dưới AA; on-state-ok đo
+     được 10.46:1, xem DESIGN.md's color section). */
   background: color-mix(in srgb, var(--color-state-ok) 25%, transparent);
   color: var(--color-on-state-ok);
   border: 1px solid color-mix(in srgb, var(--color-state-ok) 55%, transparent);
