@@ -118,6 +118,88 @@ describe('ChannelGridCell - displayState (Story 2.4)', () => {
   });
 });
 
+// Story 2.7: prop `subType` ('machine-offline') - badge label riêng, NGUYÊN
+// style/token critical (Boundaries: "không thêm token màu mới").
+describe('ChannelGridCell - subType machine-offline (Story 2.7)', () => {
+  it('displayState="critical" + subType="machine-offline" -> badge label riêng, khác "✕ MẤT TÍN HIỆU", data-sub-type="machine-offline"', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-mo-1"
+        stationName="Đài MO 01"
+        gridPosition={0}
+        loaded={true}
+        displayState="critical"
+        subType="machine-offline"
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-mo-1');
+    expect(cell).toHaveAttribute('data-display-state', 'critical');
+    expect(cell).toHaveAttribute('data-sub-type', 'machine-offline');
+    const badge = screen.getByTestId('alert-badge-chan-mo-1');
+    expect(badge).not.toHaveTextContent('✕ MẤT TÍN HIỆU');
+    expect(badge.textContent).toBeTruthy();
+  });
+
+  it('displayState="critical" + subType="machine-offline" -> badge class VẪN dùng đúng token critical (không thêm class/token mới)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-mo-2"
+        stationName="Đài MO 02"
+        gridPosition={1}
+        loaded={true}
+        displayState="critical"
+        subType="machine-offline"
+      />,
+    );
+    const badgeMachineOffline = screen.getByTestId('alert-badge-chan-mo-2');
+
+    cleanup();
+
+    render(
+      <ChannelGridCell
+        channelId="chan-mo-3"
+        stationName="Đài MO 03"
+        gridPosition={2}
+        loaded={true}
+        displayState="critical"
+      />,
+    );
+    const badgeRegularCritical = screen.getByTestId('alert-badge-chan-mo-3');
+
+    expect(badgeMachineOffline.className).toBe(badgeRegularCritical.className);
+  });
+
+  it('subType="machine-offline" nhưng displayState KHÔNG phải "critical" (vd "warning") -> KHÔNG áp dụng label riêng, badge vẫn theo displayState thật, KHÔNG có data-sub-type', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-mo-4"
+        stationName="Đài MO 04"
+        gridPosition={3}
+        loaded={true}
+        displayState="warning"
+        subType="machine-offline"
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-mo-4');
+    expect(cell).not.toHaveAttribute('data-sub-type');
+    expect(screen.getByTestId('alert-badge-chan-mo-4')).toHaveTextContent('⚠ ABR');
+  });
+
+  it('displayState="critical" KHÔNG có subType -> badge label mặc định "✕ MẤT TÍN HIỆU" như trước (không hồi quy)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-mo-5"
+        stationName="Đài MO 05"
+        gridPosition={4}
+        loaded={true}
+        displayState="critical"
+      />,
+    );
+    expect(screen.getByTestId('alert-badge-chan-mo-5')).toHaveTextContent('✕ MẤT TÍN HIỆU');
+    expect(screen.getByTestId('channel-grid-cell-chan-mo-5')).not.toHaveAttribute('data-sub-type');
+  });
+});
+
 // Story 2.5: `audioLevel` (VU meter) + thumbnail/color-bars theo I/O matrix.
 describe('ChannelGridCell - audioLevel / vu-meter (Story 2.5)', () => {
   it('audioLevel=[-30,-30] -> vu-meter L/R hiện đúng % theo mapping -60..0 (dưới warning-mark)', () => {

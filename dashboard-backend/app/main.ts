@@ -281,6 +281,14 @@ export async function startApp(config?: {
     clock: config?.clock,
   });
 
+  // Story 2.7 (Design Notes): "checkHeartbeatTimeouts() KHÔNG tự quản lý timer
+  // nội bộ ... production tự gọi định kỳ từ composition root" - đây CHÍNH là
+  // composition root đó. 1s (khớp Code Map) - đủ mịn so với ngưỡng 15000ms
+  // (HEARTBEAT_TIMEOUT_MS) để độ trễ phát hiện không đáng kể.
+  const heartbeatTimeoutTimer = setInterval(() => {
+    channelStateService.checkHeartbeatTimeouts();
+  }, 1000);
+
   // Code review [patch]: nếu bind WS thất bại (vd EADDRINUSE) sau khi
   // `registryPort.start()` đã chạy thành công ở trên, `startApp()` throw
   // thẳng ra ngoài mà không ai gọi `registryPort.stop()` - watcher/debounce
@@ -295,9 +303,13 @@ export async function startApp(config?: {
       host,
       validBearerTokens,
       telemetryPort: channelStateService,
+      // Story 2.7: `channelStateService` implement CẢ 2 port (mirror
+      // `TelemetryInboundPort` ở dòng trên) - cùng 1 object, khác interface.
+      heartbeatPort: channelStateService,
       logger,
     });
   } catch (err) {
+    clearInterval(heartbeatTimeoutTimer);
     registryPort.stop();
     // Story 2.3: WS UI cũng đã bind cổng thành công ở khối phía trên - dọn
     // luôn, cùng lý do với `registryPort.stop()` ở dòng trên.
@@ -317,6 +329,7 @@ export async function startApp(config?: {
     channelStateService,
     stop: async () => {
       logger.log({ channel_id: '', event_type: 'app_stopping', reason: '' });
+      clearInterval(heartbeatTimeoutTimer);
       registryPort.stop();
       await ui.close();
       await ws.close();

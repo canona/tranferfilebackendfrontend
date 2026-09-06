@@ -27,6 +27,7 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set()}
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
       />,
     );
     const cells = screen.getAllByRole('gridcell');
@@ -46,6 +47,7 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set()}
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
       />,
     );
 
@@ -66,6 +68,7 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set(['chan-7'])}
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
       />,
     );
 
@@ -89,6 +92,7 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set()}
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
       />,
     );
     expect(screen.getAllByRole('gridcell').length).toBe(2);
@@ -106,6 +110,7 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set()}
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
       />,
     );
     const cells = screen.getAllByRole('gridcell');
@@ -137,6 +142,7 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set(['chan-0', 'chan-1', 'chan-2'])}
         channelDisplayStates={channelDisplayStates}
         channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
       />,
     );
 
@@ -157,6 +163,7 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set(['chan-0', 'chan-1'])}
         channelDisplayStates={new Map([['chan-0', 'ok' as const]])}
         channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
       />,
     );
 
@@ -180,6 +187,7 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set(['chan-0', 'chan-1'])}
         channelDisplayStates={new Map()}
         channelAudioLevels={channelAudioLevels}
+        channelMachineOffline={new Set()}
       />,
     );
 
@@ -195,10 +203,45 @@ describe('ChannelGrid', () => {
         seenChannelIds={new Set(['chan-0', 'chan-1'])}
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map([['chan-0', [-30, -30]]])}
+        channelMachineOffline={new Set()}
       />,
     );
 
     expect(screen.getByTestId('vu-meter-row-chan-0')).toBeInTheDocument();
     expect(screen.queryByTestId('vu-meter-row-chan-1')).toBeNull();
+  });
+
+  // Story 2.7: `channelMachineOffline` truyền đúng xuống từng cell theo
+  // channelId dưới dạng prop `subType` - độc lập hoàn toàn channelDisplayStates.
+  it('channelMachineOffline: channelId có trong set -> cell tương ứng nhận subType="machine-offline", channelId khác thì không', () => {
+    const channels = makeChannels(2);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1'])}
+        channelDisplayStates={new Map([['chan-0', 'critical' as const], ['chan-1', 'critical' as const]])}
+        channelAudioLevels={new Map()}
+        channelMachineOffline={new Set(['chan-0'])}
+      />,
+    );
+
+    expect(screen.getByTestId('channel-grid-cell-chan-0')).toHaveAttribute('data-sub-type', 'machine-offline');
+    expect(screen.getByTestId('channel-grid-cell-chan-1')).not.toHaveAttribute('data-sub-type');
+  });
+
+  it('channelMachineOffline rỗng -> không cell nào nhận subType', () => {
+    const channels = makeChannels(2);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1'])}
+        channelDisplayStates={new Map([['chan-0', 'critical' as const]])}
+        channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
+      />,
+    );
+
+    expect(screen.getByTestId('channel-grid-cell-chan-0')).not.toHaveAttribute('data-sub-type');
+    expect(screen.getByTestId('channel-grid-cell-chan-1')).not.toHaveAttribute('data-sub-type');
   });
 });

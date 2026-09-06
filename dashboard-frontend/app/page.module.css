@@ -1,0 +1,26 @@
+/*
+ * Story 2.7: wrapper cho `channel-grid` + `grid-overlay` (DESIGN.md's
+ * `connection-banner`: "khi active, phủ thêm grid-overlay ... lên toàn bộ
+ * channel-grid để làm mờ lưới, ngăn đội trực nhầm dữ liệu cũ là đang live").
+ * `position: relative` để `.gridOverlay` (absolute, inset:0) định vị đúng
+ * theo CHÍNH `channel-grid` (không phải toàn viewport).
+ */
+
+.gridWrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.gridOverlay {
+  position: absolute;
+  inset: 0;
+  /* Dưới `.banner` (z-index 1000, ConnectionBanner.module.css) nhưng trên
+     toàn bộ `channel-grid`/`channel-grid-cell` (badge z-index cao nhất trong
+     đó là 2). */
+  z-index: 500;
+  background: color-mix(in srgb, var(--color-surface-base) 70%, transparent);
+  /* Overlay chỉ để LÀM MỜ thị giác - không chặn tương tác tương lai (vd click
+     mở detail-panel ở Epic 3) với lưới bên dưới. */
+  pointer-events: none;
+}

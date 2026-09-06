@@ -22,6 +22,10 @@ export interface ChannelGridProps {
   // debounce). Thiếu entry cho 1 channelId -> ChannelGridCell không render
   // vu-meter cho ô đó (prop `audioLevel` optional, xem ChannelGridCell.tsx).
   channelAudioLevels: ReadonlyMap<string, readonly [number, number]>;
+  // Story 2.7: tập channelId đang machine-offline (`channelStore.ts`'s
+  // `channelMachineOffline`, ĐỘC LẬP channelDisplayStates) - truyền xuống mỗi
+  // cell dưới dạng prop `subType` (chỉ có giá trị khi channel có trong set).
+  channelMachineOffline: ReadonlySet<string>;
 }
 
 // Code review [patch]: trước khi client nhận `registry-snapshot` ĐẦU TIÊN
@@ -48,6 +52,7 @@ export function ChannelGrid({
   seenChannelIds,
   channelDisplayStates,
   channelAudioLevels,
+  channelMachineOffline,
 }: ChannelGridProps) {
   // `channels` rỗng CHỈ xảy ra trước lần `registry-snapshot` đầu tiên (snapshot
   // rỗng thật sự không thể xảy ra - fileChannelRegistryAdapter chặn registry
@@ -75,6 +80,7 @@ export function ChannelGrid({
           loaded={seenChannelIds.has(channel.channelId)}
           displayState={channelDisplayStates.get(channel.channelId)}
           audioLevel={channelAudioLevels.get(channel.channelId)}
+          subType={channelMachineOffline.has(channel.channelId) ? 'machine-offline' : undefined}
         />
       ))}
     </div>

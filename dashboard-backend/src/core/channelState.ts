@@ -12,6 +12,7 @@ import { CONNECTION_STATES, type TelemetryEvent, type TelemetryInboundPort, type
 import type { AlertOutboundPort, ChannelStateChange, DisplayState } from '../ports/AlertOutboundPort.js';
 import type { ChannelRegistryPort } from '../ports/ChannelRegistryPort.js';
 import type { UiOutboundPort } from '../ports/UiOutboundPort.js';
+import type { HeartbeatInboundPort } from '../ports/HeartbeatInboundPort.js';
 import type { Logger } from '../logging/logger.js';
 import { computeBitratePct, mapToDisplayState, type DisplayCandidate } from './bitrateThreshold.js';
 
@@ -27,6 +28,11 @@ export const systemClock: Clock = { now: () => Date.now() };
 // per-channel".
 export const DEBOUNCE_MS = 5000;
 
+// Story 2.7 (Intent/Epic 2 context): "1 máy trung tâm không gửi heartbeat quá
+// 3x chu kỳ 5s" -> 15000ms. Hằng số riêng, ĐỘC LẬP hoàn toàn `DEBOUNCE_MS`
+// (Boundaries: "KHÔNG đổi debounce 5s/bitrateThreshold.ts's mapping").
+export const HEARTBEAT_TIMEOUT_MS = 15000;
+
 interface PendingCandidate extends DisplayCandidate {
   // clock.now() tại lần đầu candidate này được quan sát liên tục (reset về
   // giá trị mới mỗi khi candidate đổi - xem I/O matrix "trạng thái dao động
@@ -37,6 +43,14 @@ interface PendingCandidate extends DisplayCandidate {
 interface ChannelRecord {
   committed?: DisplayCandidate;
   pending?: PendingCandidate;
+  // Story 2.7: epoch ms (Clock injectable, KHÔNG phải timestamp envelope) của
+  // lần `handleHeartbeat` gần nhất/kênh - `undefined` nghĩa là kênh này CHƯA
+  // từng nhận heartbeat nào (checkHeartbeatTimeouts() bỏ qua, tránh báo động
+  // giả lúc mới khởi động trước khi có heartbeat đầu tiên).
+  lastHeartbeatAt?: number;
+  // Story 2.7: cờ "đang machine-offline" - Boundaries: field mới trên CHÍNH
+  // ChannelRecord hiện có (Map theo channelId), KHÔNG Map riêng.
+  machineOfflineActive?: boolean;
 }
 
 export interface ChannelStateServiceOptions {
@@ -55,7 +69,7 @@ function sameCandidate(a: DisplayCandidate | undefined, b: DisplayCandidate): bo
   return a !== undefined && a.state === b.state && a.subType === b.subType;
 }
 
-export class ChannelStateService implements TelemetryInboundPort {
+export class ChannelStateService implements TelemetryInboundPort, HeartbeatInboundPort {
   private readonly registryPort: ChannelRegistryPort;
   private readonly alertPort: AlertOutboundPort;
   private readonly uiPort: UiOutboundPort;
@@ -182,11 +196,135 @@ export class ChannelStateService implements TelemetryInboundPort {
         `(bitrate_pct=${bitratePct.toFixed(1)}%, connection_state=${connectionState})`,
     });
 
+    // Code review [patch]: nếu kênh đang `machineOfflineActive` (Story 2.7),
+    // 1 commit telemetry bình thường (candidate đổi do bitrate/connection_state
+    // - ĐỘC LẬP hoàn toàn heartbeat) KHÔNG được phép âm thầm "giải phóng" cờ
+    // machine-offline phía frontend: `channelStore.applyChannelDisplayStateChange`
+    // gỡ channelId khỏi `channelMachineOffline` cho BẤT KỲ publish nào thiếu
+    // `subType:'machine-offline'`. Ép `subType` này lên `change` phát đi (KHÔNG
+    // đụng `record.committed` - vẫn phải phản ánh đúng candidate telemetry thật,
+    // như `getDisplayState()` đã test) để badge phía UI giữ đúng "máy trung tâm
+    // lỗi" cho tới khi `handleHeartbeat` xác nhận resume thật sự.
     const change: ChannelStateChange = {
       channelId,
       displayState: candidate.state,
       timestamp: new Date(now).toISOString(),
-      ...(candidate.subType ? { subType: candidate.subType } : {}),
+      ...(record.machineOfflineActive
+        ? { subType: 'machine-offline' as const }
+        : candidate.subType
+          ? { subType: candidate.subType }
+          : {}),
+    };
+    this.alertPort.publishStateChange(change);
+  }
+
+  // Story 2.7: `HeartbeatInboundPort` - forward bởi `wsTelemetryAdapter.ts`
+  // cho `event_type=heartbeat` (trước đây bị bỏ qua im lặng). ĐỘC LẬP hoàn
+  // toàn debounce/mapping bitrate của `handleTelemetry` phía trên - chỉ cập
+  // nhật `lastHeartbeatAt` + xử lý phục hồi nếu kênh đang `machineOfflineActive`.
+  handleHeartbeat(channelId: string, timestamp: string): void {
+    // I/O matrix: "Heartbeat cho channel_id lạ -> Bỏ qua, log
+    // channel_unregistered (mirror telemetry)" - registry vẫn là nguồn xác
+    // thực channel_id hợp lệ DUY NHẤT (Story 2.2), kể cả cho heartbeat.
+    if (this.registryPort.getEntry(channelId) === undefined) {
+      this.logger.log({
+        channel_id: channelId,
+        event_type: 'channel_unregistered',
+        reason: `channel_id không có trong channel-registry - bỏ qua heartbeat này (timestamp=${timestamp})`,
+      });
+      return;
+    }
+
+    const record = this.channels.get(channelId) ?? {};
+    const now = this.clock.now();
+    record.lastHeartbeatAt = now;
+
+    const wasOffline = record.machineOfflineActive === true;
+    if (wasOffline) {
+      record.machineOfflineActive = false;
+    }
+    this.channels.set(channelId, record);
+
+    if (!wasOffline) return;
+
+    // Boundaries: "clear flag, re-publish record.committed hiện tại (nếu có)
+    // để badge trả về đúng trạng thái telemetry thật, không kẹt ở
+    // machine-offline." Nếu chưa từng có `committed` nào (kênh mới, chưa đủ
+    // 5s telemetry ổn định) - không có gì để re-publish, giữ nguyên (không tự
+    // bịa 1 trạng thái mới).
+    this.logger.log({
+      channel_id: channelId,
+      event_type: 'machine_offline_recovered',
+      reason: `heartbeat resume sau machine-offline (timestamp=${timestamp})`,
+    });
+    if (record.committed) {
+      const change: ChannelStateChange = {
+        channelId,
+        displayState: record.committed.state,
+        timestamp: new Date(now).toISOString(),
+        ...(record.committed.subType ? { subType: record.committed.subType } : {}),
+      };
+      this.alertPort.publishStateChange(change);
+    }
+  }
+
+  // Story 2.7 (Design Notes): "checkHeartbeatTimeouts() KHÔNG tự quản lý timer
+  // nội bộ ... giữ src/core thuần/dễ test" - public, gọi từ ngoài (real
+  // `setInterval` ở `main.ts` production, gọi trực tiếp ở test bằng FakeClock).
+  // Duyệt TOÀN BỘ kênh có `lastHeartbeatAt` đã biết (bỏ qua kênh chưa từng
+  // heartbeat - tránh báo động giả) - I/O matrix: "Không throw, không chặn
+  // kênh khác" -> cô lập lỗi TỪNG kênh bằng try/catch riêng, 1 kênh lỗi không
+  // được ngăn các kênh còn lại trong cùng lượt gọi.
+  checkHeartbeatTimeouts(): void {
+    const now = this.clock.now();
+    for (const [channelId, record] of this.channels) {
+      try {
+        this.checkOneChannelHeartbeatTimeout(channelId, record, now);
+      } catch (err) {
+        this.logger.log({
+          channel_id: channelId,
+          event_type: 'heartbeat_timeout_check_error',
+          reason: `lỗi khi kiểm tra heartbeat timeout: ${(err as Error).message}`,
+        });
+      }
+    }
+  }
+
+  private checkOneChannelHeartbeatTimeout(channelId: string, record: ChannelRecord, now: number): void {
+    if (record.lastHeartbeatAt === undefined) return; // chưa từng heartbeat - không đánh giá
+    if (record.machineOfflineActive) return; // đã kích hoạt rồi - không publish lặp lại
+
+    // Code review [patch]: mirror `handleHeartbeat`'s registry check - 1 kênh
+    // bị gỡ khỏi channel-registry (hot-reload, Story 2.2) SAU khi đã có
+    // `lastHeartbeatAt` không được tiếp tục publish `machine-offline` cho
+    // channel_id không còn tồn tại nữa.
+    if (this.registryPort.getEntry(channelId) === undefined) {
+      this.logger.log({
+        channel_id: channelId,
+        event_type: 'channel_unregistered',
+        reason: 'channel_id không còn trong channel-registry - bỏ qua đánh giá heartbeat timeout',
+      });
+      return;
+    }
+
+    if (now - record.lastHeartbeatAt < HEARTBEAT_TIMEOUT_MS) return;
+
+    record.machineOfflineActive = true;
+    this.channels.set(channelId, record);
+
+    this.logger.log({
+      channel_id: channelId,
+      event_type: 'machine_offline_detected',
+      reason: `im lặng heartbeat >= ${HEARTBEAT_TIMEOUT_MS}ms (lastHeartbeatAt=${record.lastHeartbeatAt}, now=${now})`,
+    });
+
+    // Boundaries: "ĐỘC LẬP hoàn toàn record.committed/debounce 5s hiện có" -
+    // publish thẳng critical+machine-offline, không đọc/so sánh record.committed.
+    const change: ChannelStateChange = {
+      channelId,
+      displayState: 'critical',
+      subType: 'machine-offline',
+      timestamp: new Date(now).toISOString(),
     };
     this.alertPort.publishStateChange(change);
   }

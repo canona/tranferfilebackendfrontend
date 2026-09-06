@@ -69,7 +69,14 @@ describe('applyUiWsMessage', () => {
   it('JSON hỏng -> bỏ qua âm thầm, KHÔNG throw, state giữ nguyên', () => {
     const store = createChannelStore();
     expect(() => applyUiWsMessage(store, '{not-valid-json')).not.toThrow();
-    expect(store.getState()).toEqual({ channels: [], seenChannelIds: new Set(), channelDisplayStates: new Map() });
+    expect(store.getState()).toEqual({
+      channels: [],
+      seenChannelIds: new Set(),
+      channelDisplayStates: new Map(),
+      connectionStatus: 'connected',
+      lastConnectedAt: null,
+      channelMachineOffline: new Set(),
+    });
   });
 
   it('type lạ (chưa định nghĩa) -> bỏ qua âm thầm, KHÔNG throw', () => {
@@ -128,7 +135,7 @@ describe('applyUiWsMessage', () => {
     expect(store.getState().channelDisplayStates.get('chan-1')).toBe('warning');
   });
 
-  it('channel-state-change với sub_type -> áp dụng đúng display_state (sub_type không dùng ở store, chỉ mang qua wire)', () => {
+  it('channel-state-change với sub_type=config-or-security-suspected -> áp dụng đúng display_state (subType đó không dùng ở UI, chỉ mang qua wire)', () => {
     const store = createChannelStore();
     applyUiWsMessage(
       store,
@@ -141,6 +148,40 @@ describe('applyUiWsMessage', () => {
       })
     );
     expect(store.getState().channelDisplayStates.get('chan-1')).toBe('critical');
+    expect(store.getState().channelMachineOffline.has('chan-1')).toBe(false);
+  });
+
+  // Story 2.7: sub_type='machine-offline' - CHỈ subType này thực sự được đọc
+  // ở channelStore (channelMachineOffline set).
+  it('channel-state-change với sub_type=machine-offline -> áp dụng đúng display_state VÀ thêm channelId vào channelMachineOffline', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(
+      store,
+      JSON.stringify({
+        type: 'channel-state-change',
+        channel_id: 'chan-1',
+        display_state: 'critical',
+        sub_type: 'machine-offline',
+        timestamp: '2026-09-06T00:00:00.000Z',
+      })
+    );
+    expect(store.getState().channelDisplayStates.get('chan-1')).toBe('critical');
+    expect(store.getState().channelMachineOffline.has('chan-1')).toBe(true);
+  });
+
+  it('channel-state-change với sub_type lạ (không hợp lệ) -> toàn bộ message bị coi không hợp lệ, bỏ qua', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(
+      store,
+      JSON.stringify({
+        type: 'channel-state-change',
+        channel_id: 'chan-1',
+        display_state: 'critical',
+        sub_type: 'unknown-sub-type',
+        timestamp: '2026-09-06T00:00:00.000Z',
+      })
+    );
+    expect(store.getState().channelDisplayStates.size).toBe(0);
   });
 
   it('channel-state-change với display_state lạ ("unknown") -> bỏ qua âm thầm, KHÔNG cập nhật store', () => {
@@ -298,4 +339,125 @@ describe('connectUiWsClient', () => {
     }).not.toThrow();
     expect(() => disconnect()).not.toThrow();
   });
+
+  // Code review [patch round 2]: `new WebSocket(url)` throw đồng bộ trước đây
+  // KHÔNG cập nhật connectionStatus - 1 URL cấu hình sai vĩnh viễn (vd
+  // NEXT_PUBLIC_DASHBOARD_UI_WS_URL lỗi lúc deploy) khiến connectionStatus kẹt
+  // mãi ở 'connected' lạc quan mặc định dù không hề có kết nối nào thành công,
+  // banner/grid-overlay không bao giờ hiện.
+  it('url sai định dạng -> connectionStatus chuyển "disconnected" (mirror onclose/onerror)', () => {
+    const store = createChannelStore();
+    expect(store.getState().connectionStatus).toBe('connected'); // mặc định lạc quan lúc mount
+    const disconnect = connectUiWsClient('khong-phai-url-hop-le', store);
+    try {
+      expect(store.getState().connectionStatus).toBe('disconnected');
+    } finally {
+      disconnect();
+    }
+  });
+
+  // Story 2.7: connectionStatus/lastConnectedAt + reconnect (Boundaries: "tự
+  // reconnect khi onclose/onerror, retry cố định vd 2000ms").
+  it('connect thành công (onopen) -> connectionStatus="connected", lastConnectedAt được set (kể cả lần connect ĐẦU TIÊN)', async () => {
+    const { url } = await startFakeBackend();
+    const store = createChannelStore();
+    const disconnect = connectUiWsClient(url, store);
+    try {
+      await waitUntil(() => store.getState().lastConnectedAt !== null);
+      expect(store.getState().connectionStatus).toBe('connected');
+      expect(typeof store.getState().lastConnectedAt).toBe('string');
+    } finally {
+      disconnect();
+    }
+  });
+
+  it('server đóng kết nối đột ngột (mirror backend chết) -> connectionStatus chuyển "disconnected" NGAY', async () => {
+    const { url, server } = await startFakeBackend();
+    const store = createChannelStore();
+    const disconnect = connectUiWsClient(url, store);
+    try {
+      await waitUntil(() => store.getState().lastConnectedAt !== null);
+
+      // Đóng toàn bộ client đang mở phía server - mô phỏng backend chết/rớt
+      // kết nối đột ngột (mirror wsTelemetryAdapter.test.ts's style).
+      for (const client of server.clients) client.terminate();
+
+      await waitUntil(() => store.getState().connectionStatus === 'disconnected');
+      expect(store.getState().connectionStatus).toBe('disconnected');
+    } finally {
+      disconnect();
+    }
+  });
+
+  it('sau khi disconnected, server mở lại (cùng port) -> tự động reconnect (retry cố định ~2000ms), connectionStatus trở lại "connected", registry-snapshot mới tới như connect thường', async () => {
+    const first = await startFakeBackend();
+    const port = new URL(first.url).port;
+
+    const store = createChannelStore();
+    const disconnect = connectUiWsClient(first.url, store);
+    try {
+      await waitUntil(() => store.getState().lastConnectedAt !== null);
+      const firstConnectedAt = store.getState().lastConnectedAt;
+
+      // "Backend chết": đóng hẳn server đầu tiên (không chỉ terminate client -
+      // đóng cả port để mô phỏng đúng backend ngừng phục vụ hoàn toàn).
+      for (const client of first.server.clients) client.terminate();
+      await new Promise<void>((resolve) => first.server.close(() => resolve()));
+      await waitUntil(() => store.getState().connectionStatus === 'disconnected');
+
+      // "Backend phục hồi": mở lại 1 server MỚI đúng port cũ - client phải tự
+      // reconnect (retry cố định RECONNECT_DELAY_MS, không cần gọi lại
+      // connectUiWsClient/reload trang - AC "Given WS UI mất kết nối ...
+      // khi reconnect, banner biến mất ngay không cần reload").
+      const second = new WebSocketServer({ port: Number(port), host: '127.0.0.1' });
+      servers.push(second);
+      second.on('connection', (ws) => {
+        ws.send(
+          JSON.stringify({
+            type: 'registry-snapshot',
+            channels: [{ channel_id: 'chan-reconnected', station_name: 'Đài R', contact_name: 'A', contact_phone: '090', grid_position: 0 }],
+          })
+        );
+      });
+      await new Promise<void>((resolve) => second.once('listening', resolve));
+
+      await waitUntil(() => store.getState().connectionStatus === 'connected', 5000);
+      await waitUntil(() => store.getState().channels.some((c) => c.channelId === 'chan-reconnected'), 5000);
+
+      expect(store.getState().connectionStatus).toBe('connected');
+      expect(typeof store.getState().lastConnectedAt).toBe('string');
+      expect(store.getState().lastConnectedAt).not.toBe(firstConnectedAt);
+    } finally {
+      disconnect();
+    }
+  }, 10000);
+
+  it('disconnect() gọi trong lúc đang chờ reconnect timer -> huỷ timer, KHÔNG tự reconnect nữa (cờ disposed)', async () => {
+    const { url, server } = await startFakeBackend();
+    const port = new URL(url).port;
+
+    const store = createChannelStore();
+    const disconnect = connectUiWsClient(url, store);
+    await waitUntil(() => store.getState().lastConnectedAt !== null);
+
+    for (const client of server.clients) client.terminate();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await waitUntil(() => store.getState().connectionStatus === 'disconnected');
+
+    // Gọi disconnect() NGAY (trong lúc chắc chắn còn đang chờ RECONNECT_DELAY_MS)
+    // - cờ disposed phải chặn lần connect() tiếp theo.
+    disconnect();
+
+    // Mở lại server ở đúng port - nếu disposed KHÔNG hoạt động đúng, client cũ
+    // (đã disconnect) vẫn sẽ reconnect và cập nhật store lại 'connected'.
+    const revived = new WebSocketServer({ port: Number(port), host: '127.0.0.1' });
+    servers.push(revived);
+    await new Promise<void>((resolve) => revived.once('listening', resolve));
+
+    // Đợi lâu hơn RECONNECT_DELAY_MS (2000ms) để chắc chắn không có reconnect
+    // ngầm nào xảy ra sau khi đã disconnect() - store phải giữ nguyên
+    // 'disconnected' (client cũ không còn hoạt động).
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(store.getState().connectionStatus).toBe('disconnected');
+  }, 10000);
 });

@@ -14,7 +14,12 @@ export interface ChannelStateChange {
   // Chỉ có giá trị khi REJECTED (AD-9: "nghi vấn cấu hình/bảo mật" - khác
   // sub-type với mất tín hiệu RECONNECTING thường, dù cả 2 cùng hiển thị
   // critical). undefined cho mọi trường hợp khác.
-  subType?: 'config-or-security-suspected';
+  //
+  // Story 2.7: thêm 'machine-offline' - phát khi `channelState.ts`'s
+  // `checkHeartbeatTimeouts()` phát hiện 1 kênh im lặng heartbeat >=15s (máy
+  // trung tâm treo/chết), ĐỘC LẬP hoàn toàn debounce 5s/mapping bitrate ở
+  // trên (Boundaries: "2 subType độc lập, KHÔNG track/hiển thị chéo nhau").
+  subType?: 'config-or-security-suspected' | 'machine-offline';
   // ISO 8601 UTC tại thời điểm debounce chốt xong (không phải timestamp của
   // envelope telemetry gốc) - lấy từ Clock injectable của core.
   timestamp: string;

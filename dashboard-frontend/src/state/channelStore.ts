@@ -25,6 +25,15 @@ export interface ChannelRegistryEntry {
   gridPosition: number;
 }
 
+// Story 2.7: subType khả dĩ trên wire (mirror backend's `ChannelStateChange
+// ['subType']`, `AlertOutboundPort.ts`). CHỈ 'machine-offline' thực sự được
+// đọc ở store này (`channelMachineOffline`) - 'config-or-security-suspected'
+// vẫn CHỈ mang dữ liệu qua wire (Never: không render/xử lý subType đó trên
+// UI), nhưng vẫn cần có mặt trong type để `applyChannelDisplayStateChange`
+// biết gỡ channelId khỏi `channelMachineOffline` đúng lúc (Boundaries: "mọi
+// giá trị khác, kể cả undefined -> gỡ khỏi set").
+export type DisplayStateSubType = 'config-or-security-suspected' | 'machine-offline';
+
 export interface ChannelStoreState {
   // Rỗng cho tới khi client nhận `registry-snapshot` lần đầu (I/O matrix:
   // "App vừa mở, WS UI connect" - snapshot tới gần như ngay lập tức).
@@ -37,6 +46,18 @@ export interface ChannelStoreState {
   // của Story 2.4) - GHI ĐÈ theo channelId mỗi lần đổi, KHÔNG idempotent-guard
   // như `seenChannelIds` (trạng thái đổi qua lại được, Boundaries).
   channelDisplayStates: ReadonlyMap<string, DisplayState>;
+  // Story 2.7: trạng thái kênh WS UI (`uiWsClient.ts` <-> `wsUiAdapter.ts`) -
+  // mặc định 'connected' (lạc quan lúc mount, Boundaries) - `page.tsx` hiện
+  // `ConnectionBanner`/`grid-overlay` khi 'disconnected'.
+  connectionStatus: 'connected' | 'disconnected';
+  // ISO 8601 UTC - cập nhật MỖI LẦN `ws.onopen` (kể cả lần đầu). `null` cho
+  // tới khi có ít nhất 1 lần connect thành công.
+  lastConnectedAt: string | null;
+  // Story 2.7: tập channelId đang `machine-offline` (máy trung tâm treo/chết,
+  // ĐỘC LẬP hoàn toàn `connectionStatus`/`channelDisplayStates` ở trên - có
+  // thể machine-offline dù WS UI vẫn 'connected' bình thường). Duy trì bởi
+  // `applyChannelDisplayStateChange`'s `subType` param.
+  channelMachineOffline: ReadonlySet<string>;
 }
 
 type Listener = () => void;
@@ -45,6 +66,9 @@ const EMPTY_STATE: ChannelStoreState = {
   channels: [],
   seenChannelIds: new Set(),
   channelDisplayStates: new Map(),
+  connectionStatus: 'connected',
+  lastConnectedAt: null,
+  channelMachineOffline: new Set(),
 };
 
 export class ChannelStore {
@@ -84,10 +108,66 @@ export class ChannelStore {
   // Story 2.6: `channel-state-change` GHI ĐÈ trạng thái/kênh - KHÔNG guard
   // idempotent như `applyChannelSeen` ở trên (Boundaries: "trạng thái đổi qua
   // lại được", khác ngữ nghĩa "đã thấy 1 lần là đủ" của seenChannelIds).
-  applyChannelDisplayStateChange(channelId: string, displayState: DisplayState): void {
-    const next = new Map(this.state.channelDisplayStates);
-    next.set(channelId, displayState);
-    this.setState({ ...this.state, channelDisplayStates: next });
+  //
+  // Story 2.7: tham số `subType` MỚI (mở rộng, optional - KHÔNG phá vỡ caller
+  // cũ) - Boundaries: "subType==='machine-offline' -> thêm channelId vào set;
+  // mọi giá trị khác (kể cả undefined) -> gỡ khỏi set" (đối xứng cơ chế phục
+  // hồi backend's `handleHeartbeat` re-publish `record.committed` không kèm
+  // subType khi máy trung tâm hoạt động lại bình thường).
+  applyChannelDisplayStateChange(channelId: string, displayState: DisplayState, subType?: DisplayStateSubType): void {
+    const nextDisplayStates = new Map(this.state.channelDisplayStates);
+    nextDisplayStates.set(channelId, displayState);
+
+    // Code review: khai báo kiểu `ReadonlySet<string>` tường minh - `Set<T>`
+    // là subtype hợp lệ để GÁN vào biến này (mutation chỉ xảy ra trên 1 biến
+    // `Set<string>` cục bộ riêng `updated` bên dưới, KHÔNG gọi .add()/.delete()
+    // thẳng trên biến `ReadonlySet` này).
+    let nextMachineOffline: ReadonlySet<string> = this.state.channelMachineOffline;
+    if (subType === 'machine-offline') {
+      if (!nextMachineOffline.has(channelId)) {
+        const updated = new Set(nextMachineOffline);
+        updated.add(channelId);
+        nextMachineOffline = updated;
+      }
+    } else if (nextMachineOffline.has(channelId)) {
+      const updated = new Set(nextMachineOffline);
+      updated.delete(channelId);
+      nextMachineOffline = updated;
+    }
+
+    this.setState({
+      ...this.state,
+      channelDisplayStates: nextDisplayStates,
+      channelMachineOffline: nextMachineOffline,
+    });
+  }
+
+  // Story 2.7: cập nhật bởi `uiWsClient.ts`'s `connectUiWsClient` mỗi khi
+  // `onopen`/`onclose`/`onerror` fire. `lastConnectedAt` (ISO) chỉ truyền kèm
+  // khi status='connected' (Design Notes: "lastConnectedAt chỉ cập nhật ở
+  // onopen") - giữ nguyên giá trị cũ nếu omit (không có ý nghĩa gì khi
+  // status='disconnected', banner vẫn hiện đúng mốc lần connect gần nhất).
+  setConnectionStatus(status: 'connected' | 'disconnected', lastConnectedAt?: string): void {
+    if (status === 'connected') {
+      const nextLastConnectedAt = lastConnectedAt ?? this.state.lastConnectedAt;
+      // Code review [patch]: mirror idempotent-guard của nhánh 'disconnected'
+      // bên dưới - `onopen` lặp lại (hoặc gọi lại không đổi gì) không được
+      // setState/re-render thừa khi đã 'connected' VÀ lastConnectedAt không đổi.
+      if (this.state.connectionStatus === 'connected' && this.state.lastConnectedAt === nextLastConnectedAt) {
+        return;
+      }
+      this.setState({
+        ...this.state,
+        connectionStatus: 'connected',
+        lastConnectedAt: nextLastConnectedAt,
+      });
+      return;
+    }
+    // Idempotent-guard (mirror `applyChannelSeen`'s tinh thần tránh setState
+    // thừa) - 'close' và 'error' có thể cùng fire cho 1 lần đứt kết nối, tránh
+    // re-render kép không cần thiết.
+    if (this.state.connectionStatus === 'disconnected') return;
+    this.setState({ ...this.state, connectionStatus: 'disconnected' });
   }
 }
 

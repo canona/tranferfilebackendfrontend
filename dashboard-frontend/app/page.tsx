@@ -7,9 +7,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ChannelGrid } from '../src/components/ChannelGrid';
+import { ConnectionBanner } from '../src/components/ConnectionBanner';
 import { createChannelStore, useChannelStore } from '../src/state/channelStore';
 import { connectUiWsClient } from '../src/services/uiWsClient';
 import { computeAudioLevelFixture } from '../src/fixtures/channelAudioLevels';
+import styles from './page.module.css';
 
 // WS UI server mới (`wsUiAdapter.ts`, `DASHBOARD_UI_WS_PORT`, mặc định 8081
 // theo `app/main.ts` phía dashboard-backend) - override qua biến môi trường
@@ -56,12 +58,26 @@ export default function Page() {
     return map;
   }, [state.channels, elapsedSeconds]);
 
+  // Story 2.7: `ConnectionBanner` (full-width, trên mọi layer) + `grid-overlay`
+  // (phủ CHÍNH `channel-grid` khi disconnected, DESIGN.md's `connection-banner`
+  // dòng 227) - overlay là 1 div riêng đè lên `ChannelGrid` (KHÔNG tự nội
+  // suy/đổi số liệu bên dưới, số liệu tự đứng yên vì không còn message mới
+  // tới - Boundaries).
   return (
-    <ChannelGrid
-      channels={state.channels}
-      seenChannelIds={state.seenChannelIds}
-      channelDisplayStates={state.channelDisplayStates}
-      channelAudioLevels={channelAudioLevels}
-    />
+    <>
+      <ConnectionBanner connectionStatus={state.connectionStatus} lastConnectedAt={state.lastConnectedAt} />
+      <div className={styles.gridWrapper}>
+        <ChannelGrid
+          channels={state.channels}
+          seenChannelIds={state.seenChannelIds}
+          channelDisplayStates={state.channelDisplayStates}
+          channelAudioLevels={channelAudioLevels}
+          channelMachineOffline={state.channelMachineOffline}
+        />
+        {state.connectionStatus === 'disconnected' ? (
+          <div className={styles.gridOverlay} data-testid="grid-overlay" aria-hidden="true" />
+        ) : null}
+      </div>
+    </>
   );
 }

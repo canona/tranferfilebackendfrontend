@@ -21,6 +21,20 @@ import WebSocket from 'ws';
 import { parsePort, parseBearerTokens, startApp, createCompositeAlertPort } from '../app/main.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
+import type { Clock } from '../src/core/channelState.js';
+
+// Story 2.7: mirror `channelState.test.ts`'s `FakeClock` - dùng để verify
+// timer heartbeat THẬT của `main.ts` (setInterval 1000ms wall-clock) gọi
+// đúng `checkHeartbeatTimeouts()` mà không phải chờ đủ 15000ms thật.
+class FakeClock implements Clock {
+  private current = 0;
+  now(): number {
+    return this.current;
+  }
+  advance(ms: number): void {
+    this.current += ms;
+  }
+}
 
 // Code review [patch]: mirror `wsUiAdapter.test.ts`'s `waitUntil` - test
 // integration mới (composite alertPort wiring thật) cần poll cho tới khi 1
@@ -577,6 +591,80 @@ test('startApp(): uiHost mặc định fallback về host khi config không set 
       await app.stop();
     }
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Story 2.7: wiring thật của `heartbeatPort`/timer `checkHeartbeatTimeouts()`
+// tại composition root (Code Map: "main.ts:275-282,318-323 -- wire
+// channelStateService làm heartbeatPort; thêm setInterval(...) 1000ms"). Dùng
+// `FakeClock` (config override có sẵn) để không phải chờ đủ 15000ms thật -
+// timer setInterval THẬT (1000ms wall-clock) vẫn tự chạy độc lập và gọi
+// `checkHeartbeatTimeouts()` bằng đúng FakeClock này, nên chỉ cần advance()
+// clock qua ngưỡng rồi đợi vài trăm ms/vài giây wall-clock cho tick kế tiếp.
+test('startApp(): wiring thật heartbeatPort + timer 1000ms -> heartbeat WS thật im lặng đủ HEARTBEAT_TIMEOUT_MS (FakeClock) -> WS UI client thật nhận channel-state-change machine-offline', async () => {
+  const { dir, filePath } = writeValidRegistryFile(); // chan-1, grid_position=0
+  const clock = new FakeClock();
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+    clock,
+  });
+
+  try {
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string; channel_id?: string; display_state?: string; sub_type?: string }[] = [];
+    uiWs.on('message', (data) => {
+      uiMessages.push(JSON.parse(data.toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+    await waitUntil(() => uiMessages.some((m) => m.type === 'registry-snapshot'));
+
+    const telemetryWs = new WebSocket(`ws://127.0.0.1:${app.ws.port}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      telemetryWs.once('open', resolve);
+      telemetryWs.once('error', reject);
+    });
+
+    telemetryWs.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-1',
+        timestamp: new Date().toISOString(),
+        event_type: 'heartbeat',
+        payload: {},
+      })
+    );
+    // Đợi ngắn để chắc chắn heartbeat đã được xử lý (lastHeartbeatAt ghi
+    // nhận) TRƯỚC khi advance() clock - tránh race hiếm giữa gửi WS message
+    // (async network) và bước advance() ngay sau đây.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    clock.advance(16000); // > HEARTBEAT_TIMEOUT_MS (15000)
+
+    await waitUntil(
+      () => uiMessages.some((m) => m.type === 'channel-state-change' && m.sub_type === 'machine-offline'),
+      5000
+    );
+    const machineOfflineMsg = uiMessages.find(
+      (m) => m.type === 'channel-state-change' && m.sub_type === 'machine-offline'
+    );
+    assert.equal(machineOfflineMsg?.channel_id, 'chan-1');
+    assert.equal(machineOfflineMsg?.display_state, 'critical');
+
+    telemetryWs.close();
+    uiWs.close();
+  } finally {
+    await app.stop();
     rmSync(dir, { recursive: true, force: true });
   }
 });

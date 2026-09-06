@@ -14,6 +14,7 @@ import { computeAudioLevelFixture } from '../src/fixtures/channelAudioLevels';
 // Vitest hoist `vi.mock(...)` lên TRƯỚC mọi import trong cùng file (kể cả
 // import này) - Page sẽ dùng đúng bản mock `connectUiWsClient` khai báo dưới.
 import Page from '../app/page';
+import { connectUiWsClient } from '../src/services/uiWsClient';
 
 vi.mock('../src/services/uiWsClient', () => ({
   connectUiWsClient: vi.fn((_url: string, store: ChannelStore) => {
@@ -124,5 +125,111 @@ describe('Page - audioLevel interval wiring (Story 2.5, code review patch #3)', 
     // Sau unmount, tiếp tục advance timers KHÔNG được gây lỗi (interval đã
     // clearInterval trong cleanup của useEffect).
     expect(() => vi.advanceTimersByTime(3000)).not.toThrow();
+  });
+});
+
+// Story 2.7: ConnectionBanner + grid-overlay wiring end-to-end tại page.tsx.
+// AC: "banner+overlay hiện ngay khi disconnected; ẩn ngay khi reconnect,
+// không cần reload".
+describe('Page - ConnectionBanner + grid-overlay (Story 2.7)', () => {
+  it('connectionStatus mặc định "connected" (mock không gọi setConnectionStatus) -> KHÔNG render banner/grid-overlay', () => {
+    render(<Page />);
+    expect(screen.queryByTestId('connection-banner')).toBeNull();
+    expect(screen.queryByTestId('grid-overlay')).toBeNull();
+    cleanup();
+  });
+
+  it('store.setConnectionStatus("disconnected") (mirror uiWsClient onclose) -> banner + grid-overlay hiện NGAY', () => {
+    const lastConnectedIso = '2026-09-06T08:15:00.000Z';
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+      ]);
+      store.setConnectionStatus('connected', lastConnectedIso);
+      store.setConnectionStatus('disconnected');
+      return () => {};
+    });
+
+    render(<Page />);
+
+    // `ConnectionBanner` hiện giờ ĐỊA PHƯƠNG (wall-clock) - tính kỳ vọng qua
+    // chính `Date` API để không phụ thuộc múi giờ máy chạy test (mirror
+    // `ConnectionBanner.test.tsx`).
+    const expected = new Date(lastConnectedIso);
+    const expectedText = `${String(expected.getHours()).padStart(2, '0')}:${String(expected.getMinutes()).padStart(2, '0')}`;
+
+    expect(screen.getByTestId('connection-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('connection-banner')).toHaveTextContent(expectedText);
+    expect(screen.getByTestId('grid-overlay')).toBeInTheDocument();
+    cleanup();
+  });
+
+  it('store.setConnectionStatus("connected") sau khi đã "disconnected" (mirror reconnect thành công) -> banner/grid-overlay ẩn NGAY, không cần reload/re-render thủ công', () => {
+    let capturedStore: ChannelStore | undefined;
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      capturedStore = store;
+      store.setConnectionStatus('disconnected');
+      return () => {};
+    });
+
+    render(<Page />);
+    expect(screen.getByTestId('connection-banner')).toBeInTheDocument();
+
+    act(() => {
+      capturedStore?.setConnectionStatus('connected', '2026-09-06T09:00:00.000Z');
+    });
+
+    expect(screen.queryByTestId('connection-banner')).toBeNull();
+    expect(screen.queryByTestId('grid-overlay')).toBeNull();
+    cleanup();
+  });
+});
+
+// Story 2.7: `channelMachineOffline` wiring - badge riêng nhưng vẫn style
+// critical, ĐỘC LẬP connectionStatus/channelDisplayStates.
+describe('Page - channelMachineOffline badge (Story 2.7)', () => {
+  it('channel-state-change với subType="machine-offline" -> cell tương ứng nhận data-sub-type, badge "✕ TRUNG TÂM LỖI", vẫn style critical', () => {
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+      ]);
+      store.applyChannelSeen('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'critical', 'machine-offline');
+      return () => {};
+    });
+
+    render(<Page />);
+
+    const cell = screen.getByTestId('channel-grid-cell-chan-1');
+    expect(cell).toHaveAttribute('data-display-state', 'critical');
+    expect(cell).toHaveAttribute('data-sub-type', 'machine-offline');
+    expect(screen.getByTestId('alert-badge-chan-1')).toHaveTextContent('✕ TRUNG TÂM LỖI');
+    cleanup();
+  });
+
+  it('heartbeat resume (channel-state-change KHÔNG subType) sau machine-offline -> badge trả về đúng trạng thái telemetry thật, hết data-sub-type', () => {
+    let capturedStore: ChannelStore | undefined;
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      capturedStore = store;
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+      ]);
+      store.applyChannelSeen('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'critical', 'machine-offline');
+      return () => {};
+    });
+
+    render(<Page />);
+    expect(screen.getByTestId('channel-grid-cell-chan-1')).toHaveAttribute('data-sub-type', 'machine-offline');
+
+    act(() => {
+      capturedStore?.applyChannelDisplayStateChange('chan-1', 'warning');
+    });
+
+    const cell = screen.getByTestId('channel-grid-cell-chan-1');
+    expect(cell).toHaveAttribute('data-display-state', 'warning');
+    expect(cell).not.toHaveAttribute('data-sub-type');
+    expect(screen.getByTestId('alert-badge-chan-1')).toHaveTextContent('⚠ ABR');
+    cleanup();
   });
 });

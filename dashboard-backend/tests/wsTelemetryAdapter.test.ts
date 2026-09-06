@@ -10,6 +10,7 @@ import net from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/adapters/inbound/wsTelemetryAdapter.js';
 import type { TelemetryInboundPort, TelemetryEvent } from '../src/ports/TelemetryInboundPort.js';
+import type { HeartbeatInboundPort } from '../src/ports/HeartbeatInboundPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
 
 class FakeTelemetryPort implements TelemetryInboundPort {
@@ -25,6 +26,20 @@ class FakeTelemetryPort implements TelemetryInboundPort {
 class ThrowingTelemetryPort implements TelemetryInboundPort {
   handleTelemetry(): void {
     throw new Error('lỗi giả lập từ core');
+  }
+}
+
+// Story 2.7: fake `HeartbeatInboundPort` (mirror `FakeTelemetryPort`).
+class FakeHeartbeatPort implements HeartbeatInboundPort {
+  calls: { channelId: string; timestamp: string }[] = [];
+  handleHeartbeat(channelId: string, timestamp: string): void {
+    this.calls.push({ channelId, timestamp });
+  }
+}
+
+class ThrowingHeartbeatPort implements HeartbeatInboundPort {
+  handleHeartbeat(): void {
+    throw new Error('lỗi giả lập từ core (heartbeat)');
   }
 }
 
@@ -55,15 +70,17 @@ function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
 
 async function startTestServer(validBearerTokens: ReadonlySet<string>) {
   const telemetryPort = new FakeTelemetryPort();
+  const heartbeatPort = new FakeHeartbeatPort();
   const logger = new FakeLogger();
   const handle: WsTelemetryAdapterHandle = await startWsTelemetryAdapter({
     port: 0,
     host: '127.0.0.1',
     validBearerTokens,
     telemetryPort,
+    heartbeatPort,
     logger,
   });
-  return { telemetryPort, logger, handle };
+  return { telemetryPort, heartbeatPort, logger, handle };
 }
 
 test('Bearer-token đúng -> accept connection, telemetry hợp lệ được forward vào core', async () => {
@@ -185,7 +202,7 @@ test('event_type ngoài tập đóng (vd "bitrate" của ABR) bị bỏ qua, kh�
   }
 });
 
-test('event_type khác trong tập đóng nhưng không phải telemetry (vd heartbeat) bị bỏ qua có chủ đích, không throw', async () => {
+test('event_type khác trong tập đóng nhưng không phải telemetry/heartbeat (vd ack-command) bị bỏ qua có chủ đích, không throw', async () => {
   const { telemetryPort, handle } = await startTestServer(new Set(['test-bearer-token']));
   try {
     const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, {
@@ -199,16 +216,16 @@ test('event_type khác trong tập đóng nhưng không phải telemetry (vd hea
     ws.send(
       JSON.stringify({
         schema_version: 1,
-        channel_id: 'chan-hb',
+        channel_id: 'chan-ack',
         timestamp: '2026-09-03T00:00:00.000Z',
-        event_type: 'heartbeat',
+        event_type: 'ack-command',
         payload: {},
       })
     );
     ws.send(
       JSON.stringify({
         schema_version: 1,
-        channel_id: 'chan-hb',
+        channel_id: 'chan-ack',
         timestamp: '2026-09-03T00:00:00.000Z',
         event_type: 'telemetry',
         payload: { bitrate_kbps: 500, rtt_ms: 5, connection_state: 'CONNECTED', audio_level: [-1, -1] },
@@ -217,7 +234,137 @@ test('event_type khác trong tập đóng nhưng không phải telemetry (vd hea
 
     await waitUntil(() => telemetryPort.events.length > 0);
     assert.equal(telemetryPort.events.length, 1);
-    assert.equal(telemetryPort.events[0]?.channelId, 'chan-hb');
+    assert.equal(telemetryPort.events[0]?.channelId, 'chan-ack');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+// --- Story 2.7: event_type=heartbeat forward qua HeartbeatInboundPort ---
+
+test('event_type=heartbeat -> forward channel_id + timestamp qua heartbeatPort, KHÔNG chạm telemetryPort', async () => {
+  const { telemetryPort, heartbeatPort, handle } = await startTestServer(new Set(['test-bearer-token']));
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, {
+      headers: { Authorization: 'Bearer test-bearer-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-hb',
+        timestamp: '2026-09-06T00:00:00.000Z',
+        event_type: 'heartbeat',
+        payload: {},
+      })
+    );
+
+    await waitUntil(() => heartbeatPort.calls.length > 0);
+    assert.equal(heartbeatPort.calls.length, 1);
+    assert.equal(heartbeatPort.calls[0]?.channelId, 'chan-hb');
+    assert.equal(heartbeatPort.calls[0]?.timestamp, '2026-09-06T00:00:00.000Z');
+    assert.equal(telemetryPort.events.length, 0, 'heartbeat KHÔNG được forward qua telemetryPort');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('event_type=heartbeat thiếu channel_id -> không forward, log envelope_invalid, connection vẫn sống', async () => {
+  const { heartbeatPort, logger, handle } = await startTestServer(new Set(['test-bearer-token']));
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, {
+      headers: { Authorization: 'Bearer test-bearer-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        // channel_id cố ý thiếu
+        timestamp: '2026-09-06T00:00:00.000Z',
+        event_type: 'heartbeat',
+        payload: {},
+      })
+    );
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-hb-followup',
+        timestamp: '2026-09-06T00:00:01.000Z',
+        event_type: 'heartbeat',
+        payload: {},
+      })
+    );
+
+    await waitUntil(() => heartbeatPort.calls.length > 0);
+    assert.equal(heartbeatPort.calls.length, 1);
+    assert.equal(heartbeatPort.calls[0]?.channelId, 'chan-hb-followup');
+    assert.ok(logger.events.some((e) => e.event_type === 'envelope_invalid'));
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('heartbeatPort.handleHeartbeat() throw (bug giả lập ở core) -> log heartbeat_handler_error, KHÔNG crash, connection vẫn sống', async () => {
+  const telemetryPort = new FakeTelemetryPort();
+  const heartbeatPort = new ThrowingHeartbeatPort();
+  const logger = new FakeLogger();
+  const handle = await startWsTelemetryAdapter({
+    port: 0,
+    host: '127.0.0.1',
+    validBearerTokens: new Set(['test-bearer-token']),
+    telemetryPort,
+    heartbeatPort,
+    logger,
+  });
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, {
+      headers: { Authorization: 'Bearer test-bearer-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-hb-throw',
+        timestamp: '2026-09-06T00:00:00.000Z',
+        event_type: 'heartbeat',
+        payload: {},
+      })
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'heartbeat_handler_error'));
+    const errEvent = logger.events.find((e) => e.event_type === 'heartbeat_handler_error');
+    assert.equal(errEvent?.channel_id, 'chan-hb-throw');
+    assert.match(errEvent?.reason ?? '', /lỗi giả lập từ core \(heartbeat\)/);
+
+    // Connection vẫn sống - telemetry sau đó vẫn xử lý bình thường.
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-hb-throw-2',
+        timestamp: '2026-09-06T00:00:00.000Z',
+        event_type: 'telemetry',
+        payload: { bitrate_kbps: 1000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [0, 0] },
+      })
+    );
+    await waitUntil(() => telemetryPort.events.length > 0);
 
     ws.close();
   } finally {
@@ -394,12 +541,14 @@ test('Envelope không phải JSON hợp lệ -> log lỗi, không throw, connect
 
 test('handleTelemetry() throw (bug giả lập ở core) -> log telemetry_handler_error, KHÔNG crash, connection vẫn sống', async () => {
   const telemetryPort = new ThrowingTelemetryPort();
+  const heartbeatPort = new FakeHeartbeatPort();
   const logger = new FakeLogger();
   const handle = await startWsTelemetryAdapter({
     port: 0,
     host: '127.0.0.1',
     validBearerTokens: new Set(['test-bearer-token']),
     telemetryPort,
+    heartbeatPort,
     logger,
   });
   try {

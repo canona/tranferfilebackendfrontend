@@ -1,0 +1,31 @@
+/*
+ * DESIGN.md's `connection-banner`: background {colors.state-critical}, text
+ * {colors.on-state-critical}, typography body, "toàn chiều rộng, cố định đầu
+ * màn hình, trên tất cả các lớp khác kể cả detail-panel". Dùng tông nghiêm
+ * trọng nhất hệ thống (state-critical) vì đây là mất HOÀN TOÀN khả năng giám
+ * sát (event stream chết), không phải cảnh báo của riêng 1 kênh.
+ */
+
+.banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Trên tất cả layer khác kể cả detail-panel (Epic 3, chưa tồn tại ở story
+     này) - z-index cao hẳn so với `.badge` (2)/`.gridOverlay` để không có
+     component nào tương lai vô tình che khuất banner. */
+  z-index: 1000;
+  box-sizing: border-box;
+  background: var(--color-state-critical);
+  color: var(--color-on-state-critical);
+  font-family: var(--font-family-base);
+  font-size: var(--font-body-size);
+  font-weight: var(--font-body-weight);
+  line-height: var(--font-body-line-height);
+  padding: var(--spacing-2) var(--spacing-4);
+  text-align: center;
+  /* Elevation & Depth (DESIGN.md): "Phẳng ... Không dùng shadow". Epic 2
+     context: "Không animation/transition gây xao nhãng khi đổi trạng thái" -
+     banner hiện/ẩn tức thời (component chỉ render khi disconnected), không
+     fade/slide. */
+}

@@ -43,6 +43,13 @@ const BADGE_LABEL: Record<DisplayState, string> = {
   critical: '✕ MẤT TÍN HIỆU',
 };
 
+// Story 2.7 (Boundaries): "khi effectiveDisplayState==='critical' VÀ
+// subType==='machine-offline', badge dùng label riêng (khác '✕ MẤT TÍN HIỆU')
+// nhưng NGUYÊN style/token critical" - phân biệt rõ "máy trung tâm treo/chết"
+// (lỗi phần cứng/phần mềm tại trung tâm) với "mất tín hiệu SRT" thường
+// (RECONNECTING/REJECTED), dù cả 2 cùng hiển thị màu critical.
+const MACHINE_OFFLINE_BADGE_LABEL = '✕ TRUNG TÂM LỖI';
+
 // `noUncheckedIndexedAccess` khiến truy cập qua index signature của CSS
 // Modules (`styles.xyz`) trả về `string | undefined` dù luôn có giá trị thật
 // (class được định nghĩa cứng trong `ChannelGridCell.module.css`) - fallback
@@ -134,6 +141,10 @@ export interface ChannelGridCellProps {
   // page.tsx). Thiếu (undefined) -> không render vu-meter (component vẫn hoạt
   // động bình thường không có prop này, tương thích ngược với test cũ).
   audioLevel?: readonly [number, number];
+  // Story 2.7: CHỈ có giá trị 'machine-offline' (Never: "Render/xử lý subType
+  // 'config-or-security-suspected' trên UI" - vẫn treo Ask First từ Story
+  // 2.4/2.6, ngoài scope). Chỉ có hiệu lực khi effectiveDisplayState==='critical'.
+  subType?: 'machine-offline';
 }
 
 export function ChannelGridCell({
@@ -143,11 +154,15 @@ export function ChannelGridCell({
   loaded,
   displayState,
   audioLevel,
+  subType,
 }: ChannelGridCellProps) {
   const { row, col } = gridPositionToRowCol(gridPosition);
   // `displayState` chỉ có hiệu lực khi đã loaded (Boundaries) - undefined khi
   // skeleton hoặc khi thiếu displayState dù đã loaded (fallback loaded-neutral).
   const effectiveDisplayState = loaded ? displayState : undefined;
+  // Story 2.7: chỉ thực sự "machine-offline" khi ĐANG hiển thị critical (badge
+  // riêng không có ý nghĩa gì ở ok/warning/loaded-neutral/skeleton).
+  const isMachineOffline = effectiveDisplayState === 'critical' && subType === 'machine-offline';
 
   const cellStateClass = !loaded
     ? styles.skeleton
@@ -174,6 +189,7 @@ export function ChannelGridCell({
       data-grid-position={gridPosition}
       data-state={loaded ? 'loaded-neutral' : 'skeleton'}
       data-display-state={effectiveDisplayState}
+      data-sub-type={isMachineOffline ? 'machine-offline' : undefined}
     >
       {/* I/O matrix: "displayState=undefined (loaded-neutral) -> KHÔNG render
           vùng thumbnail (tránh ngụ ý 'ok' khi backend chưa phân loại)" -
@@ -254,10 +270,13 @@ export function ChannelGridCell({
 
       {effectiveDisplayState ? (
         <span
+          // Story 2.7 (Boundaries): "vẫn NGUYÊN style/token critical" - class
+          // luôn tra theo `effectiveDisplayState` (không đổi khi machine-offline),
+          // CHỈ label text khác.
           className={`${styles.badge} ${BADGE_CLASS[effectiveDisplayState]}`}
           data-testid={`alert-badge-${channelId}`}
         >
-          {BADGE_LABEL[effectiveDisplayState]}
+          {isMachineOffline ? MACHINE_OFFLINE_BADGE_LABEL : BADGE_LABEL[effectiveDisplayState]}
         </span>
       ) : null}
     </div>

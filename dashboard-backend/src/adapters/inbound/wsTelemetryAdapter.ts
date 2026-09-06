@@ -16,6 +16,7 @@ import { createServer, type Server as HttpServer, type IncomingMessage } from 'n
 import type { Socket } from 'node:net';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { CONNECTION_STATES, type TelemetryInboundPort, type TelemetryEvent, type ConnectionState } from '../../ports/TelemetryInboundPort.js';
+import type { HeartbeatInboundPort } from '../../ports/HeartbeatInboundPort.js';
 import type { Logger } from '../../logging/logger.js';
 
 // Consistency Conventions / AD-30: tập đóng event_type - thêm giá trị mới
@@ -46,6 +47,9 @@ export interface WsTelemetryAdapterOptions {
   // tự khai báo trong envelope) - chỉ cần biết token có hợp lệ hay không.
   validBearerTokens: ReadonlySet<string>;
   telemetryPort: TelemetryInboundPort;
+  // Story 2.7: port MỚI cho `event_type=heartbeat` (trước đây bị bỏ qua im
+  // lặng trong tập đóng - xem nhánh `eventType !== 'telemetry'` bên dưới).
+  heartbeatPort: HeartbeatInboundPort;
   logger: Logger;
 }
 
@@ -98,7 +102,7 @@ function rawDataToString(data: RawData): string {
 }
 
 export function startWsTelemetryAdapter(options: WsTelemetryAdapterOptions): Promise<WsTelemetryAdapterHandle> {
-  const { validBearerTokens, telemetryPort, logger } = options;
+  const { validBearerTokens, telemetryPort, heartbeatPort, logger } = options;
 
   const httpServer: HttpServer = createServer((_req, res) => {
     res.writeHead(404).end();
@@ -136,7 +140,7 @@ export function startWsTelemetryAdapter(options: WsTelemetryAdapterOptions): Pro
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const source = req.socket.remoteAddress ?? '';
     ws.on('message', (data: RawData) => {
-      handleMessage(rawDataToString(data), { telemetryPort, logger, source });
+      handleMessage(rawDataToString(data), { telemetryPort, heartbeatPort, logger, source });
     });
     ws.on('error', (err: Error) => {
       logger.log({ channel_id: '', event_type: 'ws_disconnect', source, reason: err.message });
@@ -194,6 +198,7 @@ export function startWsTelemetryAdapter(options: WsTelemetryAdapterOptions): Pro
 
 interface MessageContext {
   telemetryPort: TelemetryInboundPort;
+  heartbeatPort: HeartbeatInboundPort;
   logger: Logger;
   source: string;
 }
@@ -239,11 +244,44 @@ function handleMessage(raw: string, ctx: MessageContext): void {
     return;
   }
 
+  if (eventType === 'heartbeat') {
+    // Story 2.7: forward `channel_id` + timestamp envelope qua
+    // `HeartbeatInboundPort` MỚI (trước đây rơi vào nhánh "bỏ qua có chủ đích"
+    // bên dưới cùng snapshot/alert/ack-command/handshake_*). Payload heartbeat
+    // không có field bắt buộc nào khác ngoài envelope chung (Epic 2 context:
+    // "event_type=heartbeat, mỗi 5s, độc lập connection_state") - chỉ cần
+    // channel_id hợp lệ, KHÔNG cần parse `payload`.
+    if (!envelopeChannelId) {
+      ctx.logger.log({
+        channel_id: '',
+        event_type: 'envelope_invalid',
+        source: ctx.source,
+        reason: 'heartbeat envelope thiếu channel_id',
+      });
+      return;
+    }
+    const heartbeatTimestamp = typeof envelope.timestamp === 'string' ? envelope.timestamp : new Date().toISOString();
+    // Code review (mirror `telemetryPort.handleTelemetry` bên dưới): không để
+    // 1 exception từ implementation của `HeartbeatInboundPort` thoát ra khỏi
+    // handler 'message', crash cả tiến trình.
+    try {
+      ctx.heartbeatPort.handleHeartbeat(envelopeChannelId, heartbeatTimestamp);
+    } catch (err) {
+      ctx.logger.log({
+        channel_id: envelopeChannelId,
+        event_type: 'heartbeat_handler_error',
+        source: ctx.source,
+        reason: (err as Error).message,
+      });
+    }
+    return;
+  }
+
   if (eventType !== 'telemetry') {
-    // Trong tập đóng nhưng KHÔNG phải telemetry (snapshot/alert/ack-command/
-    // heartbeat/handshake_*) - thuộc scope story sau (Never: AckCommandPort/
-    // HistoryPort thật ở Epic 3, snapshot cache ở Story 2.5, heartbeat/
-    // machine-offline ở Story 2.7...). Bỏ qua có chủ đích, không throw.
+    // Trong tập đóng nhưng KHÔNG phải telemetry/heartbeat (snapshot/alert/
+    // ack-command/handshake_*) - thuộc scope story sau (Never: AckCommandPort/
+    // HistoryPort thật ở Epic 3, snapshot cache ở Story 2.5...). Bỏ qua có chủ
+    // đích, không throw.
     return;
   }
 
