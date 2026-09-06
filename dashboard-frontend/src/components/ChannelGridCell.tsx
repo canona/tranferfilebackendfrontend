@@ -95,12 +95,12 @@ const AUDIO_LEVEL_PEAK_MARK_PERCENT = dbfsToPercent(AUDIO_LEVEL_PEAK_MARK_DBFS);
 const VU_METER_SIDES = ['left', 'right'] as const;
 type VuMeterSide = (typeof VU_METER_SIDES)[number];
 
-// Design Notes: "dùng lại kiểu hash chuỗi thuần (như channelDisplayStates.ts)
-// để chọn 1 màu/gradient cố định theo channelId - chỉ mục đích phân biệt trực
-// quan các ô, KHÔNG mô phỏng ảnh camera thật." Code review [patch, finding
-// #6]: thuật toán hash dùng chung `fixtures/hashString.ts` (trước đây định
-// nghĩa lại y hệt tại đây - copy-paste 3 nơi độc lập, rủi ro lệch hành vi nếu
-// chỉ sửa 1 bản).
+// Design Notes: "dùng lại kiểu hash chuỗi thuần (mirror `channelDisplayStates.ts`
+// cũ của Story 2.4, đã xoá ở Story 2.6) để chọn 1 màu/gradient cố định theo
+// channelId - chỉ mục đích phân biệt trực quan các ô, KHÔNG mô phỏng ảnh
+// camera thật." Code review [patch, finding #6]: thuật toán hash dùng chung
+// `fixtures/hashString.ts` (trước đây định nghĩa lại y hệt tại đây -
+// copy-paste 3 nơi độc lập, rủi ro lệch hành vi nếu chỉ sửa 1 bản).
 //
 // Gradient tĩnh 2 tông hue lệch nhau, xác định hoàn toàn theo channelId - chỉ
 // để phân biệt ô bằng mắt (Boundaries: "KHÔNG phải ảnh JPEG thật"), không

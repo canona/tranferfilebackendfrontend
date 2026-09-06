@@ -33,14 +33,17 @@ interface ChannelSeenMessage {
 
 // Story 2.6: envelope nhận từ `wsUiAdapter.ts` - mirror snake_case shape của
 // kênh này (KHÔNG dùng envelope schema_version/event_type đóng của
-// transport-core, lý do đã ghi rõ trong comment đầu file). `sub_type` chỉ
-// mang dữ liệu qua wire (Never: không render/xử lý subType trên UI ở story
-// này) - field optional, không dùng ở store/UI.
+// transport-core, lý do đã ghi rõ trong comment đầu file). `sub_type` chỉ có
+// giá trị khi backend chốt `REJECTED` (AD-9: "nghi vấn cấu hình/bảo mật" -
+// khác sub-type với mất tín hiệu `RECONNECTING` thường, dù cả 2 cùng hiển thị
+// `critical`) - mirror đúng literal của backend (`AlertOutboundPort.ts`'s
+// `ChannelStateChange['subType']`). Field chỉ mang dữ liệu qua wire (Never:
+// không render/xử lý subType trên UI ở story này) - không dùng ở store/UI.
 interface ChannelStateChangeMessage {
   type: 'channel-state-change';
   channel_id: string;
   display_state: DisplayState;
-  sub_type?: string;
+  sub_type?: 'config-or-security-suspected';
   timestamp: string;
 }
 
@@ -87,6 +90,15 @@ function isValidDisplayState(value: unknown): value is DisplayState {
   return value === 'ok' || value === 'warning' || value === 'critical';
 }
 
+// Code review [patch]: mirror `isValidDisplayState` ở trên - `sub_type` chỉ
+// có đúng 1 literal hợp lệ (`'config-or-security-suspected'`), khớp backend.
+// Trước đây chỉ check `typeof === 'string'`, chấp nhận bất kỳ chuỗi lạ nào
+// lọt qua tới message đã được coi hợp lệ; giờ giá trị lạ khiến TOÀN BỘ message
+// bị bỏ qua âm thầm, cùng tinh thần với `display_state` lạ.
+function isValidSubType(value: unknown): value is 'config-or-security-suspected' {
+  return value === undefined || value === 'config-or-security-suspected';
+}
+
 function isChannelStateChangeMessage(value: unknown): value is ChannelStateChangeMessage {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -95,7 +107,7 @@ function isChannelStateChangeMessage(value: unknown): value is ChannelStateChang
     typeof v.channel_id === 'string' &&
     isValidDisplayState(v.display_state) &&
     typeof v.timestamp === 'string' &&
-    (v.sub_type === undefined || typeof v.sub_type === 'string')
+    isValidSubType(v.sub_type)
   );
 }
 

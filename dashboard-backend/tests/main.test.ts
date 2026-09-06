@@ -389,8 +389,19 @@ test('createCompositeAlertPort: ports rỗng ([]) -> publishStateChange no-op, K
 // gap cần lấp). `debounceMs: 10` (override mới, patch #5) để không phải chờ
 // 5s thật - gửi CÙNG 1 candidate 2 lần, cách nhau đủ lâu hơn debounceMs, để
 // `channelState.ts` chốt candidate và gọi `alertPort.publishStateChange`.
-test('startApp(): wiring thật composite alertPort -> backend chốt trạng thái mới qua telemetry WS thật -> WS UI client thật nhận đúng channel-state-change broadcast', async () => {
+//
+// Code review [patch #9]: trước đây test này chỉ verify nhánh WS UI của
+// composite (`ui`) qua client `ws` thật, KHÔNG verify nhánh `logAlertPort`
+// (audit log, AC #3: "LogAlertAdapter vẫn ghi như trước") qua đúng dòng wiring
+// thật `main.ts:263` - nếu dòng đó bị sửa nhầm bớt `logAlertPort` khỏi mảng,
+// không test nào phát hiện được (mọi test khác dùng fakes, không chạm dòng
+// wiring thật này). `logger` override mới (`startApp`'s config) cho phép bơm
+// `FakeLogger` để quan sát trực tiếp `alert_state_change` do `LogAlertAdapter`
+// ghi - đóng gap verification mà không đổi hành vi production (logger mặc
+// định vẫn `defaultLogger()` khi omit).
+test('startApp(): wiring thật composite alertPort -> backend chốt trạng thái mới qua telemetry WS thật -> WS UI client thật nhận đúng channel-state-change broadcast, ĐỒNG THỜI LogAlertAdapter vẫn ghi audit log (AC #3, không hồi quy Story 2.1)', async () => {
   const { dir, filePath } = writeValidRegistryFile(); // chan-1, baseline_kbps=4000, grid_position=0
+  const logger = new FakeLogger();
   const app = await startApp({
     port: 0,
     host: '127.0.0.1',
@@ -399,6 +410,7 @@ test('startApp(): wiring thật composite alertPort -> backend chốt trạng th
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
     debounceMs: 10,
+    logger,
   });
 
   try {
@@ -447,6 +459,84 @@ test('startApp(): wiring thật composite alertPort -> backend chốt trạng th
     const stateChange = uiMessages.find((m) => m.type === 'channel-state-change');
     assert.equal(stateChange?.channel_id, 'chan-1');
     assert.equal(stateChange?.display_state, 'ok');
+
+    // Code review [patch #9]: nhánh `logAlertPort` của ĐÚNG composite thật ở
+    // `main.ts:263` - nếu dòng wiring đó chỉ còn `[ui]` (bớt logAlertPort),
+    // `channel-state-change` phía trên vẫn broadcast bình thường (giả finding
+    // này pass) nhưng assertion dưới đây sẽ fail, đúng gap cần lấp.
+    const auditEvent = logger.events.find((e) => e.event_type === 'alert_state_change');
+    assert.ok(auditEvent, 'LogAlertAdapter phải nhận publishStateChange qua đúng dòng wiring composite thật, không chỉ nhánh WS UI');
+    assert.equal(auditEvent?.channel_id, 'chan-1');
+    assert.ok(auditEvent?.reason?.includes('display_state=ok'));
+
+    telemetryWs.close();
+    uiWs.close();
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Code review [patch #10]: `debounceMs`/`clock` (override test-only, patch #5)
+// chỉ có comment khẳng định "KHÔNG đổi behavior mặc định production" khi
+// omit, không có test nào bảo vệ khẳng định đó - nếu 1 refactor tương lai vô
+// tình đổi `config?.debounceMs ?? ...` thành 1 giá trị mặc định khác 5000ms
+// thật (hoặc luôn truyền 1 số nhỏ), test này phải fail. Không chờ đủ 5s thật -
+// chỉ cần verify debounce KHÔNG NGẮN bất thường: gửi cùng 1 candidate 2 lần
+// cách nhau rất ngắn (50ms, << 5000ms) rồi đợi thêm 1 khoảng ngắn (200ms) -
+// nếu default vẫn đúng 5000ms, `channel-state-change` CHƯA thể xuất hiện.
+test('startApp(): omit debounceMs/clock trong config -> vẫn dùng default debounceMs=5000ms thật (KHÔNG bị rút ngắn ngoài ý muốn)', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+    // debounceMs/clock KHÔNG truyền - đúng kịch bản production thật.
+  });
+
+  try {
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string }[] = [];
+    uiWs.on('message', (data) => {
+      uiMessages.push(JSON.parse(data.toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+    await waitUntil(() => uiMessages.some((m) => m.type === 'registry-snapshot'));
+
+    const telemetryWs = new WebSocket(`ws://127.0.0.1:${app.ws.port}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      telemetryWs.once('open', resolve);
+      telemetryWs.once('error', reject);
+    });
+
+    const sendTelemetry = () =>
+      telemetryWs.send(
+        JSON.stringify({
+          schema_version: 1,
+          channel_id: 'chan-1',
+          timestamp: new Date().toISOString(),
+          event_type: 'telemetry',
+          payload: { bitrate_kbps: 4000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [-20, -18] },
+        })
+      );
+
+    sendTelemetry();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    sendTelemetry();
+    await new Promise((resolve) => setTimeout(resolve, 200)); // << 5000ms mặc định thật
+
+    assert.ok(
+      !uiMessages.some((m) => m.type === 'channel-state-change'),
+      'default debounceMs phải ~5000ms thật (không bị rút ngắn) - 250ms tổng cộng không đủ để commit'
+    );
 
     telemetryWs.close();
     uiWs.close();

@@ -359,3 +359,39 @@ test('frontend connect MUỘN (sau khi backend đã chốt trạng thái vài k�
     await handle.close();
   }
 });
+
+// Code review [patch #11]: mirror case "WS UI client mất kết nối" (dòng
+// ~218) cho `publishStateChange` - `send()` (dùng chung cho cả 3 loại
+// message) chỉ gửi khi `ws.readyState === OPEN` (Boundaries), nhưng trước đây
+// chưa có case nào exercise guard này qua đúng message `channel-state-change`
+// mới của Story 2.6 - 1 client đã đóng vẫn còn trong `wss.clients` trong 1
+// khoảng ngắn TRƯỚC KHI 'close' event của server kịp fire/dọn.
+test('publishStateChange sau khi 1 client đã đóng kết nối -> KHÔNG throw, client khác vẫn nhận đúng broadcast', async () => {
+  const { logger, handle } = await startTestServer(makeEntries(2));
+  try {
+    const wsA = await openClient(handle.port);
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'ui_ws_connect'));
+
+    wsA.close();
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'ui_ws_disconnect'));
+
+    const { ws: wsB, messages: messagesB } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messagesB.length > 0); // chờ registry-snapshot trước
+
+    assert.doesNotThrow(() =>
+      handle.publishStateChange({ channelId: 'chan-0', displayState: 'critical', timestamp: '2026-09-06T00:00:00.000Z' })
+    );
+
+    await waitUntil(() => messagesB.length > 1);
+    assert.deepEqual(messagesB[1], {
+      type: 'channel-state-change',
+      channel_id: 'chan-0',
+      display_state: 'critical',
+      timestamp: '2026-09-06T00:00:00.000Z',
+    });
+
+    wsB.close();
+  } finally {
+    await handle.close();
+  }
+});

@@ -34,7 +34,8 @@ export default function Page() {
 
   // Story 2.5: fixture audioLevel dao động theo thời gian (Boundaries: "hàm
   // thuần, độc lập hoàn toàn displayState/debounce" - đây là state RIÊNG,
-  // không dùng chung useEffect/useMemo với channelDisplayStates ở trên).
+  // không dùng chung useEffect/useMemo với `state.channelDisplayStates` (Story
+  // 2.6: đọc thẳng từ store, không còn tính qua fixture/useMemo local nào).
   // `elapsedSeconds` tự tính từ mốc mount (Date.now() CHỈ đọc ở page.tsx,
   // KHÔNG bên trong computeAudioLevelFixture - Design Notes) qua interval
   // ~300ms, cleanup khi unmount.

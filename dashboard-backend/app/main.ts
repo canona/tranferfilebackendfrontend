@@ -145,8 +145,19 @@ export async function startApp(config?: {
   // behavior mặc định production).
   debounceMs?: number;
   clock?: Clock;
+  // Code review [patch]: override cho test - `startApp()` trước đây LUÔN dùng
+  // `defaultLogger()` singleton nội bộ, không có seam nào để 1 test integration
+  // thật (start cả `startApp()`, không phải fake) quan sát được `LogAlertAdapter`
+  // có thực sự nhận `publishStateChange` qua đúng dòng wiring composite
+  // (`createCompositeAlertPort([logAlertPort, ui], logger)`) hay không - lỗ
+  // hổng verification: nếu dòng wiring đó bị sửa nhầm bớt `logAlertPort`, âm
+  // thầm tắt luôn audit log (Boundaries: "giữ nguyên LogAlertAdapter ... broadcast
+  // WS là THÊM, không thay thế"), không test nào phát hiện được. Mặc định
+  // KHÔNG đổi (`config?.logger ?? defaultLogger()`) - production luôn dùng
+  // singleton như cũ.
+  logger?: Logger;
 }): Promise<AppHandle> {
-  const logger = defaultLogger();
+  const logger = config?.logger ?? defaultLogger();
 
   const port =
     config?.port ?? (process.env.DASHBOARD_WS_PORT !== undefined ? parsePort(process.env.DASHBOARD_WS_PORT, 'DASHBOARD_WS_PORT') : 8080);
