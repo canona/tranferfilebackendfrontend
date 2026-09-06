@@ -182,6 +182,11 @@ export function connectUiWsClient(url: string, store: ChannelStore): () => void 
 
   function scheduleReconnect(): void {
     if (disposed) return;
+    // Code review [patch round 2]: guard idempotent - 'close' và 'error' có
+    // thể cùng fire cho 1 lần đứt kết nối (nhánh 'error' bên dưới giờ cũng
+    // gọi hàm này như 1 lớp phòng thủ) - không được lên lịch 2 timer reconnect
+    // chồng nhau (sẽ mở 2 kết nối WebSocket song song khi cả 2 cùng bắn).
+    if (reconnectTimer !== undefined) return;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = undefined;
       connect();
@@ -223,12 +228,15 @@ export function connectUiWsClient(url: string, store: ChannelStore): () => void 
       store.setConnectionStatus('disconnected');
       scheduleReconnect();
     });
-    // 'error' luôn kèm 1 'close' ngay sau đó (đúng theo WebSocket spec) -
-    // KHÔNG tự scheduleReconnect() ở đây (tránh double-schedule/2 lần
-    // reconnect chồng nhau) - chỉ cập nhật trạng thái sớm, 'close' phía trên
-    // sẽ lo phần reconnect.
+    // Code review [patch round 2]: 'error' luôn kèm 1 'close' ngay sau đó
+    // (đúng theo WebSocket spec/mọi browser thật) - nhưng vẫn tự gọi
+    // scheduleReconnect() ở đây làm lớp phòng thủ (guard idempotent trong
+    // scheduleReconnect() chặn double-schedule khi cả 'error' và 'close' cùng
+    // fire) phòng khi giả định đó bị phá vỡ ở 1 runtime/polyfill không chuẩn -
+    // tránh client kẹt 'disconnected' vĩnh viễn không tự hồi phục.
     socket.addEventListener('error', () => {
       store.setConnectionStatus('disconnected');
+      scheduleReconnect();
     });
   }
 

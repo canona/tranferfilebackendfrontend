@@ -533,3 +533,33 @@ test('checkHeartbeatTimeouts(): kênh bị gỡ khỏi channel-registry SAU khi 
     'phải log channel_unregistered mirror handleHeartbeat'
   );
 });
+
+// --- Code review [patch] round 2 (/bmad-code-review): checkOneChannelHeartbeatTimeout
+// phải check registry TRƯỚC machineOfflineActive (thứ tự cũ bị đảo, khiến 1
+// kênh ĐÃ machine-offline rồi mới bị gỡ khỏi registry không bao giờ log
+// channel_unregistered qua nhánh này) ---
+
+test('checkHeartbeatTimeouts(): kênh ĐÃ machineOfflineActive rồi mới bị gỡ khỏi channel-registry -> vẫn log channel_unregistered ở lượt gọi kế tiếp (không im lặng)', () => {
+  const baselines: Record<string, number> = { 'chan-1': 4000 };
+  const { clock, alert, logger, service } = makeService(baselines);
+
+  // Kênh im lặng heartbeat -> machine-offline trước.
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:00.000Z');
+  clock.advance(HEARTBEAT_TIMEOUT_MS);
+  service.checkHeartbeatTimeouts();
+  assert.equal(alert.changes.length, 1);
+  assert.equal(alert.changes[0]?.subType, 'machine-offline');
+
+  // Hot-reload channel-registry gỡ chan-1 khỏi danh sách SAU KHI đã offline.
+  delete baselines['chan-1'];
+  logger.events.length = 0; // reset để chỉ xét log của lượt gọi tiếp theo
+
+  clock.advance(1000);
+  assert.doesNotThrow(() => service.checkHeartbeatTimeouts());
+
+  assert.equal(alert.changes.length, 1, 'không publish thêm cho channel_id không còn trong registry');
+  assert.ok(
+    logger.events.some((e) => e.event_type === 'channel_unregistered' && e.channel_id === 'chan-1'),
+    'phải log channel_unregistered dù kênh đã machineOfflineActive từ trước (registry check phải chạy TRƯỚC early-return của machineOfflineActive)'
+  );
+});

@@ -292,12 +292,12 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
 
   private checkOneChannelHeartbeatTimeout(channelId: string, record: ChannelRecord, now: number): void {
     if (record.lastHeartbeatAt === undefined) return; // chưa từng heartbeat - không đánh giá
-    if (record.machineOfflineActive) return; // đã kích hoạt rồi - không publish lặp lại
 
-    // Code review [patch]: mirror `handleHeartbeat`'s registry check - 1 kênh
-    // bị gỡ khỏi channel-registry (hot-reload, Story 2.2) SAU khi đã có
-    // `lastHeartbeatAt` không được tiếp tục publish `machine-offline` cho
-    // channel_id không còn tồn tại nữa.
+    // Code review [patch round 2]: mirror ĐÚNG thứ tự check của `handleHeartbeat`
+    // - registry TRƯỚC `machineOfflineActive` (trước đây ngược lại: early-return
+    // của `machineOfflineActive` chặn mất nhánh registry bên dưới, khiến 1 kênh
+    // ĐÃ machine-offline rồi mới bị gỡ khỏi channel-registry (hot-reload) không
+    // bao giờ chạm nhánh log `channel_unregistered` này).
     if (this.registryPort.getEntry(channelId) === undefined) {
       this.logger.log({
         channel_id: channelId,
@@ -306,6 +306,8 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
       });
       return;
     }
+
+    if (record.machineOfflineActive) return; // đã kích hoạt rồi - không publish lặp lại
 
     if (now - record.lastHeartbeatAt < HEARTBEAT_TIMEOUT_MS) return;
 
