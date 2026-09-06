@@ -7,12 +7,16 @@
 // phụ thuộc thứ tự event").
 
 import type { ChannelRegistryEntry } from '../state/channelStore';
-import { ChannelGridCell } from './ChannelGridCell';
+import { ChannelGridCell, type DisplayState } from './ChannelGridCell';
 import styles from './ChannelGrid.module.css';
 
 export interface ChannelGridProps {
   channels: ReadonlyArray<ChannelRegistryEntry>;
   seenChannelIds: ReadonlySet<string>;
+  // Story 2.4: trạng thái ok/warning/critical theo channelId (nguồn fixture ở
+  // story này - Never: "nối WebSocket/channelStore thật", đó là Story 2.6).
+  // Thiếu entry cho 1 channelId -> ChannelGridCell fallback loaded-neutral.
+  channelDisplayStates: ReadonlyMap<string, DisplayState>;
 }
 
 // Code review [patch]: trước khi client nhận `registry-snapshot` ĐẦU TIÊN
@@ -34,7 +38,7 @@ function placeholderChannels(): ChannelRegistryEntry[] {
   }));
 }
 
-export function ChannelGrid({ channels, seenChannelIds }: ChannelGridProps) {
+export function ChannelGrid({ channels, seenChannelIds, channelDisplayStates }: ChannelGridProps) {
   // `channels` rỗng CHỈ xảy ra trước lần `registry-snapshot` đầu tiên (snapshot
   // rỗng thật sự không thể xảy ra - fileChannelRegistryAdapter chặn registry
   // 0 kênh ngay lúc load, xem `loadAndValidate`) - an toàn để coi length===0
@@ -59,6 +63,7 @@ export function ChannelGrid({ channels, seenChannelIds }: ChannelGridProps) {
           stationName={channel.stationName}
           gridPosition={channel.gridPosition}
           loaded={seenChannelIds.has(channel.channelId)}
+          displayState={channelDisplayStates.get(channel.channelId)}
         />
       ))}
     </div>

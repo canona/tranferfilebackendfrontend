@@ -21,7 +21,9 @@ function makeChannels(count: number): ChannelRegistryEntry[] {
 
 describe('ChannelGrid', () => {
   it('render đủ 20 ô, mỗi ô skeleton khi seenChannelIds rỗng (cold-load)', () => {
-    render(<ChannelGrid channels={makeChannels(20)} seenChannelIds={new Set()} />);
+    render(
+      <ChannelGrid channels={makeChannels(20)} seenChannelIds={new Set()} channelDisplayStates={new Map()} />,
+    );
     const cells = screen.getAllByRole('gridcell');
     expect(cells.length).toBe(20);
     for (const cell of cells) {
@@ -33,7 +35,7 @@ describe('ChannelGrid', () => {
     const channels = makeChannels(20);
     const shuffled = [...channels].reverse();
 
-    render(<ChannelGrid channels={shuffled} seenChannelIds={new Set()} />);
+    render(<ChannelGrid channels={shuffled} seenChannelIds={new Set()} channelDisplayStates={new Map()} />);
 
     for (const channel of channels) {
       const cell = screen.getByTestId(`channel-grid-cell-${channel.channelId}`);
@@ -46,7 +48,13 @@ describe('ChannelGrid', () => {
 
   it('1 kênh có channel-seen ngay khi chỉ 1/20 kênh loaded -> đúng ô đó chuyển loaded-neutral, 19 ô còn lại VẪN skeleton', () => {
     const channels = makeChannels(20);
-    render(<ChannelGrid channels={channels} seenChannelIds={new Set(['chan-7'])} />);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-7'])}
+        channelDisplayStates={new Map()}
+      />,
+    );
 
     const loadedCell = screen.getByTestId('channel-grid-cell-chan-7');
     expect(loadedCell).toHaveAttribute('data-state', 'loaded-neutral');
@@ -62,7 +70,7 @@ describe('ChannelGrid', () => {
   });
 
   it('registry chưa đủ 20 kênh (vd fixture dev/test 2 kênh) -> render đúng số ô hiện có, đúng vị trí, không crash', () => {
-    render(<ChannelGrid channels={makeChannels(2)} seenChannelIds={new Set()} />);
+    render(<ChannelGrid channels={makeChannels(2)} seenChannelIds={new Set()} channelDisplayStates={new Map()} />);
     expect(screen.getAllByRole('gridcell').length).toBe(2);
   });
 
@@ -72,7 +80,7 @@ describe('ChannelGrid', () => {
   // chưa từng verify khoảng chờ này. Trước patch: render 0 ô (trái AC "cold-
   // load -> toàn bộ 20 ô skeleton"). Sau patch: 20 ô placeholder skeleton.
   it('channels rỗng (trước khi registry-snapshot đầu tiên tới) -> vẫn render đủ 20 ô skeleton, không crash', () => {
-    render(<ChannelGrid channels={[]} seenChannelIds={new Set()} />);
+    render(<ChannelGrid channels={[]} seenChannelIds={new Set()} channelDisplayStates={new Map()} />);
     const cells = screen.getAllByRole('gridcell');
     expect(cells.length).toBe(20);
     for (const cell of cells) {
@@ -85,5 +93,47 @@ describe('ChannelGrid', () => {
       expect(cell.style.gridRow).toBe(String(Math.floor(position / 5) + 1));
       expect(cell.style.gridColumn).toBe(String((position % 5) + 1));
     }
+  });
+
+  // Story 2.4: `channelDisplayStates` truyền đúng giá trị xuống từng cell
+  // theo channelId - vị trí ô không đổi theo trạng thái (Boundaries).
+  it('truyền đúng displayState xuống từng cell theo channelId (channelDisplayStates)', () => {
+    const channels = makeChannels(3);
+    const channelDisplayStates = new Map([
+      ['chan-0', 'ok' as const],
+      ['chan-1', 'warning' as const],
+      ['chan-2', 'critical' as const],
+    ]);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1', 'chan-2'])}
+        channelDisplayStates={channelDisplayStates}
+      />,
+    );
+
+    expect(screen.getByTestId('channel-grid-cell-chan-0')).toHaveAttribute('data-display-state', 'ok');
+    expect(screen.getByTestId('channel-grid-cell-chan-1')).toHaveAttribute('data-display-state', 'warning');
+    expect(screen.getByTestId('channel-grid-cell-chan-2')).toHaveAttribute('data-display-state', 'critical');
+    // Vị trí ô vẫn đúng gridPosition, không sắp xếp lại theo trạng thái.
+    expect(screen.getByTestId('channel-grid-cell-chan-0').style.gridColumn).toBe('1');
+    expect(screen.getByTestId('channel-grid-cell-chan-1').style.gridColumn).toBe('2');
+    expect(screen.getByTestId('channel-grid-cell-chan-2').style.gridColumn).toBe('3');
+  });
+
+  it('channelDisplayStates thiếu entry cho 1 channelId đã loaded -> cell đó fallback loaded-neutral, không crash', () => {
+    const channels = makeChannels(2);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1'])}
+        channelDisplayStates={new Map([['chan-0', 'ok' as const]])}
+      />,
+    );
+
+    expect(screen.getByTestId('channel-grid-cell-chan-0')).toHaveAttribute('data-display-state', 'ok');
+    const cellWithoutState = screen.getByTestId('channel-grid-cell-chan-1');
+    expect(cellWithoutState).toHaveAttribute('data-state', 'loaded-neutral');
+    expect(cellWithoutState).not.toHaveAttribute('data-display-state');
   });
 });

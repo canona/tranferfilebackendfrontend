@@ -39,3 +39,81 @@ describe('ChannelGridCell', () => {
     expect(cell).toHaveAttribute('data-grid-position', '12');
   });
 });
+
+// Story 2.4: `displayState` (ok/warning/critical) + `alert-badge`. I/O
+// matrix: chỉ có hiệu lực khi loaded=true; luôn kèm đồng thời nền màu VÀ
+// text; skeleton/thiếu displayState KHÔNG render badge.
+describe('ChannelGridCell - displayState (Story 2.4)', () => {
+  it('loaded=true, displayState="ok" -> data-display-state="ok", badge text "OK"', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-1"
+        stationName="Đài Thí Nghiệm 01"
+        gridPosition={0}
+        loaded={true}
+        displayState="ok"
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-1');
+    expect(cell).toHaveAttribute('data-display-state', 'ok');
+    const badge = screen.getByTestId('alert-badge-chan-1');
+    expect(badge).toHaveTextContent('OK');
+  });
+
+  it('loaded=true, displayState="warning" -> data-display-state="warning", badge text "⚠ ABR"', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-2"
+        stationName="Đài Thí Nghiệm 02"
+        gridPosition={1}
+        loaded={true}
+        displayState="warning"
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-2');
+    expect(cell).toHaveAttribute('data-display-state', 'warning');
+    expect(screen.getByTestId('alert-badge-chan-2')).toHaveTextContent('⚠ ABR');
+  });
+
+  it('loaded=true, displayState="critical" -> data-display-state="critical", badge text "✕ MẤT TÍN HIỆU"', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-3"
+        stationName="Đài Thí Nghiệm 03"
+        gridPosition={2}
+        loaded={true}
+        displayState="critical"
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-3');
+    expect(cell).toHaveAttribute('data-display-state', 'critical');
+    expect(screen.getByTestId('alert-badge-chan-3')).toHaveTextContent('✕ MẤT TÍN HIỆU');
+  });
+
+  it('loaded=false (skeleton) dù có displayState -> KHÔNG render badge, giữ nguyên data-state="skeleton"', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-4"
+        stationName="Đài Thí Nghiệm 04"
+        gridPosition={3}
+        loaded={false}
+        displayState="critical"
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-4');
+    expect(cell).toHaveAttribute('data-state', 'skeleton');
+    expect(cell).not.toHaveAttribute('data-display-state');
+    expect(screen.queryByTestId('alert-badge-chan-4')).toBeNull();
+  });
+
+  it('loaded=true, displayState thiếu (undefined) -> fallback loaded-neutral, KHÔNG render badge, không crash', () => {
+    render(
+      <ChannelGridCell channelId="chan-5" stationName="Đài Thí Nghiệm 05" gridPosition={4} loaded={true} />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-5');
+    expect(cell).toHaveAttribute('data-state', 'loaded-neutral');
+    expect(cell).not.toHaveAttribute('data-display-state');
+    expect(screen.queryByTestId('alert-badge-chan-5')).toBeNull();
+    expect(screen.getByText('Đài Thí Nghiệm 05')).toBeInTheDocument();
+  });
+});

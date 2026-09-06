@@ -9,6 +9,7 @@ import { useEffect, useMemo } from 'react';
 import { ChannelGrid } from '../src/components/ChannelGrid';
 import { createChannelStore, useChannelStore } from '../src/state/channelStore';
 import { connectUiWsClient } from '../src/services/uiWsClient';
+import { buildChannelDisplayStatesFixture } from '../src/fixtures/channelDisplayStates';
 
 // WS UI server mới (`wsUiAdapter.ts`, `DASHBOARD_UI_WS_PORT`, mặc định 8081
 // theo `app/main.ts` phía dashboard-backend) - override qua biến môi trường
@@ -26,5 +27,20 @@ export default function Page() {
     return disconnect;
   }, [store]);
 
-  return <ChannelGrid channels={state.channels} seenChannelIds={state.seenChannelIds} />;
+  // Story 2.4: fixture giả lập (KHÔNG nối WebSocket/channelStore thật cho
+  // displayState - đó là Story 2.6) - trộn ok/warning/critical theo channelId
+  // đang hiển thị, tính lại mỗi khi danh sách kênh đổi (registry-snapshot mới
+  // hoặc chuyển từ placeholder cold-load sang kênh thật).
+  const channelDisplayStates = useMemo(
+    () => buildChannelDisplayStatesFixture(state.channels.map((channel) => channel.channelId)),
+    [state.channels],
+  );
+
+  return (
+    <ChannelGrid
+      channels={state.channels}
+      seenChannelIds={state.seenChannelIds}
+      channelDisplayStates={channelDisplayStates}
+    />
+  );
 }

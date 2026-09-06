@@ -14,14 +14,16 @@
   background: var(--color-surface-raised);
   min-height: 0;
   min-width: 0;
+  position: relative;
   display: flex;
   align-items: flex-end;
   padding: var(--spacing-2);
 }
 
 .loaded {
-  /* Khớp DESIGN.md's channel-grid-cell.states.ok (chưa có badge/màu trạng
-     thái - Story 2.4). */
+  /* Fallback loaded-neutral (Story 2.3) khi thiếu displayState dù đã loaded
+     (I/O matrix) - khớp DESIGN.md's channel-grid-cell.states.ok, không phải
+     màu ngữ nghĩa "ok" (đó là .ok bên dưới, dùng khi CÓ displayState='ok'). */
   border-color: var(--color-border);
   background: var(--color-surface-raised);
 }
@@ -29,10 +31,29 @@
 .skeleton {
   /* Chưa có dữ liệu thật - phân biệt trực quan khỏi ô đã loaded bằng viền
      nét đứt mờ hơn, KHÔNG dùng bất kỳ token màu trạng thái nào (state-ok/
-     warning/critical dành riêng cho Story 2.4) và KHÔNG animation. */
+     warning/critical) và KHÔNG animation. */
   border-style: dashed;
   border-color: color-mix(in srgb, var(--color-border) 55%, transparent);
   background: var(--color-surface-base);
+}
+
+/*
+ * Story 2.4: 3 trạng thái màu ô theo DESIGN.md's `channel-grid-cell.states`
+ * (Boundaries: giá trị COPY nguyên văn, không tự đặt token/tỉ lệ mới).
+ */
+.ok {
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.warning {
+  border-color: var(--color-state-warning);
+  background: color-mix(in srgb, var(--color-state-warning) 14%, var(--color-surface-raised));
+}
+
+.critical {
+  border-color: var(--color-state-critical);
+  background: color-mix(in srgb, var(--color-state-critical) 18%, var(--color-surface-raised));
 }
 
 .channelName {
@@ -44,4 +65,49 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * DESIGN.md's `alert-badge`: "nhãn trạng thái góc trên ô kênh, luôn có cả
+ * màu nền VÀ chữ/icon", chữ dùng `typography.label-caps`, bo góc
+ * `rounded.sm`. Đặt góc trên-trái bằng position absolute (không đụng layout
+ * flex hiện có của `.cell`, vốn để tên đài dưới đáy ô).
+ */
+.badge {
+  position: absolute;
+  top: var(--spacing-2);
+  left: var(--spacing-2);
+  /* Code review [round 1, finding #2]: nhãn dài nhất "✕ MẤT TÍN HIỆU" +
+     white-space: nowrap có thể tràn ra ngoài biên ô hẹp - giới hạn theo bề
+     rộng khả dụng của ô (100% - padding trái/phải của .cell ở cả 2 bên) rồi
+     ellipsis, không wrap/xuống dòng. */
+  max-width: calc(100% - 2 * var(--spacing-2));
+  font-family: var(--font-family-base);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-1) var(--spacing-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badgeOk {
+  /* DESIGN.md's alert-badge.ok: nền pha loãng state-ok (KHÔNG dùng thẳng
+     state-ok cho chữ/nền đặc - dưới AA, xem tokens.css comment). */
+  background: color-mix(in srgb, var(--color-state-ok) 25%, transparent);
+  color: var(--color-on-state-ok);
+  border: 1px solid color-mix(in srgb, var(--color-state-ok) 55%, transparent);
+}
+
+.badgeWarning {
+  background: var(--color-state-warning);
+  color: var(--color-on-state-warning);
+}
+
+.badgeCritical {
+  background: var(--color-state-critical);
+  color: var(--color-on-state-critical);
 }
