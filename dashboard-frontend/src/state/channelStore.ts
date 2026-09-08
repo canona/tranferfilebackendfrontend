@@ -142,10 +142,25 @@ export class ChannelStore {
       nextMachineOffline = updated;
     }
 
+    // CAP-5 (spec-cap-5-xoa-cache-snapshot-khi-critical): kênh chuyển sang
+    // `critical` -> xoá cache snapshot của đúng kênh đó, tránh
+    // `ChannelGridCell` hiện nhầm ảnh cũ nếu kênh phục hồi ok/warning trước
+    // khi có khung mới (fallback gradient placeholder có sẵn). Check duy
+    // nhất `displayState === 'critical'` - mirror pattern immutable-copy-
+    // chỉ-khi-đổi của `nextMachineOffline` ở trên (không tạo Map mới nếu
+    // không có entry để xoá).
+    let nextSnapshots: ReadonlyMap<string, string> = this.state.channelSnapshots;
+    if (displayState === 'critical' && nextSnapshots.has(channelId)) {
+      const updated = new Map(nextSnapshots);
+      updated.delete(channelId);
+      nextSnapshots = updated;
+    }
+
     this.setState({
       ...this.state,
       channelDisplayStates: nextDisplayStates,
       channelMachineOffline: nextMachineOffline,
+      channelSnapshots: nextSnapshots,
     });
   }
 

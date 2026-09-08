@@ -283,6 +283,16 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
         // `lastState` vô điều kiện ở đây để hỗ trợ trạng thái đổi qua lại).
         publishStateChange(change: ChannelStateChange): void {
           lastState.set(change.channelId, change);
+          // CAP-5 (spec-cap-5-xoa-cache-snapshot-khi-critical): kênh chuyển
+          // sang `critical` -> xoá cache khung-mới-nhất của đúng kênh đó, tránh
+          // replay nhầm ảnh cũ cho client connect muộn nếu kênh phục hồi
+          // ok/warning trước khi transport-core gửi khung mới. Check duy nhất
+          // `displayState === 'critical'` - không cần điều kiện riêng cho
+          // `subType='machine-offline'` (subtype đó chỉ có hiệu lực khi đã là
+          // `critical`). No-op an toàn nếu không có entry (Map.delete()).
+          if (change.displayState === 'critical') {
+            lastSnapshot.delete(change.channelId);
+          }
           const message = toChannelStateChangeMessage(change);
           for (const client of wss.clients) {
             send(client, message);

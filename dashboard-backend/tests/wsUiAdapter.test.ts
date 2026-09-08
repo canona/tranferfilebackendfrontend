@@ -322,6 +322,107 @@ test('publishStateChange gọi 2 lần cho CÙNG channel_id với display_state 
   }
 });
 
+// --- CAP-5 (spec-cap-5-xoa-cache-snapshot-khi-critical): publishStateChange
+// xoá lastSnapshot khi displayState==='critical' ---
+
+test('publishStateChange(critical) xoá cache snapshot của đúng channel_id -> client connect SAU ĐÓ không replay channel-snapshot cho kênh này, kể cả khi kênh phục hồi ok TRƯỚC khung mới', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    // chan-0 có cache snapshot; chan-1 vẫn còn cache (không được ảnh hưởng).
+    handle.publishSnapshot('chan-0', 'khung-cu-chan-0', '2026-09-08T00:00:00.000Z');
+    handle.publishSnapshot('chan-1', 'khung-chan-1', '2026-09-08T00:00:00.000Z');
+
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'critical', timestamp: '2026-09-08T00:00:01.000Z' });
+    // Phục hồi ok NGAY SAU (trước khi có khung snapshot mới từ transport-core)
+    // - cache đã bị xoá ở bước critical, không được replay ảnh cũ.
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'ok', timestamp: '2026-09-08T00:00:02.000Z' });
+
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    // registry-snapshot(1) + channel-state-change replay CHỈ cho chan-0 (1,
+    // lastState ghi đè, chan-1 không có state) + channel-snapshot replay CHỈ
+    // cho chan-1 (1, cache chan-0 đã bị xoá). Mọi message replay được gửi
+    // ĐỒNG BỘ trong handler 'connection' (vòng for lặp qua các Map) - khi
+    // waitUntil dưới đây thoả, không còn message nào tới muộn nữa, không cần
+    // sleep thêm.
+    await waitUntil(() => messages.length >= 3);
+
+    const snapshotMessages = messages.filter(
+      (m) => (m as { type: string }).type === 'channel-snapshot'
+    ) as { channel_id: string; image_base64: string }[];
+    assert.deepEqual(snapshotMessages.map((m) => m.channel_id), ['chan-1']);
+    assert.equal(snapshotMessages[0]?.image_base64, 'khung-chan-1');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishStateChange(critical) KÈM subType="machine-offline" -> VẪN xoá cache snapshot (check duy nhất displayState, không cần điều kiện riêng cho subType, mirror channelStore.test.ts phía frontend)', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    handle.publishSnapshot('chan-0', 'khung-cu', '2026-09-08T00:00:00.000Z');
+
+    handle.publishStateChange({
+      channelId: 'chan-0',
+      displayState: 'critical',
+      subType: 'machine-offline',
+      timestamp: '2026-09-08T00:00:01.000Z',
+    });
+
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    // registry-snapshot(1) + channel-state-change replay (1) - KHÔNG có
+    // channel-snapshot nào được replay (cache đã bị xoá dù có subType).
+    await waitUntil(() => messages.length >= 2);
+    assert.ok(
+      messages.every((m) => (m as { type: string }).type !== 'channel-snapshot'),
+      'cache snapshot phải bị xoá dù displayState=critical kèm subType=machine-offline'
+    );
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishStateChange(critical) cho channel_id KHÔNG có cache snapshot -> không throw, no-op', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    assert.doesNotThrow(() =>
+      handle.publishStateChange({ channelId: 'chan-0', displayState: 'critical', timestamp: '2026-09-08T00:00:00.000Z' })
+    );
+  } finally {
+    await handle.close();
+  }
+});
+
+test('round-trip: critical (cache đã xoá) -> phục hồi ok -> publishSnapshot() MỚI tới -> cache được populate lại bình thường, replay đúng cho client connect sau đó (CAP-5 không khoá vĩnh viễn snapshot của kênh)', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    handle.publishSnapshot('chan-0', 'khung-cu', '2026-09-08T00:00:00.000Z');
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'critical', timestamp: '2026-09-08T00:00:01.000Z' });
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'ok', timestamp: '2026-09-08T00:00:02.000Z' });
+    // Khung MỚI từ transport-core tới SAU KHI phục hồi - phải populate lại
+    // lastSnapshot bình thường (mirror hành vi ghi đè vô điều kiện hiện có).
+    handle.publishSnapshot('chan-0', 'khung-moi-sau-phuc-hoi', '2026-09-08T00:00:03.000Z');
+
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    // registry-snapshot(1) + channel-state-change replay (1) + channel-snapshot
+    // replay đúng khung MỚI nhất sau phục hồi (1).
+    await waitUntil(() => messages.length >= 3);
+
+    const snapshotMessages = messages.filter(
+      (m) => (m as { type: string }).type === 'channel-snapshot'
+    ) as { channel_id: string; image_base64: string }[];
+    assert.deepEqual(snapshotMessages.map((m) => m.channel_id), ['chan-0']);
+    assert.equal(snapshotMessages[0]?.image_base64, 'khung-moi-sau-phuc-hoi');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
 test('frontend connect MUỘN (sau khi backend đã chốt trạng thái vài kênh) -> replay channel-state-change mới nhất/kênh, NGAY SAU registry-snapshot + channel-seen replay', async () => {
   const { handle } = await startTestServer(makeEntries(5));
   try {

@@ -273,6 +273,63 @@ describe('ChannelStore', () => {
     });
   });
 
+  // --- CAP-5 (spec-cap-5-xoa-cache-snapshot-khi-critical):
+  // applyChannelDisplayStateChange xoá channelSnapshots khi displayState==='critical' ---
+
+  describe('applyChannelDisplayStateChange - xoá channelSnapshots khi critical (CAP-5)', () => {
+    it('có channelSnapshots entry, chuyển critical -> entry bị xoá', () => {
+      const store = createChannelStore();
+      store.applyChannelSnapshot('chan-1', 'khung-cu');
+      expect(store.getState().channelSnapshots.has('chan-1')).toBe(true);
+
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      expect(store.getState().channelSnapshots.has('chan-1')).toBe(false);
+    });
+
+    it('chuyển critical kèm subType="machine-offline" -> vẫn xoá channelSnapshots (check duy nhất displayState, không cần điều kiện riêng cho subType)', () => {
+      const store = createChannelStore();
+      store.applyChannelSnapshot('chan-1', 'khung-cu');
+      store.applyChannelDisplayStateChange('chan-1', 'critical', 'machine-offline');
+      expect(store.getState().channelSnapshots.has('chan-1')).toBe(false);
+    });
+
+    it('KHÔNG có channelSnapshots entry, chuyển critical -> không throw, size không đổi', () => {
+      const store = createChannelStore();
+      expect(() => store.applyChannelDisplayStateChange('chan-1', 'critical')).not.toThrow();
+      expect(store.getState().channelSnapshots.size).toBe(0);
+    });
+
+    it('chuyển ok/warning (không phải critical) -> KHÔNG xoá channelSnapshots hiện có', () => {
+      const store = createChannelStore();
+      store.applyChannelSnapshot('chan-1', 'khung-cu');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,khung-cu');
+    });
+
+    it('chỉ xoá đúng channelId chuyển critical, không ảnh hưởng snapshot của kênh khác', () => {
+      const store = createChannelStore();
+      store.applyChannelSnapshot('chan-1', 'khung-1');
+      store.applyChannelSnapshot('chan-2', 'khung-2');
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      const state = store.getState();
+      expect(state.channelSnapshots.has('chan-1')).toBe(false);
+      expect(state.channelSnapshots.get('chan-2')).toBe('data:image/jpeg;base64,khung-2');
+    });
+
+    it('round-trip: critical (entry đã xoá) -> phục hồi ok -> applyChannelSnapshot() MỚI tới -> cache được populate lại bình thường (CAP-5 không khoá vĩnh viễn snapshot của kênh)', () => {
+      const store = createChannelStore();
+      store.applyChannelSnapshot('chan-1', 'khung-cu');
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      expect(store.getState().channelSnapshots.has('chan-1')).toBe(false);
+
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      // Khung MỚI tới SAU KHI phục hồi - phải populate lại bình thường (mirror
+      // hành vi ghi đè vô điều kiện hiện có của applyChannelSnapshot).
+      store.applyChannelSnapshot('chan-1', 'khung-moi-sau-phuc-hoi');
+      expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,khung-moi-sau-phuc-hoi');
+    });
+  });
+
   // --- Bổ sung video-preview thật (AD-22): applyChannelSnapshot ---
 
   describe('applyChannelSnapshot', () => {
