@@ -668,3 +668,76 @@ test('startApp(): wiring thật heartbeatPort + timer 1000ms -> heartbeat WS th�
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Code review [verification gap]: `startApp()` tạo `bitrateHistoryService`
+// thật và wiring vào `ChannelStateService` làm `historyPort`, nhưng object trả
+// về trước đây không expose gì để test quan sát nó - 1 người lỡ tay thay
+// `historyPort: bitrateHistoryService` bằng 1 stub rỗng vẫn compile sạch và
+// mọi test khác trong file này vẫn xanh. Mirror ĐÚNG pattern của test
+// 'startApp(): wiring thật composite alertPort -> ...' ở trên (dùng `startApp()`
+// thật + gửi WS telemetry thật) - gửi telemetry hợp lệ cho 1 channel_id đã
+// đăng ký rồi assert `app.bitrateHistoryService.getHistory(channelId)` trả về
+// đúng điểm dữ liệu mong đợi.
+test('startApp(): wiring thật bitrateHistoryService -> telemetry WS thật ghi vào ring buffer, app.bitrateHistoryService.getHistory() trả đúng điểm dữ liệu', async () => {
+  const { dir, filePath } = writeValidRegistryFile(); // chan-1, baseline_kbps=4000, grid_position=0
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+  });
+
+  try {
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string }[] = [];
+    uiWs.on('message', (data) => {
+      uiMessages.push(JSON.parse(data.toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+    await waitUntil(() => uiMessages.some((m) => m.type === 'registry-snapshot'));
+
+    const telemetryWs = new WebSocket(`ws://127.0.0.1:${app.ws.port}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      telemetryWs.once('open', resolve);
+      telemetryWs.once('error', reject);
+    });
+
+    // bitrate_kbps=4000 / baseline_kbps=4000 -> bitrate_pct=100. `recordBitrate`
+    // chạy NGAY mỗi telemetry hợp lệ, ĐỘC LẬP debounce - 1 lần gửi là đủ.
+    telemetryWs.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-1',
+        timestamp: new Date().toISOString(),
+        event_type: 'telemetry',
+        payload: { bitrate_kbps: 4000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [-20, -18] },
+      })
+    );
+
+    await waitUntil(() => uiMessages.some((m) => m.type === 'channel-seen'));
+
+    const result = app.bitrateHistoryService.getHistory('chan-1');
+    assert.equal(
+      result.state,
+      'loaded',
+      'nếu wiring bị thay bằng 1 stub rỗng, getHistory() vẫn trả no-history-data - test này phải fail'
+    );
+    if (result.state === 'loaded') {
+      assert.ok(result.data.length >= 1);
+      assert.equal(result.data[0]?.bitratePct, 100);
+    }
+
+    telemetryWs.close();
+    uiWs.close();
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

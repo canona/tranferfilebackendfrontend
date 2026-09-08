@@ -4,6 +4,7 @@ import { ChannelStateService, HEARTBEAT_TIMEOUT_MS, type Clock } from '../src/co
 import type { ChannelRegistryEntry, ChannelRegistryPort } from '../src/ports/ChannelRegistryPort.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
 import type { UiOutboundPort } from '../src/ports/UiOutboundPort.js';
+import type { HistoryPort } from '../src/ports/HistoryPort.js';
 import type { TelemetryEvent } from '../src/ports/TelemetryInboundPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
 
@@ -73,6 +74,29 @@ class ThrowingUiPort implements UiOutboundPort {
   }
 }
 
+// Story 3.1: fake `HistoryPort` (Boundaries "src/core hoàn toàn thuần" - test
+// được bằng fake, không cần `BitrateHistoryService`/ring buffer thật).
+class FakeHistoryPort implements HistoryPort {
+  recordCalls: { channelId: string; bitratePct: number; timestampMs: number }[] = [];
+  recordBitrate(channelId: string, bitratePct: number, timestampMs: number): void {
+    this.recordCalls.push({ channelId, bitratePct, timestampMs });
+  }
+  getHistory(): ReturnType<HistoryPort['getHistory']> {
+    return { state: 'no-history-data' };
+  }
+}
+
+// Story 3.1: xác nhận `historyPort.recordBitrate` throw KHÔNG làm lỡ phần
+// debounce/state phía sau của chính telemetry event đó (mirror `ThrowingUiPort`).
+class ThrowingHistoryPort implements HistoryPort {
+  recordBitrate(): void {
+    throw new Error('lỗi giả lập từ historyPort');
+  }
+  getHistory(): ReturnType<HistoryPort['getHistory']> {
+    return { state: 'no-history-data' };
+  }
+}
+
 class FakeLogger implements Logger {
   events: LogEvent[] = [];
   log(event: LogEvent): void {
@@ -97,9 +121,17 @@ function makeService(baselines: Record<string, number>) {
   const registry = new FakeRegistryPort(baselines);
   const alert = new FakeAlertPort();
   const ui = new FakeUiPort();
+  const historyPort = new FakeHistoryPort();
   const logger = new FakeLogger();
-  const service = new ChannelStateService({ registryPort: registry, alertPort: alert, uiPort: ui, logger, clock });
-  return { clock, alert, ui, logger, service };
+  const service = new ChannelStateService({
+    registryPort: registry,
+    alertPort: alert,
+    uiPort: ui,
+    historyPort,
+    logger,
+    clock,
+  });
+  return { clock, alert, ui, historyPort, logger, service };
 }
 
 test('CONNECTED + bitrate_pct>=70% ổn định đúng 5s -> chốt ok, publish 1 lần', () => {
@@ -262,7 +294,8 @@ test('uiPort.publishChannelSeen throw (bug giả lập ở adapter) -> log ui_pu
   const alert = new FakeAlertPort();
   const uiPort = new ThrowingUiPort();
   const logger = new FakeLogger();
-  const service = new ChannelStateService({ registryPort: registry, alertPort: alert, uiPort, logger, clock });
+  const historyPort = new FakeHistoryPort();
+  const service = new ChannelStateService({ registryPort: registry, alertPort: alert, uiPort, historyPort, logger, clock });
 
   // handleTelemetry() KHÔNG được throw ra ngoài dù uiPort.publishChannelSeen throw.
   assert.doesNotThrow(() => service.handleTelemetry(makeEvent()));
@@ -452,10 +485,12 @@ test('checkHeartbeatTimeouts(): 1 kênh throw khi publish (bug giả lập alert
     },
   };
 
+  const historyPort = new FakeHistoryPort();
   const service = new ChannelStateService({
     registryPort: registry,
     alertPort: partiallyThrowingAlertPort,
     uiPort: ui,
+    historyPort,
     logger,
     clock,
   });
@@ -474,6 +509,104 @@ test('checkHeartbeatTimeouts(): 1 kênh throw khi publish (bug giả lập alert
     logger.events.some((e) => e.event_type === 'heartbeat_timeout_check_error' && e.channel_id === 'chan-1'),
     'lỗi của chan-1 phải được log lại rõ ràng'
   );
+});
+
+// --- Story 3.1: historyPort wiring (ghi ring buffer NGAY mỗi telemetry hợp
+// lệ, ĐỘC LẬP debounce 5s) ---
+
+test('telemetry hợp lệ cho channel_id đã đăng ký -> historyPort.recordBitrate gọi đúng channelId/bitratePct(đã tính)/timestampMs(từ Clock)', () => {
+  const { clock, historyPort, service } = makeService({ 'chan-1': 4000 });
+
+  clock.advance(999);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 })); // 100%
+
+  assert.equal(historyPort.recordCalls.length, 1);
+  assert.equal(historyPort.recordCalls[0]?.channelId, 'chan-1');
+  assert.equal(historyPort.recordCalls[0]?.bitratePct, 100);
+  assert.equal(historyPort.recordCalls[0]?.timestampMs, clock.now());
+});
+
+test('historyPort.recordBitrate gọi cho MỌI telemetry hợp lệ (không chỉ lần đầu/kênh) - khác uiPort.publishChannelSeen', () => {
+  const { clock, historyPort, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent());
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent());
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent());
+
+  assert.equal(historyPort.recordCalls.length, 3, 'phải ghi mỗi lần telemetry, không chỉ lần đầu');
+});
+
+test('telemetry cho channel_id chưa đăng ký -> historyPort.recordBitrate KHÔNG được gọi (mirror policy channel_unregistered)', () => {
+  const { historyPort, service } = makeService({}); // registry rỗng
+
+  service.handleTelemetry(makeEvent({ channelId: 'unknown-chan' }));
+
+  assert.equal(historyPort.recordCalls.length, 0);
+});
+
+test('historyPort.recordBitrate throw (bug giả lập ở adapter) -> log history_record_error, KHÔNG throw ra ngoài handleTelemetry, debounce/state của CHÍNH event đó vẫn xử lý bình thường', () => {
+  const clock = new FakeClock();
+  const registry = new FakeRegistryPort({ 'chan-1': 4000 });
+  const alert = new FakeAlertPort();
+  const ui = new FakeUiPort();
+  const historyPort = new ThrowingHistoryPort();
+  const logger = new FakeLogger();
+  const service = new ChannelStateService({ registryPort: registry, alertPort: alert, uiPort: ui, historyPort, logger, clock });
+
+  clock.advance(999);
+  // handleTelemetry() KHÔNG được throw ra ngoài dù historyPort.recordBitrate throw.
+  assert.doesNotThrow(() => service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }))); // 100%
+
+  const errorEvent = logger.events.find((e) => e.event_type === 'history_record_error' && e.channel_id === 'chan-1');
+  assert.ok(errorEvent, 'phải log 1 event_type=history_record_error rõ ràng');
+  // Code review [patch]: `reason` phải kèm cả bitrate_pct/timestamp_ms của mẫu
+  // đã cố ghi (không chỉ message lỗi) - khó chẩn đoán mẫu nào bị mất nếu thiếu.
+  assert.ok(
+    errorEvent?.reason?.includes('bitrate_pct=100.0%'),
+    `reason phải kèm bitrate_pct đã cố ghi, nhận: ${errorEvent?.reason}`
+  );
+  assert.ok(
+    errorEvent?.reason?.includes(`timestamp_ms=${clock.now()}`),
+    `reason phải kèm timestamp_ms đã cố ghi (dùng lại đúng giá trị truyền vào recordBitrate, không gọi lại clock.now()), nhận: ${errorEvent?.reason}`
+  );
+
+  // Phần debounce/state phía sau của CHÍNH telemetry event đó vẫn phải chạy
+  // bình thường (pending candidate được ghi nhận) - không bị lỡ vì exception.
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' });
+  assert.equal(alert.changes.length, 1);
+});
+
+// Code review [patch]: `err instanceof Error ? err.message : String(err)`
+// (mirror `createCompositeAlertPort` ở `app/main.ts`) - historyPort throw ra 1
+// giá trị KHÔNG phải `Error` (vd string thô) vẫn phải hiện đúng nội dung, KHÔNG
+// hiện "undefined".
+test('historyPort.recordBitrate throw 1 giá trị không phải Error (vd string) -> reason vẫn hiện đúng nội dung, không phải "undefined"', () => {
+  const clock = new FakeClock();
+  const registry = new FakeRegistryPort({ 'chan-1': 4000 });
+  const alert = new FakeAlertPort();
+  const ui = new FakeUiPort();
+  const logger = new FakeLogger();
+  const historyPort: HistoryPort = {
+    recordBitrate(): void {
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      throw 'lỗi giả lập không phải Error';
+    },
+    getHistory(): ReturnType<HistoryPort['getHistory']> {
+      return { state: 'no-history-data' };
+    },
+  };
+  const service = new ChannelStateService({ registryPort: registry, alertPort: alert, uiPort: ui, historyPort, logger, clock });
+
+  assert.doesNotThrow(() => service.handleTelemetry(makeEvent()));
+
+  const errorEvent = logger.events.find((e) => e.event_type === 'history_record_error' && e.channel_id === 'chan-1');
+  assert.ok(errorEvent);
+  assert.ok(errorEvent?.reason?.includes('lỗi giả lập không phải Error'));
+  assert.ok(!errorEvent?.reason?.includes('undefined'));
 });
 
 // --- Code review [patch] round 1: applyCandidate không được âm thầm "giải

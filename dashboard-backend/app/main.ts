@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ChannelStateService, type Clock } from '../src/core/channelState.js';
 import { SnapshotRelayService } from '../src/core/snapshotRelay.js';
+import { BitrateHistoryService } from '../src/core/bitrateHistory.js';
 import { LogAlertAdapter } from '../src/adapters/outbound/logAlertAdapter.js';
 import { FileChannelRegistryAdapter } from '../src/adapters/outbound/fileChannelRegistryAdapter.js';
 import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/adapters/inbound/wsTelemetryAdapter.js';
@@ -125,6 +126,13 @@ export interface AppHandle {
   ws: WsTelemetryAdapterHandle;
   ui: WsUiAdapterHandle;
   channelStateService: ChannelStateService;
+  // Code review [test coverage]: instance THẬT wiring vào `channelStateService`
+  // làm `historyPort` - trước đây không có seam nào để 1 test integration thật
+  // (start cả `startApp()`) quan sát được `historyPort` thật đã wiring đúng;
+  // 1 người lỡ tay thay `historyPort: bitrateHistoryService` bằng 1 stub rỗng
+  // vẫn compile sạch và mọi test cũ vẫn xanh. Expose thẳng instance để test
+  // gọi `getHistory()` xác nhận.
+  bitrateHistoryService: BitrateHistoryService;
   stop(): Promise<void>;
 }
 
@@ -280,10 +288,19 @@ export async function startApp(config?: {
   // không cần dọn gì thêm ở stop() bên dưới.
   const snapshotRelay = new SnapshotRelayService({ registryPort, snapshotOutboundPort: ui, logger });
 
+  // Story 3.1: ring buffer in-memory lịch sử bitrate/kênh (Never/AD-14: KHÔNG
+  // time-series DB). Code review [patch]: `BitrateHistoryService` không tự có
+  // clock riêng (dead code đã bị xoá) - timestamp ghi vào ring buffer nhất
+  // quán với timestamp debounce/state hoàn toàn nhờ `channelState.ts` truyền
+  // thẳng `this.clock.now()` làm tham số `timestampMs` mỗi lần gọi
+  // `historyPort.recordBitrate(...)`, không nhờ service này tự đọc clock.
+  const bitrateHistoryService = new BitrateHistoryService();
+
   const channelStateService = new ChannelStateService({
     registryPort,
     alertPort,
     uiPort: ui,
+    historyPort: bitrateHistoryService,
     logger,
     debounceMs: config?.debounceMs,
     clock: config?.clock,
@@ -339,6 +356,7 @@ export async function startApp(config?: {
     ws,
     ui,
     channelStateService,
+    bitrateHistoryService,
     stop: async () => {
       logger.log({ channel_id: '', event_type: 'app_stopping', reason: '' });
       clearInterval(heartbeatTimeoutTimer);

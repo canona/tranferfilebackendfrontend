@@ -13,6 +13,7 @@ import type { AlertOutboundPort, ChannelStateChange, DisplayState } from '../por
 import type { ChannelRegistryPort } from '../ports/ChannelRegistryPort.js';
 import type { UiOutboundPort } from '../ports/UiOutboundPort.js';
 import type { HeartbeatInboundPort } from '../ports/HeartbeatInboundPort.js';
+import type { HistoryPort } from '../ports/HistoryPort.js';
 import type { Logger } from '../logging/logger.js';
 import { computeBitratePct, mapToDisplayState, type DisplayCandidate } from './bitrateThreshold.js';
 
@@ -60,6 +61,11 @@ export interface ChannelStateServiceOptions {
   // `UiOutboundPort.ts`'s comment đầu file) - phát tín hiệu "đã thấy kênh"
   // thô NGAY khi có telemetry đầu tiên/kênh, không qua debounce 5s.
   uiPort: UiOutboundPort;
+  // Story 3.1: port MỚI, bắt buộc (mirror `uiPort`/`alertPort` - không optional,
+  // composition root `main.ts` luôn phải wiring `BitrateHistoryService` thật).
+  // Ghi lịch sử bitrate NGAY mỗi khi `handleTelemetry` nhận telemetry hợp lệ,
+  // ĐỘC LẬP hoàn toàn debounce 5s/`committed` state (Boundaries).
+  historyPort: HistoryPort;
   logger: Logger;
   clock?: Clock;
   debounceMs?: number;
@@ -73,6 +79,7 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
   private readonly registryPort: ChannelRegistryPort;
   private readonly alertPort: AlertOutboundPort;
   private readonly uiPort: UiOutboundPort;
+  private readonly historyPort: HistoryPort;
   private readonly logger: Logger;
   private readonly clock: Clock;
   private readonly debounceMs: number;
@@ -82,6 +89,7 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
     this.registryPort = options.registryPort;
     this.alertPort = options.alertPort;
     this.uiPort = options.uiPort;
+    this.historyPort = options.historyPort;
     this.logger = options.logger;
     this.clock = options.clock ?? systemClock;
     this.debounceMs = options.debounceMs ?? DEBOUNCE_MS;
@@ -153,6 +161,36 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
     }
 
     const bitratePct = computeBitratePct(event.bitrateKbps, entry.baselineKbps);
+
+    // Story 3.1 (Boundaries): ghi ring buffer NGAY mỗi khi telemetry hợp lệ
+    // tới cho 1 channelId ĐÃ đăng ký - ĐỘC LẬP hoàn toàn debounce 5s/
+    // `applyCandidate` bên dưới (mirror tinh thần `uiPort.publishChannelSeen`:
+    // tín hiệu thô, không chờ chốt trạng thái. Khác: recordBitrate gọi cho
+    // MỌI telemetry hợp lệ, không chỉ lần đầu/kênh). Mirror chính xác pattern
+    // try/catch + log của `uiPort.publishChannelSeen` ở trên: 1 kênh lỗi (vd
+    // `recordBitrate` throw) không được làm lỡ phần debounce/state phía sau
+    // của chính telemetry event này.
+    // Code review [patch]: giữ lại đúng 1 giá trị `timestampMs` truyền vào
+    // `recordBitrate` để dùng lại trong log lỗi bên dưới nếu throw - tránh gọi
+    // `this.clock.now()` lần 2 (có thể ra giá trị khác thời điểm gọi thực tế).
+    const historyTimestampMs = this.clock.now();
+    try {
+      this.historyPort.recordBitrate(event.channelId, bitratePct, historyTimestampMs);
+    } catch (err) {
+      // Code review [patch]: `err` không được đảm bảo là `Error` (mirror
+      // `createCompositeAlertPort` ở `app/main.ts`) - `instanceof Error` guard
+      // trước khi đọc `.message`, fallback `String(err)` tránh hiện "undefined"
+      // khi historyPort throw ra 1 giá trị không phải `Error`.
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.log({
+        channel_id: event.channelId,
+        event_type: 'history_record_error',
+        reason:
+          `historyPort.recordBitrate throw (bitrate_pct=${bitratePct.toFixed(1)}%, ` +
+          `timestamp_ms=${historyTimestampMs}): ${message}`,
+      });
+    }
+
     const candidate = mapToDisplayState(event.connectionState, bitratePct);
     this.applyCandidate(event.channelId, candidate, bitratePct, event.connectionState);
   }
