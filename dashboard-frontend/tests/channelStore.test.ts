@@ -20,6 +20,12 @@ describe('ChannelStore', () => {
     expect(state.channelMachineOffline.size).toBe(0);
   });
 
+  // Bổ sung video-preview thật (AD-22).
+  it('trạng thái ban đầu: channelSnapshots rỗng', () => {
+    const store = createChannelStore();
+    expect(store.getState().channelSnapshots.size).toBe(0);
+  });
+
   it('applyRegistrySnapshot: ghi đè toàn bộ channels, giữ nguyên seenChannelIds hiện có', () => {
     const store = createChannelStore();
     store.applyChannelSeen('chan-1');
@@ -264,6 +270,43 @@ describe('ChannelStore', () => {
       const state = store.getState();
       expect(state.channelMachineOffline.has('chan-1')).toBe(true);
       expect(state.channelMachineOffline.has('chan-2')).toBe(false);
+    });
+  });
+
+  // --- Bổ sung video-preview thật (AD-22): applyChannelSnapshot ---
+
+  describe('applyChannelSnapshot', () => {
+    it('lưu đúng data-URI (data:image/jpeg;base64,...) theo channelId', () => {
+      const store = createChannelStore();
+      store.applyChannelSnapshot('chan-1', 'ZmFrZS1qcGVn');
+      expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,ZmFrZS1qcGVn');
+    });
+
+    it('gọi lại cho CÙNG channelId với imageBase64 KHÁC -> GHI ĐÈ (không idempotent-guard, mirror applyChannelDisplayStateChange)', () => {
+      const store = createChannelStore();
+      store.applyChannelSnapshot('chan-1', 'khung-1');
+      store.applyChannelSnapshot('chan-1', 'khung-2');
+      expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,khung-2');
+    });
+
+    it('không ảnh hưởng channelSnapshots của các channelId khác', () => {
+      const store = createChannelStore();
+      store.applyChannelSnapshot('chan-1', 'khung-1');
+      store.applyChannelSnapshot('chan-2', 'khung-2');
+      expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,khung-1');
+      expect(store.getState().channelSnapshots.get('chan-2')).toBe('data:image/jpeg;base64,khung-2');
+    });
+
+    it('subscribe: listener được gọi mỗi lần applyChannelSnapshot (không idempotent-guard nên luôn setState)', () => {
+      const store = createChannelStore();
+      let callCount = 0;
+      store.subscribe(() => {
+        callCount++;
+      });
+      store.applyChannelSnapshot('chan-1', 'khung-1');
+      expect(callCount).toBe(1);
+      store.applyChannelSnapshot('chan-1', 'khung-1'); // cùng giá trị - vẫn setState (mirror applyChannelDisplayStateChange)
+      expect(callCount).toBe(2);
     });
   });
 });

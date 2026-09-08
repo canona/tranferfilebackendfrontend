@@ -145,6 +145,13 @@ export interface ChannelGridCellProps {
   // 'config-or-security-suspected' trên UI" - vẫn treo Ask First từ Story
   // 2.4/2.6, ngoài scope). Chỉ có hiệu lực khi effectiveDisplayState==='critical'.
   subType?: 'machine-offline';
+  // Bổ sung video-preview thật (AD-22): data-URI JPEG sẵn dùng
+  // (`data:image/jpeg;base64,...`, đã build sẵn ở channelStore.ts). Thiếu
+  // (undefined) -> fallback gradient placeholder hiện có (thumbnailBackground)
+  // - trạng thái "đang tải ảnh" trước khi kênh có snapshot thật đầu tiên,
+  // không phải trạng thái lỗi. Chỉ có hiệu lực khi effectiveDisplayState là
+  // 'ok'/'warning' (nhánh 'critical' luôn dùng color-bars, bất kể prop này).
+  snapshotDataUri?: string;
 }
 
 export function ChannelGridCell({
@@ -155,6 +162,7 @@ export function ChannelGridCell({
   displayState,
   audioLevel,
   subType,
+  snapshotDataUri,
 }: ChannelGridCellProps) {
   const { row, col } = gridPositionToRowCol(gridPosition);
   // `displayState` chỉ có hiệu lực khi đã loaded (Boundaries) - undefined khi
@@ -201,7 +209,12 @@ export function ChannelGridCell({
         <div
           className={styles.thumbnail}
           data-testid={`thumbnail-${channelId}`}
-          style={{ backgroundImage: thumbnailBackground(channelId) }}
+          // Bổ sung video-preview thật (AD-22): dùng ảnh thật khi đã có
+          // (`data:image/jpeg;base64,...`, build sẵn ở channelStore.ts) -
+          // KHÔNG có (chưa nhận snapshot đầu tiên/kênh) -> fallback gradient
+          // giả hiện có, đóng vai trò "đang tải ảnh" thay vì thêm 1 trạng
+          // thái/nhánh render mới.
+          style={{ backgroundImage: snapshotDataUri ? `url("${snapshotDataUri}")` : thumbnailBackground(channelId) }}
           aria-hidden="true"
         >
           {effectiveDisplayState === 'warning' ? (

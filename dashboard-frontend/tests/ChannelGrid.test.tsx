@@ -28,6 +28,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
     const cells = screen.getAllByRole('gridcell');
@@ -48,6 +49,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
 
@@ -69,6 +71,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
 
@@ -93,6 +96,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
     expect(screen.getAllByRole('gridcell').length).toBe(2);
@@ -111,6 +115,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
     const cells = screen.getAllByRole('gridcell');
@@ -143,6 +148,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={channelDisplayStates}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
 
@@ -164,6 +170,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map([['chan-0', 'ok' as const]])}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
 
@@ -188,6 +195,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map()}
         channelAudioLevels={channelAudioLevels}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
 
@@ -204,11 +212,30 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map()}
         channelAudioLevels={new Map([['chan-0', [-30, -30]]])}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
 
     expect(screen.getByTestId('vu-meter-row-chan-0')).toBeInTheDocument();
     expect(screen.queryByTestId('vu-meter-row-chan-1')).toBeNull();
+  });
+
+  // Bổ sung video-preview thật (AD-22): `channelSnapshots` truyền đúng xuống
+  // từng cell theo channelId - mirror test channelAudioLevels ở trên.
+  it('truyền đúng snapshotDataUri xuống từng cell theo channelId (channelSnapshots)', () => {
+    const channels = makeChannels(2);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1'])}
+        channelDisplayStates={new Map([['chan-0', 'ok' as const]])}
+        channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
+        channelSnapshots={new Map([['chan-0', 'data:image/jpeg;base64,ZmFrZQ==']])}
+      />,
+    );
+
+    expect(screen.getByTestId('thumbnail-chan-0').style.backgroundImage).toContain('data:image/jpeg;base64,ZmFrZQ==');
   });
 
   // Story 2.7: `channelMachineOffline` truyền đúng xuống từng cell theo
@@ -222,6 +249,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map([['chan-0', 'critical' as const], ['chan-1', 'critical' as const]])}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set(['chan-0'])}
+        channelSnapshots={new Map()}
       />,
     );
 
@@ -238,6 +266,7 @@ describe('ChannelGrid', () => {
         channelDisplayStates={new Map([['chan-0', 'critical' as const]])}
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
       />,
     );
 

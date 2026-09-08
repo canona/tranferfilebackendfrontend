@@ -457,3 +457,60 @@ describe('ChannelGridCell - audioLevel / vu-meter (Story 2.5)', () => {
     expect(secondStyle).toBe(firstStyle);
   });
 });
+
+// Bổ sung video-preview thật (AD-22): prop snapshotDataUri.
+describe('ChannelGridCell - snapshotDataUri (video-preview thật)', () => {
+  it('displayState="ok" kèm snapshotDataUri -> thumbnail dùng ảnh thật (url(...)), KHÔNG dùng gradient giả', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-snap-1"
+        stationName="Đài Snap 1"
+        gridPosition={0}
+        loaded={true}
+        displayState="ok"
+        snapshotDataUri="data:image/jpeg;base64,ZmFrZQ=="
+      />,
+    );
+    const style = screen.getByTestId('thumbnail-chan-snap-1').style.backgroundImage;
+    expect(style).toContain('data:image/jpeg;base64,ZmFrZQ==');
+  });
+
+  it('displayState="warning" kèm snapshotDataUri -> thumbnail dùng ảnh thật, VẪN giữ icon cảnh báo chồng lên', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-snap-2"
+        stationName="Đài Snap 2"
+        gridPosition={1}
+        loaded={true}
+        displayState="warning"
+        snapshotDataUri="data:image/jpeg;base64,ZmFrZQ=="
+      />,
+    );
+    const style = screen.getByTestId('thumbnail-chan-snap-2').style.backgroundImage;
+    expect(style).toContain('data:image/jpeg;base64,ZmFrZQ==');
+    expect(screen.getByTestId('thumbnail-warning-icon-chan-snap-2')).toBeInTheDocument();
+  });
+
+  it('displayState="ok" KHÔNG có snapshotDataUri (chưa nhận snapshot đầu tiên) -> fallback gradient giả hiện có, không crash', () => {
+    render(
+      <ChannelGridCell channelId="chan-snap-3" stationName="Đài Snap 3" gridPosition={2} loaded={true} displayState="ok" />,
+    );
+    const style = screen.getByTestId('thumbnail-chan-snap-3').style.backgroundImage;
+    expect(style).toContain('linear-gradient');
+  });
+
+  it('displayState="critical" kèm snapshotDataUri -> VẪN dùng color-bars, KHÔNG hiện ảnh thật (transport-core không gửi snapshot khi critical, nhưng UI phải an toàn kể cả khi có dữ liệu cũ)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-snap-4"
+        stationName="Đài Snap 4"
+        gridPosition={3}
+        loaded={true}
+        displayState="critical"
+        snapshotDataUri="data:image/jpeg;base64,ZmFrZQ=="
+      />,
+    );
+    expect(screen.getByTestId('color-bars-chan-snap-4')).toBeInTheDocument();
+    expect(screen.queryByTestId('thumbnail-chan-snap-4')).toBeNull();
+  });
+});

@@ -366,6 +366,137 @@ test('frontend connect MUỘN (sau khi backend đã chốt trạng thái vài k�
 // chưa có case nào exercise guard này qua đúng message `channel-state-change`
 // mới của Story 2.6 - 1 client đã đóng vẫn còn trong `wss.clients` trong 1
 // khoảng ngắn TRƯỚC KHI 'close' event của server kịp fire/dọn.
+// --- Bổ sung video-preview thật (AD-22): publishSnapshot (SnapshotOutboundPort) ---
+
+test('publishSnapshot -> broadcast channel-snapshot tới mọi client đang mở, đúng snake_case envelope', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messages.length > 0); // chờ registry-snapshot trước
+
+    handle.publishSnapshot('chan-0', 'ZmFrZS1qcGVn', '2026-09-07T00:00:00.000Z');
+
+    await waitUntil(() => messages.length > 1);
+    assert.deepEqual(messages[1], {
+      type: 'channel-snapshot',
+      channel_id: 'chan-0',
+      image_base64: 'ZmFrZS1qcGVn',
+      timestamp: '2026-09-07T00:00:00.000Z',
+    });
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishSnapshot broadcast tới TẤT CẢ client đang mở kết nối cùng lúc', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    const { ws: wsA, messages: messagesA } = await openClientWithMessages(handle.port);
+    const { ws: wsB, messages: messagesB } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messagesA.length > 0 && messagesB.length > 0);
+
+    handle.publishSnapshot('chan-1', 'ZmFrZQ==', '2026-09-07T00:00:00.000Z');
+
+    await waitUntil(() => messagesA.length > 1 && messagesB.length > 1);
+    assert.equal((messagesA[1] as { channel_id: string }).channel_id, 'chan-1');
+    assert.equal((messagesB[1] as { channel_id: string }).channel_id, 'chan-1');
+
+    wsA.close();
+    wsB.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishSnapshot gọi 2 lần cho CÙNG channel_id -> broadcast CẢ 2 lần (KHÔNG idempotent-guard, mirror publishStateChange)', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messages.length > 0);
+
+    handle.publishSnapshot('chan-0', 'khung-1', '2026-09-07T00:00:00.000Z');
+    handle.publishSnapshot('chan-0', 'khung-2', '2026-09-07T00:00:01.500Z');
+
+    await waitUntil(() => messages.length > 2);
+    assert.equal((messages[1] as { image_base64: string }).image_base64, 'khung-1');
+    assert.equal((messages[2] as { image_base64: string }).image_base64, 'khung-2');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('frontend connect MUỘN (sau khi backend đã publish snapshot vài kênh) -> replay khung MỚI NHẤT/kênh, NGAY SAU channel-state-change replay (bước 4)', async () => {
+  const { handle } = await startTestServer(makeEntries(5));
+  try {
+    // Backend đã seen + chốt trạng thái + có snapshot cho chan-0/chan-2
+    // TRƯỚC KHI có client nào connect - chan-0 có 2 khung, chỉ khung MỚI
+    // NHẤT được replay (ghi đè, mirror channel-state-change replay).
+    handle.publishChannelSeen('chan-0', '2026-09-07T00:00:00.000Z');
+    handle.publishChannelSeen('chan-2', '2026-09-07T00:00:00.000Z');
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'ok', timestamp: '2026-09-07T00:00:01.000Z' });
+    handle.publishStateChange({ channelId: 'chan-2', displayState: 'ok', timestamp: '2026-09-07T00:00:01.000Z' });
+    handle.publishSnapshot('chan-0', 'khung-cu', '2026-09-07T00:00:02.000Z');
+    handle.publishSnapshot('chan-0', 'khung-moi-nhat', '2026-09-07T00:00:03.500Z');
+    handle.publishSnapshot('chan-2', 'khung-chan-2', '2026-09-07T00:00:02.000Z');
+
+    const { ws, messages } = await openClientWithMessages(handle.port);
+
+    // registry-snapshot(1) + channel-seen(2) + channel-state-change(2) + channel-snapshot(2).
+    await waitUntil(() => messages.length >= 7);
+    assert.equal((messages[0] as { type: string }).type, 'registry-snapshot');
+    const snapshotReplayed = messages.slice(5) as { type: string; channel_id: string; image_base64: string }[];
+    assert.ok(
+      snapshotReplayed.every((m) => m.type === 'channel-snapshot'),
+      'channel-snapshot replay PHẢI đứng SAU cùng, sau channel-state-change replay'
+    );
+    assert.deepEqual(
+      snapshotReplayed.map((m) => m.channel_id).sort(),
+      ['chan-0', 'chan-2']
+    );
+    assert.equal(
+      snapshotReplayed.find((m) => m.channel_id === 'chan-0')?.image_base64,
+      'khung-moi-nhat',
+      'chan-0 phải replay khung MỚI NHẤT, không phải khung đầu tiên'
+    );
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishSnapshot sau khi 1 client đã đóng kết nối -> KHÔNG throw, client khác vẫn nhận đúng broadcast', async () => {
+  const { logger, handle } = await startTestServer(makeEntries(2));
+  try {
+    const wsA = await openClient(handle.port);
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'ui_ws_connect'));
+
+    wsA.close();
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'ui_ws_disconnect'));
+
+    const { ws: wsB, messages: messagesB } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messagesB.length > 0); // chờ registry-snapshot trước
+
+    assert.doesNotThrow(() => handle.publishSnapshot('chan-0', 'ZmFrZQ==', '2026-09-07T00:00:00.000Z'));
+
+    await waitUntil(() => messagesB.length > 1);
+    assert.deepEqual(messagesB[1], {
+      type: 'channel-snapshot',
+      channel_id: 'chan-0',
+      image_base64: 'ZmFrZQ==',
+      timestamp: '2026-09-07T00:00:00.000Z',
+    });
+
+    wsB.close();
+  } finally {
+    await handle.close();
+  }
+});
+
 test('publishStateChange sau khi 1 client đã đóng kết nối -> KHÔNG throw, client khác vẫn nhận đúng broadcast', async () => {
   const { logger, handle } = await startTestServer(makeEntries(2));
   try {

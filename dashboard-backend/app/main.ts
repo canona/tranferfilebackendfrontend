@@ -15,6 +15,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ChannelStateService, type Clock } from '../src/core/channelState.js';
+import { SnapshotRelayService } from '../src/core/snapshotRelay.js';
 import { LogAlertAdapter } from '../src/adapters/outbound/logAlertAdapter.js';
 import { FileChannelRegistryAdapter } from '../src/adapters/outbound/fileChannelRegistryAdapter.js';
 import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/adapters/inbound/wsTelemetryAdapter.js';
@@ -272,6 +273,13 @@ export async function startApp(config?: {
   // (không có yêu cầu "log trước WS" hay ngược lại), chỉ tình cờ liệt kê theo
   // thứ tự khai báo phía trên.
   const alertPort = createCompositeAlertPort([logAlertPort, ui], logger);
+
+  // Bổ sung video-preview thật (AD-22): `ui` implement THÊM `SnapshotOutboundPort`
+  // (cùng object, mirror cách `ui` đã implement UiOutboundPort/AlertOutboundPort
+  // ở trên) - `SnapshotRelayService` không có timer/watcher riêng (stateless),
+  // không cần dọn gì thêm ở stop() bên dưới.
+  const snapshotRelay = new SnapshotRelayService({ registryPort, snapshotOutboundPort: ui, logger });
+
   const channelStateService = new ChannelStateService({
     registryPort,
     alertPort,
@@ -306,6 +314,10 @@ export async function startApp(config?: {
       // Story 2.7: `channelStateService` implement CẢ 2 port (mirror
       // `TelemetryInboundPort` ở dòng trên) - cùng 1 object, khác interface.
       heartbeatPort: channelStateService,
+      // Bổ sung video-preview thật (AD-22): port riêng, KHÁC object với
+      // channelStateService (SnapshotRelayService không tương tác gì với
+      // debounce/machineOfflineActive của telemetry/heartbeat).
+      snapshotPort: snapshotRelay,
       logger,
     });
   } catch (err) {

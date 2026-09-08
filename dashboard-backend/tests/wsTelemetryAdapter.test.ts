@@ -11,6 +11,7 @@ import type { IncomingMessage } from 'node:http';
 import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/adapters/inbound/wsTelemetryAdapter.js';
 import type { TelemetryInboundPort, TelemetryEvent } from '../src/ports/TelemetryInboundPort.js';
 import type { HeartbeatInboundPort } from '../src/ports/HeartbeatInboundPort.js';
+import type { SnapshotInboundPort } from '../src/ports/SnapshotInboundPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
 
 class FakeTelemetryPort implements TelemetryInboundPort {
@@ -43,6 +44,21 @@ class ThrowingHeartbeatPort implements HeartbeatInboundPort {
   }
 }
 
+// Bổ sung video-preview thật (AD-22): fake `SnapshotInboundPort` (mirror
+// `FakeTelemetryPort`/`FakeHeartbeatPort`).
+class FakeSnapshotPort implements SnapshotInboundPort {
+  calls: { channelId: string; imageBase64: string; timestamp: string }[] = [];
+  handleSnapshot(channelId: string, imageBase64: string, timestamp: string): void {
+    this.calls.push({ channelId, imageBase64, timestamp });
+  }
+}
+
+class ThrowingSnapshotPort implements SnapshotInboundPort {
+  handleSnapshot(): void {
+    throw new Error('lỗi giả lập từ core (snapshot)');
+  }
+}
+
 class FakeLogger implements Logger {
   events: LogEvent[] = [];
   log(event: LogEvent): void {
@@ -71,6 +87,7 @@ function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
 async function startTestServer(validBearerTokens: ReadonlySet<string>) {
   const telemetryPort = new FakeTelemetryPort();
   const heartbeatPort = new FakeHeartbeatPort();
+  const snapshotPort = new FakeSnapshotPort();
   const logger = new FakeLogger();
   const handle: WsTelemetryAdapterHandle = await startWsTelemetryAdapter({
     port: 0,
@@ -78,9 +95,10 @@ async function startTestServer(validBearerTokens: ReadonlySet<string>) {
     validBearerTokens,
     telemetryPort,
     heartbeatPort,
+    snapshotPort,
     logger,
   });
-  return { telemetryPort, heartbeatPort, logger, handle };
+  return { telemetryPort, heartbeatPort, snapshotPort, logger, handle };
 }
 
 test('Bearer-token đúng -> accept connection, telemetry hợp lệ được forward vào core', async () => {
@@ -321,6 +339,7 @@ test('event_type=heartbeat thiếu channel_id -> không forward, log envelope_in
 test('heartbeatPort.handleHeartbeat() throw (bug giả lập ở core) -> log heartbeat_handler_error, KHÔNG crash, connection vẫn sống', async () => {
   const telemetryPort = new FakeTelemetryPort();
   const heartbeatPort = new ThrowingHeartbeatPort();
+  const snapshotPort = new FakeSnapshotPort();
   const logger = new FakeLogger();
   const handle = await startWsTelemetryAdapter({
     port: 0,
@@ -328,6 +347,7 @@ test('heartbeatPort.handleHeartbeat() throw (bug giả lập ở core) -> log he
     validBearerTokens: new Set(['test-bearer-token']),
     telemetryPort,
     heartbeatPort,
+    snapshotPort,
     logger,
   });
   try {
@@ -360,6 +380,185 @@ test('heartbeatPort.handleHeartbeat() throw (bug giả lập ở core) -> log he
         schema_version: 1,
         channel_id: 'chan-hb-throw-2',
         timestamp: '2026-09-06T00:00:00.000Z',
+        event_type: 'telemetry',
+        payload: { bitrate_kbps: 1000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [0, 0] },
+      })
+    );
+    await waitUntil(() => telemetryPort.events.length > 0);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+// --- Bổ sung video-preview thật (AD-22): event_type=snapshot forward qua
+// SnapshotInboundPort ---
+
+test('event_type=snapshot -> forward channel_id + payload.image_base64 + timestamp qua snapshotPort, KHÔNG chạm telemetryPort', async () => {
+  const { telemetryPort, snapshotPort, handle } = await startTestServer(new Set(['test-bearer-token']));
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, {
+      headers: { Authorization: 'Bearer test-bearer-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-snap',
+        timestamp: '2026-09-07T00:00:00.000Z',
+        event_type: 'snapshot',
+        payload: { image_base64: 'ZmFrZS1qcGVn' },
+      })
+    );
+
+    await waitUntil(() => snapshotPort.calls.length > 0);
+    assert.equal(snapshotPort.calls.length, 1);
+    assert.equal(snapshotPort.calls[0]?.channelId, 'chan-snap');
+    assert.equal(snapshotPort.calls[0]?.imageBase64, 'ZmFrZS1qcGVn');
+    assert.equal(snapshotPort.calls[0]?.timestamp, '2026-09-07T00:00:00.000Z');
+    assert.equal(telemetryPort.events.length, 0, 'snapshot KHÔNG được forward qua telemetryPort');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('event_type=snapshot thiếu channel_id -> không forward, log envelope_invalid, connection vẫn sống', async () => {
+  const { snapshotPort, logger, handle } = await startTestServer(new Set(['test-bearer-token']));
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, {
+      headers: { Authorization: 'Bearer test-bearer-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        // channel_id cố ý thiếu
+        timestamp: '2026-09-07T00:00:00.000Z',
+        event_type: 'snapshot',
+        payload: { image_base64: 'ZmFrZQ==' },
+      })
+    );
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-snap-followup',
+        timestamp: '2026-09-07T00:00:01.000Z',
+        event_type: 'snapshot',
+        payload: { image_base64: 'ZmFrZQ==' },
+      })
+    );
+
+    await waitUntil(() => snapshotPort.calls.length > 0);
+    assert.equal(snapshotPort.calls.length, 1);
+    assert.equal(snapshotPort.calls[0]?.channelId, 'chan-snap-followup');
+    assert.ok(logger.events.some((e) => e.event_type === 'envelope_invalid'));
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('event_type=snapshot thiếu/rỗng payload.image_base64 -> không forward, log envelope_invalid, connection vẫn sống', async () => {
+  const { snapshotPort, logger, handle } = await startTestServer(new Set(['test-bearer-token']));
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, {
+      headers: { Authorization: 'Bearer test-bearer-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+
+    const badPayloads = [{}, { image_base64: '' }, { image_base64: null }, { image_base64: 123 }];
+    for (const [i, payload] of badPayloads.entries()) {
+      ws.send(
+        JSON.stringify({
+          schema_version: 1,
+          channel_id: `chan-snap-bad-${i}`,
+          timestamp: '2026-09-07T00:00:00.000Z',
+          event_type: 'snapshot',
+          payload,
+        })
+      );
+    }
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-snap-bad-followup',
+        timestamp: '2026-09-07T00:00:01.000Z',
+        event_type: 'snapshot',
+        payload: { image_base64: 'ZmFrZQ==' },
+      })
+    );
+
+    await waitUntil(() => snapshotPort.calls.length > 0);
+    assert.equal(snapshotPort.calls.length, 1);
+    assert.equal(snapshotPort.calls[0]?.channelId, 'chan-snap-bad-followup');
+    const invalidLogsCount = logger.events.filter((e) => e.event_type === 'envelope_invalid').length;
+    assert.equal(invalidLogsCount, badPayloads.length);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('snapshotPort.handleSnapshot() throw (bug giả lập ở core) -> log snapshot_handler_error, KHÔNG crash, connection vẫn sống', async () => {
+  const telemetryPort = new FakeTelemetryPort();
+  const heartbeatPort = new FakeHeartbeatPort();
+  const snapshotPort = new ThrowingSnapshotPort();
+  const logger = new FakeLogger();
+  const handle = await startWsTelemetryAdapter({
+    port: 0,
+    host: '127.0.0.1',
+    validBearerTokens: new Set(['test-bearer-token']),
+    telemetryPort,
+    heartbeatPort,
+    snapshotPort,
+    logger,
+  });
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, {
+      headers: { Authorization: 'Bearer test-bearer-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-snap-throw',
+        timestamp: '2026-09-07T00:00:00.000Z',
+        event_type: 'snapshot',
+        payload: { image_base64: 'ZmFrZQ==' },
+      })
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'snapshot_handler_error'));
+    const errEvent = logger.events.find((e) => e.event_type === 'snapshot_handler_error');
+    assert.equal(errEvent?.channel_id, 'chan-snap-throw');
+    assert.match(errEvent?.reason ?? '', /lỗi giả lập từ core \(snapshot\)/);
+
+    // Connection vẫn sống - telemetry sau đó vẫn xử lý bình thường.
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-snap-throw-2',
+        timestamp: '2026-09-07T00:00:00.000Z',
         event_type: 'telemetry',
         payload: { bitrate_kbps: 1000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [0, 0] },
       })
@@ -542,6 +741,7 @@ test('Envelope không phải JSON hợp lệ -> log lỗi, không throw, connect
 test('handleTelemetry() throw (bug giả lập ở core) -> log telemetry_handler_error, KHÔNG crash, connection vẫn sống', async () => {
   const telemetryPort = new ThrowingTelemetryPort();
   const heartbeatPort = new FakeHeartbeatPort();
+  const snapshotPort = new FakeSnapshotPort();
   const logger = new FakeLogger();
   const handle = await startWsTelemetryAdapter({
     port: 0,
@@ -549,6 +749,7 @@ test('handleTelemetry() throw (bug giả lập ở core) -> log telemetry_handle
     validBearerTokens: new Set(['test-bearer-token']),
     telemetryPort,
     heartbeatPort,
+    snapshotPort,
     logger,
   });
   try {

@@ -233,3 +233,25 @@ describe('Page - channelMachineOffline badge (Story 2.7)', () => {
     cleanup();
   });
 });
+
+// Bổ sung video-preview thật (AD-22): channel-snapshot wiring end-to-end qua
+// Page -> ChannelGrid -> ChannelGridCell.
+describe('Page - channelSnapshots wiring (video-preview thật)', () => {
+  it('channel-snapshot qua store -> cell tương ứng dùng ảnh thật thay gradient giả', () => {
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+      ]);
+      store.applyChannelSeen('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      store.applyChannelSnapshot('chan-1', 'ZmFrZS1qcGVn');
+      return () => {};
+    });
+
+    render(<Page />);
+
+    const style = screen.getByTestId('thumbnail-chan-1').style.backgroundImage;
+    expect(style).toContain('data:image/jpeg;base64,ZmFrZS1qcGVn');
+    cleanup();
+  });
+});

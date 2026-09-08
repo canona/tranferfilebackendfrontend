@@ -112,6 +112,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Bổ sung video-preview thật (AD-22): áp dụng cho cả gradient placeholder
+     LẪN ảnh JPEG thật (cùng 1 class, khác nguồn backgroundImage - xem
+     ChannelGridCell.tsx) - ô gần-vuông (DESIGN.md: ưu tiên quét mắt nhanh hơn
+     khớp đúng 16:9), crop/letterbox theo tỷ lệ gốc là chấp nhận được. */
+  background-size: cover;
+  background-position: center;
 }
 
 .thumbnailWarningIcon {

@@ -17,6 +17,7 @@ import type { Socket } from 'node:net';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { CONNECTION_STATES, type TelemetryInboundPort, type TelemetryEvent, type ConnectionState } from '../../ports/TelemetryInboundPort.js';
 import type { HeartbeatInboundPort } from '../../ports/HeartbeatInboundPort.js';
+import type { SnapshotInboundPort } from '../../ports/SnapshotInboundPort.js';
 import type { Logger } from '../../logging/logger.js';
 
 // Consistency Conventions / AD-30: tập đóng event_type - thêm giá trị mới
@@ -50,6 +51,10 @@ export interface WsTelemetryAdapterOptions {
   // Story 2.7: port MỚI cho `event_type=heartbeat` (trước đây bị bỏ qua im
   // lặng trong tập đóng - xem nhánh `eventType !== 'telemetry'` bên dưới).
   heartbeatPort: HeartbeatInboundPort;
+  // Bổ sung video-preview thật (AD-22): port MỚI cho `event_type=snapshot`
+  // (trước đây bị bỏ qua im lặng trong tập đóng, cùng nhánh với heartbeat cũ -
+  // mirror cách heartbeat được tách ra khỏi nhánh catch-all ở Story 2.7).
+  snapshotPort: SnapshotInboundPort;
   logger: Logger;
 }
 
@@ -102,7 +107,7 @@ function rawDataToString(data: RawData): string {
 }
 
 export function startWsTelemetryAdapter(options: WsTelemetryAdapterOptions): Promise<WsTelemetryAdapterHandle> {
-  const { validBearerTokens, telemetryPort, heartbeatPort, logger } = options;
+  const { validBearerTokens, telemetryPort, heartbeatPort, snapshotPort, logger } = options;
 
   const httpServer: HttpServer = createServer((_req, res) => {
     res.writeHead(404).end();
@@ -140,7 +145,7 @@ export function startWsTelemetryAdapter(options: WsTelemetryAdapterOptions): Pro
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const source = req.socket.remoteAddress ?? '';
     ws.on('message', (data: RawData) => {
-      handleMessage(rawDataToString(data), { telemetryPort, heartbeatPort, logger, source });
+      handleMessage(rawDataToString(data), { telemetryPort, heartbeatPort, snapshotPort, logger, source });
     });
     ws.on('error', (err: Error) => {
       logger.log({ channel_id: '', event_type: 'ws_disconnect', source, reason: err.message });
@@ -199,6 +204,7 @@ export function startWsTelemetryAdapter(options: WsTelemetryAdapterOptions): Pro
 interface MessageContext {
   telemetryPort: TelemetryInboundPort;
   heartbeatPort: HeartbeatInboundPort;
+  snapshotPort: SnapshotInboundPort;
   logger: Logger;
   source: string;
 }
@@ -277,11 +283,58 @@ function handleMessage(raw: string, ctx: MessageContext): void {
     return;
   }
 
+  // Bổ sung video-preview thật (AD-22): forward `event_type=snapshot` qua
+  // `SnapshotInboundPort` MỚI - trước đây rơi vào nhánh "bỏ qua có chủ đích"
+  // bên dưới cùng alert/ack-command/handshake_* (comment cũ ở đó forward-
+  // reference "snapshot cache ở Story 2.5" nhưng Story 2.5 chỉ build placeholder
+  // phía frontend, chưa từng nối chặng này - xem spec-2-5's Never clause).
+  // Payload chỉ có duy nhất `image_base64` (AD-22) - KHÔNG parse gì thêm,
+  // KHÔNG debounce (khác hẳn telemetry).
+  if (eventType === 'snapshot') {
+    if (!envelopeChannelId) {
+      ctx.logger.log({
+        channel_id: '',
+        event_type: 'envelope_invalid',
+        source: ctx.source,
+        reason: 'snapshot envelope thiếu channel_id',
+      });
+      return;
+    }
+    const snapshotPayload = envelope.payload;
+    const imageBase64 =
+      typeof snapshotPayload === 'object' && snapshotPayload !== null
+        ? (snapshotPayload as Record<string, unknown>).image_base64
+        : undefined;
+    if (typeof imageBase64 !== 'string' || imageBase64.length === 0) {
+      ctx.logger.log({
+        channel_id: envelopeChannelId,
+        event_type: 'envelope_invalid',
+        source: ctx.source,
+        reason: 'snapshot envelope thiếu/rỗng payload.image_base64',
+      });
+      return;
+    }
+    const snapshotTimestamp = typeof envelope.timestamp === 'string' ? envelope.timestamp : new Date().toISOString();
+    // Code review (mirror telemetryPort/heartbeatPort call sites bên trên):
+    // 1 exception từ implementation của SnapshotInboundPort không được thoát
+    // ra khỏi handler 'message', crash cả tiến trình.
+    try {
+      ctx.snapshotPort.handleSnapshot(envelopeChannelId, imageBase64, snapshotTimestamp);
+    } catch (err) {
+      ctx.logger.log({
+        channel_id: envelopeChannelId,
+        event_type: 'snapshot_handler_error',
+        source: ctx.source,
+        reason: (err as Error).message,
+      });
+    }
+    return;
+  }
+
   if (eventType !== 'telemetry') {
-    // Trong tập đóng nhưng KHÔNG phải telemetry/heartbeat (snapshot/alert/
+    // Trong tập đóng nhưng KHÔNG phải telemetry/heartbeat/snapshot (alert/
     // ack-command/handshake_*) - thuộc scope story sau (Never: AckCommandPort/
-    // HistoryPort thật ở Epic 3, snapshot cache ở Story 2.5...). Bỏ qua có chủ
-    // đích, không throw.
+    // HistoryPort thật ở Epic 3). Bỏ qua có chủ đích, không throw.
     return;
   }
 

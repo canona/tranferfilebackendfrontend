@@ -26,6 +26,10 @@ export interface ChannelGridProps {
   // `channelMachineOffline`, ĐỘC LẬP channelDisplayStates) - truyền xuống mỗi
   // cell dưới dạng prop `subType` (chỉ có giá trị khi channel có trong set).
   channelMachineOffline: ReadonlySet<string>;
+  // Bổ sung video-preview thật (AD-22): data-URI JPEG sẵn dùng theo channelId
+  // (`channelStore.ts`'s `channelSnapshots`). Thiếu entry cho 1 channelId ->
+  // ChannelGridCell fallback gradient placeholder (xem ChannelGridCell.tsx).
+  channelSnapshots: ReadonlyMap<string, string>;
 }
 
 // Code review [patch]: trước khi client nhận `registry-snapshot` ĐẦU TIÊN
@@ -53,6 +57,7 @@ export function ChannelGrid({
   channelDisplayStates,
   channelAudioLevels,
   channelMachineOffline,
+  channelSnapshots,
 }: ChannelGridProps) {
   // `channels` rỗng CHỈ xảy ra trước lần `registry-snapshot` đầu tiên (snapshot
   // rỗng thật sự không thể xảy ra - fileChannelRegistryAdapter chặn registry
@@ -81,6 +86,7 @@ export function ChannelGrid({
           displayState={channelDisplayStates.get(channel.channelId)}
           audioLevel={channelAudioLevels.get(channel.channelId)}
           subType={channelMachineOffline.has(channel.channelId) ? 'machine-offline' : undefined}
+          snapshotDataUri={channelSnapshots.get(channel.channelId)}
         />
       ))}
     </div>

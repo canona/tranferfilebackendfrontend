@@ -49,6 +49,18 @@ interface ChannelStateChangeMessage {
   timestamp: string;
 }
 
+// Bổ sung video-preview thật (AD-22): envelope nhận từ `wsUiAdapter.ts` -
+// mirror snake_case shape của kênh này. `image_base64` là base64 JPEG THÔ
+// (KHÔNG có prefix `data:...`) - `channelStore.ts`'s `applyChannelSnapshot`
+// là nơi build data-URI, không phải ở đây (giữ layer transport chỉ validate
+// hình dạng message, không diễn giải nội dung).
+interface ChannelSnapshotMessage {
+  type: 'channel-snapshot';
+  channel_id: string;
+  image_base64: string;
+  timestamp: string;
+}
+
 // Code review [patch]: phòng thủ lớp 2 (nhất quán tinh thần `channelState.ts`
 // validate lại `connection_state` dù `wsTelemetryAdapter.ts` đã validate lớp
 // 1) - `grid_position` không chỉ cần là `number`, phải là số nguyên 0-19
@@ -102,6 +114,25 @@ function isValidSubType(value: unknown): value is 'config-or-security-suspected'
   return value === undefined || value === 'config-or-security-suspected' || value === 'machine-offline';
 }
 
+// Bổ sung video-preview thật (AD-22): mirror isChannelSeenMessage - chỉ
+// validate hình dạng thô (channel_id/image_base64 là string không rỗng),
+// KHÔNG validate nội dung base64 có phải JPEG hợp lệ hay không (đó là việc
+// của trình duyệt khi gán vào backgroundImage/img src, không phải layer này -
+// mirror tinh thần "src/core hoàn toàn thuần" phía backend: layer transport
+// không xử lý/diễn giải nội dung ảnh).
+function isChannelSnapshotMessage(value: unknown): value is ChannelSnapshotMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === 'channel-snapshot' &&
+    typeof v.channel_id === 'string' &&
+    v.channel_id.length > 0 &&
+    typeof v.image_base64 === 'string' &&
+    v.image_base64.length > 0 &&
+    typeof v.timestamp === 'string'
+  );
+}
+
 function isChannelStateChangeMessage(value: unknown): value is ChannelStateChangeMessage {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -146,6 +177,10 @@ export function applyUiWsMessage(store: ChannelStore, raw: string): void {
   }
   if (isChannelStateChangeMessage(parsed)) {
     store.applyChannelDisplayStateChange(parsed.channel_id, parsed.display_state, parsed.sub_type);
+    return;
+  }
+  if (isChannelSnapshotMessage(parsed)) {
+    store.applyChannelSnapshot(parsed.channel_id, parsed.image_base64);
     return;
   }
   // type lạ khác (message tương lai chưa định nghĩa ở story này) - bỏ qua.

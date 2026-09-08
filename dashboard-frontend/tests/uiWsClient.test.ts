@@ -76,6 +76,7 @@ describe('applyUiWsMessage', () => {
       connectionStatus: 'connected',
       lastConnectedAt: null,
       channelMachineOffline: new Set(),
+      channelSnapshots: new Map(),
     });
   });
 
@@ -208,6 +209,45 @@ describe('applyUiWsMessage', () => {
     expect(store.getState().channelDisplayStates.get('chan-1')).toBe('critical');
   });
 
+  // Bổ sung video-preview thật (AD-22): channel-snapshot.
+  it('channel-snapshot hợp lệ -> channelStore lưu đúng data-URI theo channel_id', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(
+      store,
+      JSON.stringify({ type: 'channel-snapshot', channel_id: 'chan-1', image_base64: 'ZmFrZS1qcGVn', timestamp: '2026-09-07T00:00:00.000Z' })
+    );
+    expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,ZmFrZS1qcGVn');
+  });
+
+  it('channel-snapshot thiếu/rỗng image_base64 -> bỏ qua âm thầm, KHÔNG cập nhật store', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(store, JSON.stringify({ type: 'channel-snapshot', channel_id: 'chan-1', timestamp: '2026-09-07T00:00:00.000Z' }));
+    applyUiWsMessage(
+      store,
+      JSON.stringify({ type: 'channel-snapshot', channel_id: 'chan-1', image_base64: '', timestamp: '2026-09-07T00:00:00.000Z' })
+    );
+    expect(store.getState().channelSnapshots.size).toBe(0);
+  });
+
+  it('channel-snapshot thiếu channel_id -> bỏ qua âm thầm', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(store, JSON.stringify({ type: 'channel-snapshot', image_base64: 'ZmFrZQ==', timestamp: '2026-09-07T00:00:00.000Z' }));
+    expect(store.getState().channelSnapshots.size).toBe(0);
+  });
+
+  it('channel-snapshot gọi lại cho CÙNG channel_id với image_base64 KHÁC -> GHI ĐÈ (không idempotent-guard, mirror channel-state-change)', () => {
+    const store = createChannelStore();
+    applyUiWsMessage(
+      store,
+      JSON.stringify({ type: 'channel-snapshot', channel_id: 'chan-1', image_base64: 'khung-1', timestamp: '2026-09-07T00:00:00.000Z' })
+    );
+    applyUiWsMessage(
+      store,
+      JSON.stringify({ type: 'channel-snapshot', channel_id: 'chan-1', image_base64: 'khung-2', timestamp: '2026-09-07T00:00:01.500Z' })
+    );
+    expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,khung-2');
+  });
+
   it('registry-snapshot với grid_position hợp lệ ở biên (0 và 19) -> áp dụng bình thường', () => {
     const store = createChannelStore();
     applyUiWsMessage(
@@ -301,6 +341,22 @@ describe('connectUiWsClient', () => {
     try {
       await waitUntil(() => store.getState().channelDisplayStates.get('chan-1') === 'warning');
       expect(store.getState().channelDisplayStates.get('chan-1')).toBe('warning');
+    } finally {
+      disconnect();
+    }
+  });
+
+  it('connect thành công -> store cập nhật channelSnapshots khi server gửi channel-snapshot', async () => {
+    const { url, server } = await startFakeBackend();
+    server.on('connection', (ws) => {
+      ws.send(JSON.stringify({ type: 'channel-snapshot', channel_id: 'chan-1', image_base64: 'ZmFrZS1qcGVn', timestamp: '2026-09-07T00:00:00.000Z' }));
+    });
+
+    const store = createChannelStore();
+    const disconnect = connectUiWsClient(url, store);
+    try {
+      await waitUntil(() => store.getState().channelSnapshots.has('chan-1'));
+      expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,ZmFrZS1qcGVn');
     } finally {
       disconnect();
     }

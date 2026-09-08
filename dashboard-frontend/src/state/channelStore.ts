@@ -58,6 +58,12 @@ export interface ChannelStoreState {
   // thể machine-offline dù WS UI vẫn 'connected' bình thường). Duy trì bởi
   // `applyChannelDisplayStateChange`'s `subType` param.
   channelMachineOffline: ReadonlySet<string>;
+  // Bổ sung video-preview thật (AD-22): channelId -> data-URI JPEG sẵn dùng
+  // (`data:image/jpeg;base64,...`) - build 1 LẦN ở `applyChannelSnapshot()`
+  // (không phải lúc render, xem comment ở đó), GHI ĐÈ theo channelId mỗi lần
+  // có khung mới (mirror `channelDisplayStates` - không idempotent-guard,
+  // AD-22: transport-core tự kiểm soát nhịp gửi).
+  channelSnapshots: ReadonlyMap<string, string>;
 }
 
 type Listener = () => void;
@@ -69,6 +75,7 @@ const EMPTY_STATE: ChannelStoreState = {
   connectionStatus: 'connected',
   lastConnectedAt: null,
   channelMachineOffline: new Set(),
+  channelSnapshots: new Map(),
 };
 
 export class ChannelStore {
@@ -140,6 +147,19 @@ export class ChannelStore {
       channelDisplayStates: nextDisplayStates,
       channelMachineOffline: nextMachineOffline,
     });
+  }
+
+  // Bổ sung video-preview thật (AD-22): build data-URI 1 LẦN ở đây (không
+  // phải lúc render trong ChannelGridCell.tsx) - `ChannelGridCell` re-render
+  // vì lý do khác (audioLevel tick ~300ms) thường xuyên hơn nhiều so với tần
+  // suất snapshot thật tới (~1.5s/kênh), nối chuỗi base64 nhiều KB lại mỗi
+  // lần render đó là lãng phí không cần thiết. GHI ĐÈ theo channelId (không
+  // idempotent-guard, mirror applyChannelDisplayStateChange) - mỗi khung
+  // transport-core gửi được coi là mới.
+  applyChannelSnapshot(channelId: string, imageBase64: string): void {
+    const next = new Map(this.state.channelSnapshots);
+    next.set(channelId, `data:image/jpeg;base64,${imageBase64}`);
+    this.setState({ ...this.state, channelSnapshots: next });
   }
 
   // Story 2.7: cập nhật bởi `uiWsClient.ts`'s `connectUiWsClient` mỗi khi

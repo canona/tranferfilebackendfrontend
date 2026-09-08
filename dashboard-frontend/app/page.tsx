@@ -73,6 +73,7 @@ export default function Page() {
           channelDisplayStates={state.channelDisplayStates}
           channelAudioLevels={channelAudioLevels}
           channelMachineOffline={state.channelMachineOffline}
+          channelSnapshots={state.channelSnapshots}
         />
         {state.connectionStatus === 'disconnected' ? (
           <div className={styles.gridOverlay} data-testid="grid-overlay" aria-hidden="true" />

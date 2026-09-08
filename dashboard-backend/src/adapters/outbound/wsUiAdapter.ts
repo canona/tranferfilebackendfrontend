@@ -21,6 +21,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { ChannelRegistryEntry, ChannelRegistryPort } from '../../ports/ChannelRegistryPort.js';
 import type { UiOutboundPort } from '../../ports/UiOutboundPort.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../../ports/AlertOutboundPort.js';
+import type { SnapshotOutboundPort } from '../../ports/SnapshotOutboundPort.js';
 import type { Logger } from '../../logging/logger.js';
 
 // Code review (mirror wsTelemetryAdapter.ts): WS UI không auth (LAN-only,
@@ -41,7 +42,11 @@ export interface WsUiAdapterOptions {
 // `channel-state-change` (AlertOutboundPort, MỚI) tới cùng tập client WS UI.
 // 2 port vẫn tách biệt về TYPE/semantic (Design Notes/Ask First) - chỉ 1
 // object implement CẢ HAI vì cả 2 đều broadcast tới cùng `wss.clients`.
-export interface WsUiAdapterHandle extends UiOutboundPort, AlertOutboundPort {
+// Bổ sung video-preview thật (AD-22): `WsUiAdapterHandle` implement THÊM
+// `SnapshotOutboundPort` - mirror lý do Story 2.6 đã thêm `AlertOutboundPort`
+// vào đây (cùng 1 object phát cả 3 loại message tới cùng tập client WS UI,
+// 3 port vẫn tách biệt về type/semantic).
+export interface WsUiAdapterHandle extends UiOutboundPort, AlertOutboundPort, SnapshotOutboundPort {
   readonly port: number;
   close(): Promise<void>;
 }
@@ -93,6 +98,22 @@ function toChannelStateChangeMessage(change: ChannelStateChange): ChannelStateCh
   };
 }
 
+// Bổ sung video-preview thật (AD-22): envelope `channel-snapshot` - cùng
+// phong cách snake_case đóng của kênh này. `image_base64` forward NGUYÊN VĂN
+// từ `SnapshotOutboundPort.publishSnapshot()` - adapter này KHÔNG diễn giải/
+// xử lý ảnh (AD-22: "dashboard-backend chỉ cache khung mới nhất/kênh, relay
+// cho frontend").
+interface ChannelSnapshotMessage {
+  type: 'channel-snapshot';
+  channel_id: string;
+  image_base64: string;
+  timestamp: string;
+}
+
+function toChannelSnapshotMessage(channelId: string, imageBase64: string, timestamp: string): ChannelSnapshotMessage {
+  return { type: 'channel-snapshot', channel_id: channelId, image_base64: imageBase64, timestamp };
+}
+
 function toSnapshotChannel(entry: ChannelRegistryEntry & { channelId: string }): RegistrySnapshotChannel {
   return {
     channel_id: entry.channelId,
@@ -105,7 +126,7 @@ function toSnapshotChannel(entry: ChannelRegistryEntry & { channelId: string }):
 
 function send(
   ws: WebSocket,
-  message: RegistrySnapshotMessage | ChannelSeenMessage | ChannelStateChangeMessage
+  message: RegistrySnapshotMessage | ChannelSeenMessage | ChannelStateChangeMessage | ChannelSnapshotMessage
 ): void {
   // Code review: chỉ gửi khi socket còn ở trạng thái OPEN - client vừa
   // connect rồi rớt ngay lập tức (trước khi kịp gửi snapshot) không được
@@ -131,6 +152,15 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
   // không, ô sẽ kẹt vĩnh viễn ở loaded-neutral vì backend chỉ phát lại khi
   // trạng thái ĐỔI, không phát lặp khi ổn định).
   const lastState = new Map<string, ChannelStateChange>();
+
+  // Bổ sung video-preview thật (AD-22): `channelId -> khung snapshot mới
+  // nhất` - mirror `lastState` ở trên. AD-22: "dashboard-backend chỉ cache
+  // khung mới nhất/kênh (không xử lý ảnh), relay cho frontend" - đây CHÍNH
+  // là cái cache đó, đặt ở adapter này (không phải core layer) để nhất quán
+  // với cách `lastState`/`seenChannels` đã cache "giá trị mới nhất/kênh" cho
+  // 2 loại message replay-on-connect khác, tránh tạo 2 nguồn sự thật khác
+  // nhau cho cùng 1 khái niệm.
+  const lastSnapshot = new Map<string, { imageBase64: string; timestamp: string }>();
 
   const httpServer: HttpServer = createServer((_req, res) => {
     res.writeHead(404).end();
@@ -183,6 +213,12 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
     // muộn hiện đúng màu ngay, không chờ backend đổi trạng thái lần nữa.
     for (const change of lastState.values()) {
       send(ws, toChannelStateChangeMessage(change));
+    }
+    // Bổ sung video-preview thật (AD-22): replay bước 4, SAU
+    // channel-state-change - client connect muộn thấy đúng ảnh mới nhất/kênh
+    // ngay, không phải chờ tới lần snapshot kế tiếp (~1.5s).
+    for (const [channelId, snap] of lastSnapshot) {
+      send(ws, toChannelSnapshotMessage(channelId, snap.imageBase64, snap.timestamp));
     }
 
     // Adapter này chỉ PHÁT tới frontend (outbound) - story 2.3 không định
@@ -248,6 +284,19 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
         publishStateChange(change: ChannelStateChange): void {
           lastState.set(change.channelId, change);
           const message = toChannelStateChangeMessage(change);
+          for (const client of wss.clients) {
+            send(client, message);
+          }
+        },
+
+        // Bổ sung video-preview thật (AD-22): mirror publishStateChange -
+        // GHI ĐÈ vô điều kiện (không idempotent-guard như publishChannelSeen)
+        // vì mỗi khung transport-core gửi được coi là mới, không tra registry
+        // lại (đã tra 1 lần ở SnapshotRelayService phía core) - adapter này
+        // chỉ "dumb/broadcast-only" đúng vai trò hiện có.
+        publishSnapshot(channelId: string, imageBase64: string, timestamp: string): void {
+          lastSnapshot.set(channelId, { imageBase64, timestamp });
+          const message = toChannelSnapshotMessage(channelId, imageBase64, timestamp);
           for (const client of wss.clients) {
             send(client, message);
           }
