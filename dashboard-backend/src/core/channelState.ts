@@ -174,19 +174,34 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
     // `recordBitrate` để dùng lại trong log lỗi bên dưới nếu throw - tránh gọi
     // `this.clock.now()` lần 2 (có thể ra giá trị khác thời điểm gọi thực tế).
     const historyTimestampMs = this.clock.now();
+    // Code review round 2 [patch]: try/catch này bọc CẢ 2 lệnh (`recordBitrate`
+    // VÀ `publishHistoryPoint`) nhưng phải phân biệt rõ trong log lỗi lệnh nào
+    // thực sự throw - nếu `recordBitrate` thành công (mẫu đã ghi vào ring
+    // buffer) mà chỉ `publishHistoryPoint` throw, log cứng "recordBitrate
+    // throw" sẽ gây hiểu nhầm khi debug (ring buffer thật ra vẫn ổn, chỉ mất
+    // broadcast realtime). `step` đánh dấu lệnh đang chạy khi catch bắt lỗi.
+    let step: 'recordBitrate' | 'publishHistoryPoint' = 'recordBitrate';
     try {
       this.historyPort.recordBitrate(event.channelId, bitratePct, historyTimestampMs);
+      // Story 3.2 (Boundaries): `uiPort.publishHistoryPoint` chỉ gọi SAU KHI
+      // `recordBitrate` thành công, trong CÙNG try/catch này - `recordBitrate`
+      // throw thì dòng này không bao giờ chạy tới (không publish 1 mẫu chưa
+      // chắc đã ghi được vào ring buffer). Dùng lại ĐÚNG `bitratePct`/
+      // `historyTimestampMs` đã ghi, không tính/đọc lại.
+      step = 'publishHistoryPoint';
+      this.uiPort.publishHistoryPoint(event.channelId, bitratePct, historyTimestampMs);
     } catch (err) {
       // Code review [patch]: `err` không được đảm bảo là `Error` (mirror
       // `createCompositeAlertPort` ở `app/main.ts`) - `instanceof Error` guard
       // trước khi đọc `.message`, fallback `String(err)` tránh hiện "undefined"
-      // khi historyPort throw ra 1 giá trị không phải `Error`.
+      // khi historyPort/uiPort throw ra 1 giá trị không phải `Error`.
       const message = err instanceof Error ? err.message : String(err);
+      const failedCall = step === 'recordBitrate' ? 'historyPort.recordBitrate' : 'uiPort.publishHistoryPoint';
       this.logger.log({
         channel_id: event.channelId,
         event_type: 'history_record_error',
         reason:
-          `historyPort.recordBitrate throw (bitrate_pct=${bitratePct.toFixed(1)}%, ` +
+          `${failedCall} throw (bitrate_pct=${bitratePct.toFixed(1)}%, ` +
           `timestamp_ms=${historyTimestampMs}): ${message}`,
       });
     }

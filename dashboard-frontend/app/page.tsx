@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChannelGrid } from '../src/components/ChannelGrid';
 import { ConnectionBanner } from '../src/components/ConnectionBanner';
+import { DetailPanel } from '../src/components/DetailPanel';
 import { createChannelStore, useChannelStore } from '../src/state/channelStore';
 import { connectUiWsClient } from '../src/services/uiWsClient';
 import { computeAudioLevelFixture } from '../src/fixtures/channelAudioLevels';
@@ -74,11 +75,13 @@ export default function Page() {
           channelAudioLevels={channelAudioLevels}
           channelMachineOffline={state.channelMachineOffline}
           channelSnapshots={state.channelSnapshots}
+          onSelect={(channelId) => store.selectChannel(channelId)}
         />
         {state.connectionStatus === 'disconnected' ? (
           <div className={styles.gridOverlay} data-testid="grid-overlay" aria-hidden="true" />
         ) : null}
       </div>
+      <DetailPanel store={store} />
     </>
   );
 }

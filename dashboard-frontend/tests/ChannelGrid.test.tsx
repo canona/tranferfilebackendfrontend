@@ -2,8 +2,8 @@
 // event/telemetry"; "toàn bộ 20 ô hiện skeleton; từng ô chuyển sang
 // loaded-neutral ngay khi kênh đó có telemetry, không chờ đủ 20 kênh".
 
-import { describe, it, expect, afterEach } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { ChannelGrid } from '../src/components/ChannelGrid';
 import type { ChannelRegistryEntry } from '../src/state/channelStore';
 
@@ -255,6 +255,33 @@ describe('ChannelGrid', () => {
 
     expect(screen.getByTestId('channel-grid-cell-chan-0')).toHaveAttribute('data-sub-type', 'machine-offline');
     expect(screen.getByTestId('channel-grid-cell-chan-1')).not.toHaveAttribute('data-sub-type');
+  });
+
+  // Code review round 2 [patch #7, verification-gap]: `ChannelGrid` phải
+  // forward `onSelect` xuống ĐÚNG cell đã click - trước patch này không test
+  // nào đi qua chuỗi thật `ChannelGrid -> ChannelGridCell -> onSelect`
+  // (mirror style "truyền đúng X xuống từng cell" đã có ở trên cho các prop
+  // khác). Nếu tương lai `ChannelGrid.tsx` lỡ quên forward prop này, test này
+  // là nơi DUY NHẤT bắt được.
+  it('truyền đúng onSelect xuống từng cell - click 1 channel-grid-cell gọi onSelect với đúng channelId', () => {
+    const channels = makeChannels(3);
+    const onSelect = vi.fn();
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1', 'chan-2'])}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('channel-grid-cell-chan-1'));
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith('chan-1');
   });
 
   it('channelMachineOffline rỗng -> không cell nào nhận subType', () => {

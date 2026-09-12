@@ -1,0 +1,139 @@
+/*
+ * DESIGN.md's `detail-panel`: background {colors.surface-raised}, border
+ * {colors.border}, radius {rounded.lg}, padding {spacing.panel-padding}.
+ * Elevation & Depth: "detail-panel nổi lên trên lưới nền như một overlay
+ * nhưng vẫn dùng nguyên tắc tông màu, không thêm shadow."
+ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  /* Dưới connection-banner (z-index: 1000, "trên tất cả các lớp khác kể cả
+     detail-panel" - DESIGN.md), trên channel-grid. Không dùng scrim tối màu
+     mới (Boundaries: không thêm token/màu ngoài spine) - backdrop chỉ để bắt
+     click-outside, lưới phía sau vẫn nhìn thấy nguyên vẹn/tiếp tục cập nhật. */
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel {
+  box-sizing: border-box;
+  width: 380px;
+  max-width: calc(100vw - 2 * var(--spacing-4));
+  max-height: calc(100vh - 2 * var(--spacing-4));
+  overflow-y: auto;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-panel-padding);
+}
+
+.header {
+  margin-bottom: var(--spacing-4);
+}
+
+.stationName {
+  font-family: var(--font-family-base);
+  font-size: var(--font-heading-size);
+  font-weight: var(--font-heading-weight);
+  line-height: var(--font-heading-line-height);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.block {
+  margin-bottom: var(--spacing-4);
+}
+
+.label {
+  font-family: var(--font-family-base);
+  font-size: var(--font-caption-size);
+  font-weight: var(--font-caption-weight);
+  line-height: var(--font-caption-line-height);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-1);
+}
+
+.bitrateValue {
+  font-family: var(--font-family-numeric);
+  font-size: var(--font-numeric-size);
+  font-weight: var(--font-numeric-weight);
+  line-height: var(--font-numeric-line-height);
+  color: var(--color-text-primary);
+}
+
+/* Skeleton (trạng thái `loading`) - KHÔNG bao giờ hiện trắng/trống (Epic 3
+   context: "Trạng thái loading: skeleton/placeholder ... không bao giờ hiện
+   trắng/trống"). Phẳng, không animation (mirror channel-grid-cell's Elevation
+   & Depth - "Không animation/transition gây xao nhãng"). */
+.skeletonLine {
+  height: calc(var(--font-numeric-size) * var(--font-numeric-line-height));
+  width: 4em;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-border) 55%, transparent);
+}
+
+.chartBlock {
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-2);
+  min-height: calc(80px + 2 * var(--spacing-2));
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chartSvg {
+  display: block;
+  width: 100%;
+  height: 80px;
+}
+
+.chartLine {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+
+/* Code review round 2 [patch #2]: marker cho mẫu bitrate ĐẦU TIÊN của 1 kênh
+   (points.length===1) - polyline 1 điểm không vẽ ra gì, dễ nhầm với trạng
+   thái trống/thiếu dữ liệu. */
+.chartPointMarker {
+  fill: var(--color-accent);
+}
+
+.skeletonChart {
+  width: 100%;
+  height: 80px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-border) 40%, transparent);
+}
+
+.noHistoryMessage {
+  font-family: var(--font-family-base);
+  font-size: var(--font-caption-size);
+  font-weight: var(--font-caption-weight);
+  line-height: var(--font-caption-line-height);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.contactName {
+  font-family: var(--font-family-base);
+  font-size: var(--font-body-size);
+  font-weight: var(--font-body-weight);
+  line-height: var(--font-body-line-height);
+  color: var(--color-text-primary);
+}
+
+.contactPhone {
+  font-family: var(--font-family-numeric);
+  font-size: var(--font-body-size);
+  font-weight: var(--font-body-weight);
+  line-height: var(--font-body-line-height);
+  color: var(--color-text-primary);
+  margin-top: 2px;
+}

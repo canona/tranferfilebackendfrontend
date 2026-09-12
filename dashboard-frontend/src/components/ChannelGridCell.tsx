@@ -152,6 +152,11 @@ export interface ChannelGridCellProps {
   // không phải trạng thái lỗi. Chỉ có hiệu lực khi effectiveDisplayState là
   // 'ok'/'warning' (nhánh 'critical' luôn dùng color-bars, bất kể prop này).
   snapshotDataUri?: string;
+  // Story 3.2: click BẤT KỲ đâu trên ô gọi `onSelect(channelId)` - mở đúng
+  // `detail-panel` của kênh đó (Boundaries/Epic 3 context). Optional - thiếu
+  // (undefined) giữ nguyên hành vi cũ (không click được), tương thích ngược
+  // với test cũ.
+  onSelect?: (channelId: string) => void;
 }
 
 export function ChannelGridCell({
@@ -163,6 +168,7 @@ export function ChannelGridCell({
   audioLevel,
   subType,
   snapshotDataUri,
+  onSelect,
 }: ChannelGridCellProps) {
   const { row, col } = gridPositionToRowCol(gridPosition);
   // `displayState` chỉ có hiệu lực khi đã loaded (Boundaries) - undefined khi
@@ -186,6 +192,28 @@ export function ChannelGridCell({
       // DOM/mảng channels), CSS Grid tự đặt đúng ô bất kể thứ tự render.
       style={{ gridRow: row + 1, gridColumn: col + 1 }}
       role="gridcell"
+      // Story 3.2: click BẤT KỲ đâu trên ô mở detail-panel của đúng kênh đó
+      // (Boundaries) - `onSelect` optional, thiếu thì không gắn gì thêm (no-op
+      // an toàn qua `?.`).
+      onClick={() => onSelect?.(channelId)}
+      // Code review round 2 [patch #4]: ô kênh giờ có hành vi click mới (mở
+      // detail-panel) nên phải thao tác được bằng bàn phím (Epic 3 context's
+      // Accessibility: "cần tương thích ngay từ Epic 3") - `tabIndex={0}` chỉ
+      // khi có `onSelect` (thiếu onSelect = ô không tương tác, giữ nguyên
+      // hành vi cũ, không đưa vào thứ tự Tab để tránh dừng vô nghĩa).
+      tabIndex={onSelect ? 0 : undefined}
+      onKeyDown={
+        onSelect
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                // Space mặc định cuộn trang - phải preventDefault trước khi
+                // kích hoạt onSelect (mirror hành vi nút bấm chuẩn).
+                event.preventDefault();
+                onSelect(channelId);
+              }
+            }
+          : undefined
+      }
       // `stationName` rỗng = placeholder chưa có dữ liệu registry thật (code
       // review [patch], xem `ChannelGrid.tsx`'s `placeholderChannels()`) -
       // dùng nhãn chung "Đang tải kênh" thay vì " - đang tải" (leading space

@@ -8,7 +8,7 @@
 // `vi.useFakeTimers()` dùng để lái interval audioLevel bên dưới.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ChannelStore } from '../src/state/channelStore';
 import { computeAudioLevelFixture } from '../src/fixtures/channelAudioLevels';
 // Vitest hoist `vi.mock(...)` lên TRƯỚC mọi import trong cùng file (kể cả
@@ -230,6 +230,45 @@ describe('Page - channelMachineOffline badge (Story 2.7)', () => {
     expect(cell).toHaveAttribute('data-display-state', 'warning');
     expect(cell).not.toHaveAttribute('data-sub-type');
     expect(screen.getByTestId('alert-badge-chan-1')).toHaveTextContent('⚠ ABR');
+    cleanup();
+  });
+});
+
+// Story 3.2 (code review round 2 [patch #7, verification-gap]): chuỗi thật
+// AC #1 "click 1 channel-grid-cell -> detail-panel mở" - trước patch này
+// KHÔNG có test nào đi qua ĐÚNG chuỗi Page -> ChannelGrid -> ChannelGridCell ->
+// store.selectChannel -> DetailPanel (mirror style "channelSnapshots wiring"
+// ở dưới, cùng file này). Nếu tương lai `ChannelGrid.tsx` lỡ quên forward
+// `onSelect` xuống `ChannelGridCell`, hoặc `page.tsx` quên wiring `onSelect`
+// vào `store.selectChannel`, test này là nơi DUY NHẤT bắt được - các unit test
+// khác (`ChannelGridCell.test.tsx` tự truyền onSelect trực tiếp,
+// `DetailPanel.test.tsx` luôn mở panel bằng gọi thẳng `store.selectChannel`)
+// đều không đi qua đường dây thật này.
+describe('Page - detail-panel click wiring (Story 3.2, verification-gap)', () => {
+  it('click 1 channel-grid-cell thật -> detail-panel mở, đúng nội dung kênh đó (tên đài/đầu mối liên hệ)', () => {
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'Người A', contactPhone: '0900000001', gridPosition: 0 },
+        { channelId: 'chan-2', stationName: 'Đài 2', contactName: 'Người B', contactPhone: '0900000002', gridPosition: 1 },
+      ]);
+      store.applyChannelSeen('chan-1');
+      store.applyChannelSeen('chan-2');
+      return () => {};
+    });
+
+    render(<Page />);
+
+    // Panel chưa mở - chưa click gì cả.
+    expect(screen.queryByTestId('detail-panel')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('channel-grid-cell-chan-2'));
+
+    const panel = screen.getByTestId('detail-panel');
+    expect(panel).toBeInTheDocument();
+    expect(panel).toHaveAttribute('data-channel-id', 'chan-2');
+    expect(screen.getByTestId('detail-panel-station-name')).toHaveTextContent('Đài 2');
+    expect(screen.getByTestId('detail-panel-contact-name')).toHaveTextContent('Người B');
+    expect(screen.getByTestId('detail-panel-contact-phone')).toHaveTextContent('0900000002');
     cleanup();
   });
 });

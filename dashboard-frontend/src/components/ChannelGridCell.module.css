@@ -22,6 +22,13 @@
      hidden giữ đúng bo góc `radius-md` của `.cell` khi lớp nền này bị bo tròn
      kế thừa (border-radius: inherit). */
   overflow: hidden;
+  /* Code review round 2 [patch #5]: Story 3.2 làm cả ô click được (mở
+     detail-panel) nhưng không có tín hiệu thị giác nào báo điều đó -
+     cursor:pointer đủ để báo "click được" mà KHÔNG cần animation/transition
+     (Elevation & Depth ở trên: "Phẳng, có chủ đích ... Không animation/
+     transition trên lưới tổng quan" - giữ nguyên nguyên tắc này, không thêm
+     hiệu ứng hover). */
+  cursor: pointer;
 }
 
 .loaded {

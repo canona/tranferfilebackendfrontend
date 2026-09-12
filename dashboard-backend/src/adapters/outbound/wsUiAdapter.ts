@@ -22,6 +22,7 @@ import type { ChannelRegistryEntry, ChannelRegistryPort } from '../../ports/Chan
 import type { UiOutboundPort } from '../../ports/UiOutboundPort.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../../ports/AlertOutboundPort.js';
 import type { SnapshotOutboundPort } from '../../ports/SnapshotOutboundPort.js';
+import type { HistoryPort, HistoryQueryResult } from '../../ports/HistoryPort.js';
 import type { Logger } from '../../logging/logger.js';
 
 // Code review (mirror wsTelemetryAdapter.ts): WS UI không auth (LAN-only,
@@ -34,6 +35,12 @@ export interface WsUiAdapterOptions {
   port: number;
   host?: string;
   registryPort: ChannelRegistryPort;
+  // Story 3.2: port MỚI, bắt buộc (mirror `registryPort` - không optional,
+  // composition root `main.ts` luôn phải wiring `BitrateHistoryService` thật).
+  // Nguồn sự thật DUY NHẤT lúc connect để gửi `channel-history-snapshot`/kênh
+  // (Design Notes: "KHÔNG thêm cache Map mới trong wsUiAdapter.ts như
+  // lastState/lastSnapshot" - query trực tiếp `getHistory()` mỗi lần connect).
+  historyPort: HistoryPort;
   logger: Logger;
 }
 
@@ -114,6 +121,55 @@ function toChannelSnapshotMessage(channelId: string, imageBase64: string, timest
   return { type: 'channel-snapshot', channel_id: channelId, image_base64: imageBase64, timestamp };
 }
 
+// Story 3.2: envelope `channel-history-snapshot` - gửi 1 lần/kênh NGAY SAU
+// registry-snapshot lúc connect (Boundaries/Code Map), mirror snake_case shape
+// đóng của kênh này. `points` chỉ có mặt khi `state==='loaded'` (object spread
+// có điều kiện, mirror `sub_type` của `ChannelStateChangeMessage` - KHÔNG gửi
+// `points: undefined` tường minh khi `no-history-data`). Field trên mỗi điểm
+// giữ NGUYÊN `timestamp_ms` (số, KHÔNG đổi sang ISO - Ask First đã chốt không
+// đổi format wire của `BitrateHistoryPoint`).
+interface ChannelHistorySnapshotPointWire {
+  timestamp_ms: number;
+  bitrate_pct: number;
+}
+
+interface ChannelHistorySnapshotMessage {
+  type: 'channel-history-snapshot';
+  channel_id: string;
+  // Design Notes: backend không bao giờ tự sinh nhánh 'loading' (đó là trạng
+  // thái CHỈ tồn tại ở frontend trước khi nhận message này) - type ở đây chỉ
+  // liệt kê đúng 2 nhánh backend thực sự gửi.
+  state: 'loaded' | 'no-history-data';
+  points?: ChannelHistorySnapshotPointWire[];
+}
+
+function toChannelHistorySnapshotMessage(channelId: string, result: HistoryQueryResult): ChannelHistorySnapshotMessage {
+  if (result.state === 'loaded') {
+    return {
+      type: 'channel-history-snapshot',
+      channel_id: channelId,
+      state: 'loaded',
+      points: result.data.map((p) => ({ timestamp_ms: p.timestampMs, bitrate_pct: p.bitratePct })),
+    };
+  }
+  return { type: 'channel-history-snapshot', channel_id: channelId, state: 'no-history-data' };
+}
+
+// Story 3.2: envelope `channel-history-point` - broadcast NGAY mỗi khi
+// `channelState.ts` ghi thành công 1 mẫu mới vào ring buffer (KHÔNG cache Map
+// nào ở đây, KHÔNG idempotent-guard - Design Notes/Boundaries: tín hiệu rời
+// rạc, phát mọi lúc mọi client cùng nhận như nhau).
+interface ChannelHistoryPointMessage {
+  type: 'channel-history-point';
+  channel_id: string;
+  bitrate_pct: number;
+  timestamp_ms: number;
+}
+
+function toChannelHistoryPointMessage(channelId: string, bitratePct: number, timestampMs: number): ChannelHistoryPointMessage {
+  return { type: 'channel-history-point', channel_id: channelId, bitrate_pct: bitratePct, timestamp_ms: timestampMs };
+}
+
 function toSnapshotChannel(entry: ChannelRegistryEntry & { channelId: string }): RegistrySnapshotChannel {
   return {
     channel_id: entry.channelId,
@@ -126,7 +182,13 @@ function toSnapshotChannel(entry: ChannelRegistryEntry & { channelId: string }):
 
 function send(
   ws: WebSocket,
-  message: RegistrySnapshotMessage | ChannelSeenMessage | ChannelStateChangeMessage | ChannelSnapshotMessage
+  message:
+    | RegistrySnapshotMessage
+    | ChannelSeenMessage
+    | ChannelStateChangeMessage
+    | ChannelSnapshotMessage
+    | ChannelHistorySnapshotMessage
+    | ChannelHistoryPointMessage
 ): void {
   // Code review: chỉ gửi khi socket còn ở trạng thái OPEN - client vừa
   // connect rồi rớt ngay lập tức (trước khi kịp gửi snapshot) không được
@@ -136,7 +198,7 @@ function send(
 }
 
 export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapterHandle> {
-  const { registryPort, logger } = options;
+  const { registryPort, historyPort, logger } = options;
 
   // `channelId -> timestamp` của lần publishChannelSeen đầu tiên/kênh - dùng
   // để (a) chặn publish lặp lại cho cùng 1 kênh (idempotent theo đúng ngữ
@@ -201,7 +263,44 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
     logger.log({ channel_id: '', event_type: 'ui_ws_connect', source, reason: '' });
 
     // I/O matrix "App vừa mở, WS UI connect": gửi registry-snapshot NGAY.
-    send(ws, { type: 'registry-snapshot', channels: registryPort.listEntries().map(toSnapshotChannel) });
+    const entries = registryPort.listEntries();
+    send(ws, { type: 'registry-snapshot', channels: entries.map(toSnapshotChannel) });
+
+    // Story 3.2 (Code Map): gửi `channel-history-snapshot`/kênh NGAY SAU
+    // registry-snapshot - `historyPort.getHistory()` là nguồn sự thật DUY NHẤT
+    // lúc connect (Design Notes), KHÔNG cache riêng Map nào ở adapter này. Bọc
+    // try/catch quanh TOÀN BỘ vòng lặp (I/O matrix: "historyPort.getHistory()
+    // throw hoặc trả 'loading' lúc connect -> Gửi no-history-data + log cảnh
+    // báo") - 1 kênh lỗi không được chặn các kênh còn lại/không throw crash.
+    for (const entry of entries) {
+      let result: HistoryQueryResult;
+      try {
+        result = historyPort.getHistory(entry.channelId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.log({
+          channel_id: entry.channelId,
+          event_type: 'history_snapshot_query_error',
+          reason: `historyPort.getHistory throw lúc gửi channel-history-snapshot: ${message}`,
+        });
+        send(ws, { type: 'channel-history-snapshot', channel_id: entry.channelId, state: 'no-history-data' });
+        continue;
+      }
+      if (result.state === 'loading') {
+        // Design Notes: backend không bao giờ tự sinh nhánh 'loading' - nếu
+        // xảy ra (nhánh không mong đợi), coi như no-history-data + log cảnh báo
+        // thay vì để nguyên 'loading' lọt ra wire (frontend không biết diễn giải).
+        logger.log({
+          channel_id: entry.channelId,
+          event_type: 'history_snapshot_query_error',
+          reason: `historyPort.getHistory trả 'loading' không mong đợi lúc connect - gửi no-history-data thay thế`,
+        });
+        send(ws, { type: 'channel-history-snapshot', channel_id: entry.channelId, state: 'no-history-data' });
+        continue;
+      }
+      send(ws, toChannelHistorySnapshotMessage(entry.channelId, result));
+    }
+
     // I/O matrix "Frontend connect muộn": replay channel-seen cho MỌI kênh
     // đã seen trước đó, NGAY SAU registry-snapshot, cùng 1 lần connect.
     for (const [channelId, timestamp] of seenChannels) {
@@ -307,6 +406,20 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
         publishSnapshot(channelId: string, imageBase64: string, timestamp: string): void {
           lastSnapshot.set(channelId, { imageBase64, timestamp });
           const message = toChannelSnapshotMessage(channelId, imageBase64, timestamp);
+          for (const client of wss.clients) {
+            send(client, message);
+          }
+        },
+
+        // Story 3.2: gọi bởi `channelState.ts` NGAY SAU mỗi lần
+        // `historyPort.recordBitrate` thành công (Boundaries) - KHÔNG cache Map
+        // nào ở đây (khác `lastState`/`lastSnapshot` - Design Notes: "point là
+        // tín hiệu rời rạc phát mọi lúc mọi client cùng nhận như nhau, không
+        // cần replay-từ-cache vì historyPort tự giữ đủ dữ liệu"), KHÔNG
+        // idempotent-guard (mirror `publishSnapshot`/`publishStateChange`, khác
+        // `publishChannelSeen`).
+        publishHistoryPoint(channelId: string, bitratePct: number, timestampMs: number): void {
+          const message = toChannelHistoryPointMessage(channelId, bitratePct, timestampMs);
           for (const client of wss.clients) {
             send(client, message);
           }

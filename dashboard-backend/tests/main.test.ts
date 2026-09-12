@@ -741,3 +741,68 @@ test('startApp(): wiring thật bitrateHistoryService -> telemetry WS thật ghi
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Story 3.2 (Code Map): `app/main.ts` phải truyền `historyPort: bitrateHistoryService`
+// vào `startWsUiAdapter(...)` - test integration THẬT (mirror test phía trên)
+// xác nhận WS UI client thật nhận đúng `channel-history-snapshot` phản ánh
+// dữ liệu ĐÃ ghi vào ring buffer qua telemetry WS thật (nếu wiring bị lỡ tay
+// bỏ `historyPort`, wsUiAdapter.ts sẽ throw ngay lúc khởi động vì field này
+// bắt buộc trong `WsUiAdapterOptions` - nhưng test này còn xác nhận đúng
+// NỘI DUNG dữ liệu trả về khớp ring buffer thật, không chỉ compile được).
+test('startApp(): wiring thật historyPort vào startWsUiAdapter -> WS UI client thật nhận channel-history-snapshot state=loaded phản ánh đúng ring buffer sau telemetry', async () => {
+  const { dir, filePath } = writeValidRegistryFile(); // chan-1, baseline_kbps=4000, grid_position=0
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+  });
+
+  try {
+    const telemetryWs = new WebSocket(`ws://127.0.0.1:${app.ws.port}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      telemetryWs.once('open', resolve);
+      telemetryWs.once('error', reject);
+    });
+
+    // Ghi 1 mẫu vào ring buffer TRƯỚC KHI WS UI client connect - xác nhận
+    // channel-history-snapshot lúc connect phản ánh đúng dữ liệu ĐÃ có (không
+    // chỉ channel-history-point broadcast realtime sau đó).
+    telemetryWs.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-1',
+        timestamp: new Date().toISOString(),
+        event_type: 'telemetry',
+        payload: { bitrate_kbps: 4000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [-20, -18] },
+      })
+    );
+    await waitUntil(() => app.bitrateHistoryService.getHistory('chan-1').state === 'loaded');
+
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string; channel_id?: string; state?: string; points?: unknown[] }[] = [];
+    uiWs.on('message', (data) => {
+      uiMessages.push(JSON.parse(data.toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+
+    await waitUntil(() => uiMessages.some((m) => m.type === 'channel-history-snapshot'));
+    const historySnapshot = uiMessages.find((m) => m.type === 'channel-history-snapshot');
+    assert.equal(historySnapshot?.channel_id, 'chan-1');
+    assert.equal(historySnapshot?.state, 'loaded');
+    assert.equal((historySnapshot?.points as { bitrate_pct: number }[] | undefined)?.[0]?.bitrate_pct, 100);
+
+    telemetryWs.close();
+    uiWs.close();
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

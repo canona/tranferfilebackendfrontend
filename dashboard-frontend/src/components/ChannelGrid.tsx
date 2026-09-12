@@ -30,6 +30,10 @@ export interface ChannelGridProps {
   // (`channelStore.ts`'s `channelSnapshots`). Thiếu entry cho 1 channelId ->
   // ChannelGridCell fallback gradient placeholder (xem ChannelGridCell.tsx).
   channelSnapshots: ReadonlyMap<string, string>;
+  // Story 3.2: forward xuống mỗi `ChannelGridCell` - click ô mở detail-panel
+  // của đúng kênh đó (Boundaries). Optional - thiếu thì các ô không click
+  // được gì (tương thích ngược với test cũ không truyền prop này).
+  onSelect?: (channelId: string) => void;
 }
 
 // Code review [patch]: trước khi client nhận `registry-snapshot` ĐẦU TIÊN
@@ -58,6 +62,7 @@ export function ChannelGrid({
   channelAudioLevels,
   channelMachineOffline,
   channelSnapshots,
+  onSelect,
 }: ChannelGridProps) {
   // `channels` rỗng CHỈ xảy ra trước lần `registry-snapshot` đầu tiên (snapshot
   // rỗng thật sự không thể xảy ra - fileChannelRegistryAdapter chặn registry
@@ -87,6 +92,7 @@ export function ChannelGrid({
           audioLevel={channelAudioLevels.get(channel.channelId)}
           subType={channelMachineOffline.has(channel.channelId) ? 'machine-offline' : undefined}
           snapshotDataUri={channelSnapshots.get(channel.channelId)}
+          onSelect={onSelect}
         />
       ))}
     </div>

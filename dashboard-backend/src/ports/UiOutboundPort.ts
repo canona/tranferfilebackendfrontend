@@ -16,4 +16,16 @@ export interface UiOutboundPort {
   // phát hiện (lấy từ Clock injectable của core, KHÔNG dùng Date.now() trực
   // tiếp - cùng quy ước với `ChannelStateChange.timestamp`).
   publishChannelSeen(channelId: string, timestamp: string): void;
+
+  // Story 3.2: phát 1 mẫu bitrate MỚI ghi thành công vào ring buffer
+  // (`HistoryPort.recordBitrate`) tới mọi client WS UI đang mở - mirror tinh
+  // thần `publishChannelSeen` (tín hiệu thô, phát NGAY, KHÔNG debounce/
+  // idempotent-guard - khác `publishChannelSeen` ở chỗ gọi cho MỌI mẫu, không
+  // chỉ lần đầu/kênh). `channelState.ts` CHỈ gọi method này SAU KHI
+  // `historyPort.recordBitrate` thành công, trong CÙNG try/catch hiện có -
+  // record throw thì KHÔNG publish (Boundaries). `bitratePct`/`timestampMs`:
+  // ĐÚNG giá trị đã truyền vào `recordBitrate` (không tính lại/không đọc lại
+  // clock), giữ nhất quán tuyệt đối giữa ring buffer nội bộ và những gì
+  // client nhận qua wire.
+  publishHistoryPoint(channelId: string, bitratePct: number, timestampMs: number): void;
 }

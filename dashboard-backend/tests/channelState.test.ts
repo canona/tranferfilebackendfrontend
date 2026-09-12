@@ -59,10 +59,15 @@ class FakeAlertPort implements AlertOutboundPort {
 
 // Story 2.3: fake `UiOutboundPort` (Boundaries "src/core hoàn toàn thuần" -
 // test được bằng fake, không cần WsUiAdapter/WS thật).
+// Story 3.2: mở rộng thêm `publishHistoryPoint` (mirror `seenCalls`).
 class FakeUiPort implements UiOutboundPort {
   seenCalls: { channelId: string; timestamp: string }[] = [];
+  historyPointCalls: { channelId: string; bitratePct: number; timestampMs: number }[] = [];
   publishChannelSeen(channelId: string, timestamp: string): void {
     this.seenCalls.push({ channelId, timestamp });
+  }
+  publishHistoryPoint(channelId: string, bitratePct: number, timestampMs: number): void {
+    this.historyPointCalls.push({ channelId, bitratePct, timestampMs });
   }
 }
 
@@ -71,6 +76,24 @@ class FakeUiPort implements UiOutboundPort {
 class ThrowingUiPort implements UiOutboundPort {
   publishChannelSeen(): void {
     throw new Error('lỗi giả lập từ uiPort');
+  }
+  publishHistoryPoint(): void {
+    throw new Error('lỗi giả lập từ uiPort');
+  }
+}
+
+// Code review round 2 [patch #1]: `publishChannelSeen` KHÔNG throw (không liên
+// quan nhánh đang test) - CHỈ `publishHistoryPoint` throw, để phân biệt với
+// `ThrowingUiPort` ở trên (throw cả 2 method). Dùng để xác nhận log lỗi phải
+// nêu đúng "publishHistoryPoint throw" khi chính `recordBitrate` đã ghi thành
+// công trước đó.
+class ThrowingPublishHistoryPointUiPort implements UiOutboundPort {
+  seenCalls: { channelId: string; timestamp: string }[] = [];
+  publishChannelSeen(channelId: string, timestamp: string): void {
+    this.seenCalls.push({ channelId, timestamp });
+  }
+  publishHistoryPoint(): void {
+    throw new Error('lỗi giả lập từ uiPort.publishHistoryPoint');
   }
 }
 
@@ -607,6 +630,90 @@ test('historyPort.recordBitrate throw 1 giá trị không phải Error (vd strin
   assert.ok(errorEvent);
   assert.ok(errorEvent?.reason?.includes('lỗi giả lập không phải Error'));
   assert.ok(!errorEvent?.reason?.includes('undefined'));
+});
+
+// --- Story 3.2: uiPort.publishHistoryPoint gọi SAU KHI historyPort.recordBitrate
+// thành công, trong CÙNG try/catch (Boundaries) ---
+
+test('telemetry hợp lệ, recordBitrate thành công -> publishHistoryPoint gọi đúng 1 lần với ĐÚNG channelId/bitratePct/timestampMs đã ghi', () => {
+  const { clock, ui, historyPort, service } = makeService({ 'chan-1': 4000 });
+
+  clock.advance(777);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 })); // 100%
+
+  assert.equal(ui.historyPointCalls.length, 1);
+  assert.equal(ui.historyPointCalls[0]?.channelId, 'chan-1');
+  assert.equal(ui.historyPointCalls[0]?.bitratePct, 100);
+  assert.equal(ui.historyPointCalls[0]?.timestampMs, clock.now());
+  // Đúng giá trị đã truyền cho recordBitrate (không tính/đọc lại clock riêng).
+  assert.equal(ui.historyPointCalls[0]?.bitratePct, historyPort.recordCalls[0]?.bitratePct);
+  assert.equal(ui.historyPointCalls[0]?.timestampMs, historyPort.recordCalls[0]?.timestampMs);
+});
+
+test('historyPort.recordBitrate throw -> uiPort.publishHistoryPoint KHÔNG được gọi (record thất bại thì không publish)', () => {
+  const clock = new FakeClock();
+  const registry = new FakeRegistryPort({ 'chan-1': 4000 });
+  const alert = new FakeAlertPort();
+  const ui = new FakeUiPort();
+  const historyPort = new ThrowingHistoryPort();
+  const logger = new FakeLogger();
+  const service = new ChannelStateService({ registryPort: registry, alertPort: alert, uiPort: ui, historyPort, logger, clock });
+
+  assert.doesNotThrow(() => service.handleTelemetry(makeEvent({ bitrateKbps: 4000 })));
+
+  assert.equal(ui.historyPointCalls.length, 0, 'recordBitrate throw -> publishHistoryPoint không được gọi');
+});
+
+test('historyPort.recordBitrate gọi cho MỌI telemetry hợp lệ -> publishHistoryPoint cũng gọi đúng số lần tương ứng (mirror recordCalls)', () => {
+  const { clock, ui, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent());
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent());
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent());
+
+  assert.equal(ui.historyPointCalls.length, 3);
+});
+
+// Code review round 2 [patch #1]: `recordBitrate` thành công (ring buffer đã
+// ghi) NHƯNG chính `uiPort.publishHistoryPoint` mới throw -> log lỗi phải nêu
+// đúng "publishHistoryPoint throw", KHÔNG được báo sai là "recordBitrate
+// throw" (2 lệnh chung 1 try/catch, dễ log nhầm nguồn gốc lỗi khi debug thật).
+test('recordBitrate thành công NHƯNG uiPort.publishHistoryPoint throw -> log nêu đúng "publishHistoryPoint throw" (không phải "recordBitrate throw"), không làm lỡ applyCandidate/debounce phía sau', () => {
+  const clock = new FakeClock();
+  const registry = new FakeRegistryPort({ 'chan-1': 4000 });
+  const alert = new FakeAlertPort();
+  const ui = new ThrowingPublishHistoryPointUiPort();
+  const historyPort = new FakeHistoryPort();
+  const logger = new FakeLogger();
+  const service = new ChannelStateService({ registryPort: registry, alertPort: alert, uiPort: ui, historyPort, logger, clock });
+
+  clock.advance(555);
+  assert.doesNotThrow(() => service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }))); // 100%
+
+  // recordBitrate PHẢI đã ghi thành công vào ring buffer (không bị ảnh hưởng
+  // bởi publishHistoryPoint throw ngay sau đó).
+  assert.equal(historyPort.recordCalls.length, 1);
+  assert.equal(historyPort.recordCalls[0]?.bitratePct, 100);
+
+  const errorEvent = logger.events.find((e) => e.event_type === 'history_record_error' && e.channel_id === 'chan-1');
+  assert.ok(errorEvent, 'phải log 1 event_type=history_record_error');
+  assert.ok(
+    errorEvent?.reason?.includes('uiPort.publishHistoryPoint throw'),
+    `reason phải nêu đúng "uiPort.publishHistoryPoint throw", nhận: ${errorEvent?.reason}`
+  );
+  assert.ok(
+    !errorEvent?.reason?.includes('historyPort.recordBitrate throw'),
+    `reason KHÔNG được báo sai "historyPort.recordBitrate throw" vì recordBitrate đã thành công, nhận: ${errorEvent?.reason}`
+  );
+
+  // Phần debounce/state phía sau của CHÍNH telemetry event đó vẫn phải chạy
+  // bình thường (pending candidate được ghi nhận) - không bị lỡ vì exception.
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' });
+  assert.equal(alert.changes.length, 1);
 });
 
 // --- Code review [patch] round 1: applyCandidate không được âm thầm "giải

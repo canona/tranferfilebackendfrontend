@@ -9,7 +9,7 @@
 // shape) - KHÔNG dùng chung envelope `schema_version`/`event_type` đóng của
 // transport-core (đó là kênh máy trung tâm -> backend, khác kênh này).
 
-import type { ChannelRegistryEntry, ChannelStore } from '../state/channelStore';
+import type { ChannelRegistryEntry, ChannelStore, HistoryPoint, HistoryState } from '../state/channelStore';
 import type { DisplayState } from '../components/ChannelGridCell';
 
 interface RawRegistrySnapshotChannel {
@@ -59,6 +59,33 @@ interface ChannelSnapshotMessage {
   channel_id: string;
   image_base64: string;
   timestamp: string;
+}
+
+// Story 3.2: envelope nhận từ `wsUiAdapter.ts` - mirror snake_case shape của
+// kênh này. `state` chỉ có đúng 2 giá trị backend thực sự gửi (`loaded`/
+// `no-history-data` - 'loading' là trạng thái CHỈ tồn tại ở frontend, Design
+// Notes). `points` chỉ có mặt khi `state==='loaded'`.
+interface RawChannelHistorySnapshotPoint {
+  timestamp_ms: number;
+  bitrate_pct: number;
+}
+
+interface ChannelHistorySnapshotMessage {
+  type: 'channel-history-snapshot';
+  channel_id: string;
+  state: 'loaded' | 'no-history-data';
+  points?: RawChannelHistorySnapshotPoint[];
+}
+
+// Story 3.2: envelope nhận từ `wsUiAdapter.ts` - broadcast realtime mỗi khi
+// backend ghi thành công 1 mẫu bitrate mới (mirror `channel-snapshot`'s
+// broadcast timing, khác hoàn toàn `channel-history-snapshot` chỉ gửi 1
+// lần/kênh lúc connect).
+interface ChannelHistoryPointMessage {
+  type: 'channel-history-point';
+  channel_id: string;
+  bitrate_pct: number;
+  timestamp_ms: number;
 }
 
 // Code review [patch]: phòng thủ lớp 2 (nhất quán tinh thần `channelState.ts`
@@ -133,6 +160,53 @@ function isChannelSnapshotMessage(value: unknown): value is ChannelSnapshotMessa
   );
 }
 
+// Story 3.2: phòng thủ lớp 2 (mirror `isValidGridPosition`/`isValidDisplayState`)
+// - `state` chỉ chấp nhận đúng 2 literal backend thực sự gửi qua wire.
+function isValidHistorySnapshotState(value: unknown): value is 'loaded' | 'no-history-data' {
+  return value === 'loaded' || value === 'no-history-data';
+}
+
+function isRawHistorySnapshotPoint(value: unknown): value is RawChannelHistorySnapshotPoint {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.timestamp_ms === 'number' && typeof v.bitrate_pct === 'number';
+}
+
+function isChannelHistorySnapshotMessage(value: unknown): value is ChannelHistorySnapshotMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v.type !== 'channel-history-snapshot' || typeof v.channel_id !== 'string' || !isValidHistorySnapshotState(v.state)) {
+    return false;
+  }
+  // `points` bắt buộc là mảng hợp lệ khi state='loaded' (đúng ngữ nghĩa wire
+  // của backend - `no-history-data` không kèm points, xem `wsUiAdapter.ts`).
+  if (v.state === 'loaded') {
+    return Array.isArray(v.points) && v.points.every(isRawHistorySnapshotPoint);
+  }
+  return true;
+}
+
+function isChannelHistoryPointMessage(value: unknown): value is ChannelHistoryPointMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === 'channel-history-point' &&
+    typeof v.channel_id === 'string' &&
+    typeof v.bitrate_pct === 'number' &&
+    typeof v.timestamp_ms === 'number'
+  );
+}
+
+function toHistoryState(raw: ChannelHistorySnapshotMessage): HistoryState {
+  if (raw.state === 'loaded') {
+    // `raw.points` đã được `isChannelHistorySnapshotMessage` xác nhận là mảng
+    // hợp lệ khi state='loaded' - `?? []` chỉ để thoả kiểu tĩnh (optional).
+    const points: HistoryPoint[] = (raw.points ?? []).map((p) => ({ timestampMs: p.timestamp_ms, bitratePct: p.bitrate_pct }));
+    return { state: 'loaded', points };
+  }
+  return { state: 'no-history-data' };
+}
+
 function isChannelStateChangeMessage(value: unknown): value is ChannelStateChangeMessage {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -181,6 +255,14 @@ export function applyUiWsMessage(store: ChannelStore, raw: string): void {
   }
   if (isChannelSnapshotMessage(parsed)) {
     store.applyChannelSnapshot(parsed.channel_id, parsed.image_base64);
+    return;
+  }
+  if (isChannelHistorySnapshotMessage(parsed)) {
+    store.applyHistorySnapshot(parsed.channel_id, toHistoryState(parsed));
+    return;
+  }
+  if (isChannelHistoryPointMessage(parsed)) {
+    store.applyHistoryPoint(parsed.channel_id, { timestampMs: parsed.timestamp_ms, bitratePct: parsed.bitrate_pct });
     return;
   }
   // type lạ khác (message tương lai chưa định nghĩa ở story này) - bỏ qua.

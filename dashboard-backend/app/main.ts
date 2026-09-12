@@ -267,6 +267,16 @@ export async function startApp(config?: {
 
   const logAlertPort = new LogAlertAdapter(logger);
 
+  // Story 3.1: ring buffer in-memory lịch sử bitrate/kênh (Never/AD-14: KHÔNG
+  // time-series DB). Tạo TRƯỚC `startWsUiAdapter` (Story 3.2: adapter cần
+  // `historyPort` ngay trong constructor để gửi `channel-history-snapshot`
+  // lúc connect). Code review [patch]: `BitrateHistoryService` không tự có
+  // clock riêng (dead code đã bị xoá) - timestamp ghi vào ring buffer nhất
+  // quán với timestamp debounce/state hoàn toàn nhờ `channelState.ts` truyền
+  // thẳng `this.clock.now()` làm tham số `timestampMs` mỗi lần gọi
+  // `historyPort.recordBitrate(...)`, không nhờ service này tự đọc clock.
+  const bitrateHistoryService = new BitrateHistoryService();
+
   // Story 2.3: WS UI khởi động TRƯỚC `ChannelStateService` (`uiPort` là
   // dependency bắt buộc của constructor) - cùng tinh thần dọn dẹp lỗi khởi
   // động của khối `ws` bên dưới: nếu bind cổng UI thất bại (vd EADDRINUSE),
@@ -274,7 +284,7 @@ export async function startApp(config?: {
   // watcher/debounce timer khi `startApp()` được gọi lại trong-process.
   let ui: WsUiAdapterHandle;
   try {
-    ui = await startWsUiAdapter({ port: uiPort, host: uiHost, registryPort, logger });
+    ui = await startWsUiAdapter({ port: uiPort, host: uiHost, registryPort, historyPort: bitrateHistoryService, logger });
   } catch (err) {
     registryPort.stop();
     throw err;
@@ -294,14 +304,6 @@ export async function startApp(config?: {
   // ở trên) - `SnapshotRelayService` không có timer/watcher riêng (stateless),
   // không cần dọn gì thêm ở stop() bên dưới.
   const snapshotRelay = new SnapshotRelayService({ registryPort, snapshotOutboundPort: ui, logger });
-
-  // Story 3.1: ring buffer in-memory lịch sử bitrate/kênh (Never/AD-14: KHÔNG
-  // time-series DB). Code review [patch]: `BitrateHistoryService` không tự có
-  // clock riêng (dead code đã bị xoá) - timestamp ghi vào ring buffer nhất
-  // quán với timestamp debounce/state hoàn toàn nhờ `channelState.ts` truyền
-  // thẳng `this.clock.now()` làm tham số `timestampMs` mỗi lần gọi
-  // `historyPort.recordBitrate(...)`, không nhờ service này tự đọc clock.
-  const bitrateHistoryService = new BitrateHistoryService();
 
   const channelStateService = new ChannelStateService({
     registryPort,

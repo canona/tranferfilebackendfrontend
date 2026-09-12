@@ -77,6 +77,8 @@ describe('applyUiWsMessage', () => {
       lastConnectedAt: null,
       channelMachineOffline: new Set(),
       channelSnapshots: new Map(),
+      selectedChannelId: null,
+      channelHistory: new Map(),
     });
   });
 
@@ -261,6 +263,122 @@ describe('applyUiWsMessage', () => {
       })
     );
     expect(store.getState().channels.length).toBe(2);
+  });
+
+  // --- Story 3.2: channel-history-snapshot / channel-history-point ---
+
+  describe('channel-history-snapshot', () => {
+    it('state=loaded kèm points hợp lệ -> channelHistory cập nhật đúng, map snake_case -> camelCase', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({
+          type: 'channel-history-snapshot',
+          channel_id: 'chan-1',
+          state: 'loaded',
+          points: [
+            { timestamp_ms: 1000, bitrate_pct: 55.5 },
+            { timestamp_ms: 2000, bitrate_pct: 60 },
+          ],
+        })
+      );
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({
+        state: 'loaded',
+        points: [
+          { timestampMs: 1000, bitratePct: 55.5 },
+          { timestampMs: 2000, bitratePct: 60 },
+        ],
+      });
+    });
+
+    it('state=no-history-data -> channelHistory ghi đúng nhánh no-history-data (KHÔNG phải mảng rỗng)', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-history-snapshot', channel_id: 'chan-1', state: 'no-history-data' })
+      );
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({ state: 'no-history-data' });
+    });
+
+    it('state=loaded nhưng points KHÔNG phải mảng hợp lệ -> toàn bộ message bị coi không hợp lệ, bỏ qua', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-history-snapshot', channel_id: 'chan-1', state: 'loaded' })
+      );
+      expect(store.getState().channelHistory.size).toBe(0);
+    });
+
+    it('state lạ (không phải loaded/no-history-data, vd "loading") -> bỏ qua âm thầm (backend không bao giờ gửi nhánh này)', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-history-snapshot', channel_id: 'chan-1', state: 'loading' })
+      );
+      expect(store.getState().channelHistory.size).toBe(0);
+    });
+
+    it('thiếu channel_id -> bỏ qua âm thầm, KHÔNG throw', () => {
+      const store = createChannelStore();
+      expect(() =>
+        applyUiWsMessage(store, JSON.stringify({ type: 'channel-history-snapshot', state: 'no-history-data' }))
+      ).not.toThrow();
+      expect(store.getState().channelHistory.size).toBe(0);
+    });
+
+    it('điểm trong points thiếu field (vd bitrate_pct) -> toàn bộ message bị coi không hợp lệ, bỏ qua', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({
+          type: 'channel-history-snapshot',
+          channel_id: 'chan-1',
+          state: 'loaded',
+          points: [{ timestamp_ms: 1000 }],
+        })
+      );
+      expect(store.getState().channelHistory.size).toBe(0);
+    });
+  });
+
+  describe('channel-history-point', () => {
+    it('hợp lệ -> channelHistory chuyển sang loaded, append đúng điểm', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-history-point', channel_id: 'chan-1', bitrate_pct: 62.3, timestamp_ms: 5000 })
+      );
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({
+        state: 'loaded',
+        points: [{ timestampMs: 5000, bitratePct: 62.3 }],
+      });
+    });
+
+    it('gọi liên tiếp -> APPEND (không ghi đè), thứ tự đúng theo lần gọi', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-history-point', channel_id: 'chan-1', bitrate_pct: 50, timestamp_ms: 1000 })
+      );
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-history-point', channel_id: 'chan-1', bitrate_pct: 55, timestamp_ms: 2000 })
+      );
+      const result = store.getState().channelHistory.get('chan-1');
+      expect(result?.state).toBe('loaded');
+      expect(result?.state === 'loaded' ? result.points : []).toEqual([
+        { timestampMs: 1000, bitratePct: 50 },
+        { timestampMs: 2000, bitratePct: 55 },
+      ]);
+    });
+
+    it('thiếu field bắt buộc -> bỏ qua âm thầm, KHÔNG throw', () => {
+      const store = createChannelStore();
+      expect(() =>
+        applyUiWsMessage(store, JSON.stringify({ type: 'channel-history-point', channel_id: 'chan-1' }))
+      ).not.toThrow();
+      expect(store.getState().channelHistory.size).toBe(0);
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ChannelGridCell, gridPositionToRowCol } from '../src/components/ChannelGridCell';
 
 afterEach(cleanup);
@@ -512,5 +512,130 @@ describe('ChannelGridCell - snapshotDataUri (video-preview thật)', () => {
     );
     expect(screen.getByTestId('color-bars-chan-snap-4')).toBeInTheDocument();
     expect(screen.queryByTestId('thumbnail-chan-snap-4')).toBeNull();
+  });
+});
+
+describe('ChannelGridCell - onSelect (Story 3.2)', () => {
+  it('click vào ô -> gọi onSelect(channelId) đúng 1 lần', () => {
+    let selectedId: string | undefined;
+    render(
+      <ChannelGridCell
+        channelId="chan-select-1"
+        stationName="Đài Select 1"
+        gridPosition={0}
+        loaded={true}
+        onSelect={(channelId) => {
+          selectedId = channelId;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('channel-grid-cell-chan-select-1'));
+    expect(selectedId).toBe('chan-select-1');
+  });
+
+  it('không truyền onSelect -> click không throw (an toàn, tương thích ngược)', () => {
+    render(<ChannelGridCell channelId="chan-select-2" stationName="Đài Select 2" gridPosition={1} loaded={false} />);
+    expect(() => fireEvent.click(screen.getByTestId('channel-grid-cell-chan-select-2'))).not.toThrow();
+  });
+
+  it('click nhiều lần -> onSelect gọi đúng số lần tương ứng', () => {
+    let callCount = 0;
+    render(
+      <ChannelGridCell
+        channelId="chan-select-3"
+        stationName="Đài Select 3"
+        gridPosition={2}
+        loaded={true}
+        onSelect={() => {
+          callCount++;
+        }}
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-select-3');
+    fireEvent.click(cell);
+    fireEvent.click(cell);
+    expect(callCount).toBe(2);
+  });
+
+  // Code review round 2 [patch #4]: ô kênh có hành vi click mới (mở
+  // detail-panel) nhưng trước patch KHÔNG thao tác được bằng bàn phím
+  // (accessibility regression cho 1 control tương tác mới thêm vào - Epic 3
+  // context's Accessibility: "cần tương thích ngay từ Epic 3").
+  it('có onSelect -> tabIndex=0 (vào thứ tự Tab)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-select-4"
+        stationName="Đài Select 4"
+        gridPosition={3}
+        loaded={true}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('channel-grid-cell-chan-select-4')).toHaveAttribute('tabIndex', '0');
+  });
+
+  it('không có onSelect -> KHÔNG có tabIndex (không đưa vào thứ tự Tab của 1 ô không tương tác)', () => {
+    render(<ChannelGridCell channelId="chan-select-5" stationName="Đài Select 5" gridPosition={4} loaded={true} />);
+    expect(screen.getByTestId('channel-grid-cell-chan-select-5')).not.toHaveAttribute('tabIndex');
+  });
+
+  it('nhấn Enter trên ô (có onSelect) -> gọi đúng onSelect(channelId)', () => {
+    let selectedId: string | undefined;
+    render(
+      <ChannelGridCell
+        channelId="chan-select-6"
+        stationName="Đài Select 6"
+        gridPosition={5}
+        loaded={true}
+        onSelect={(channelId) => {
+          selectedId = channelId;
+        }}
+      />,
+    );
+    fireEvent.keyDown(screen.getByTestId('channel-grid-cell-chan-select-6'), { key: 'Enter' });
+    expect(selectedId).toBe('chan-select-6');
+  });
+
+  it('nhấn Space trên ô (có onSelect) -> gọi đúng onSelect(channelId), preventDefault (không cuộn trang)', () => {
+    let selectedId: string | undefined;
+    render(
+      <ChannelGridCell
+        channelId="chan-select-7"
+        stationName="Đài Select 7"
+        gridPosition={6}
+        loaded={true}
+        onSelect={(channelId) => {
+          selectedId = channelId;
+        }}
+      />,
+    );
+    const event = fireEvent.keyDown(screen.getByTestId('channel-grid-cell-chan-select-7'), { key: ' ' });
+    expect(selectedId).toBe('chan-select-7');
+    // fireEvent.keyDown trả về `false` khi handler gọi preventDefault().
+    expect(event).toBe(false);
+  });
+
+  it('nhấn phím khác Enter/Space -> KHÔNG gọi onSelect', () => {
+    let callCount = 0;
+    render(
+      <ChannelGridCell
+        channelId="chan-select-8"
+        stationName="Đài Select 8"
+        gridPosition={7}
+        loaded={true}
+        onSelect={() => {
+          callCount++;
+        }}
+      />,
+    );
+    fireEvent.keyDown(screen.getByTestId('channel-grid-cell-chan-select-8'), { key: 'Tab' });
+    expect(callCount).toBe(0);
+  });
+
+  it('không truyền onSelect -> nhấn Enter/Space không throw (an toàn)', () => {
+    render(<ChannelGridCell channelId="chan-select-9" stationName="Đài Select 9" gridPosition={8} loaded={false} />);
+    const cell = screen.getByTestId('channel-grid-cell-chan-select-9');
+    expect(() => fireEvent.keyDown(cell, { key: 'Enter' })).not.toThrow();
+    expect(() => fireEvent.keyDown(cell, { key: ' ' })).not.toThrow();
   });
 });

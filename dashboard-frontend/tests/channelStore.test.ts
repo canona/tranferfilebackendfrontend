@@ -366,4 +366,160 @@ describe('ChannelStore', () => {
       expect(callCount).toBe(2);
     });
   });
+
+  // --- Story 3.2: selectChannel/clearSelectedChannel + channelHistory ---
+
+  describe('selectChannel / clearSelectedChannel', () => {
+    it('trạng thái ban đầu: selectedChannelId=null (panel đóng)', () => {
+      expect(createChannelStore().getState().selectedChannelId).toBeNull();
+    });
+
+    it('selectChannel: đặt selectedChannelId', () => {
+      const store = createChannelStore();
+      store.selectChannel('chan-1');
+      expect(store.getState().selectedChannelId).toBe('chan-1');
+    });
+
+    it('selectChannel gọi lại với channelId KHÁC -> GHI ĐÈ (mở đúng kênh mới)', () => {
+      const store = createChannelStore();
+      store.selectChannel('chan-1');
+      store.selectChannel('chan-2');
+      expect(store.getState().selectedChannelId).toBe('chan-2');
+    });
+
+    it('selectChannel gọi lại với CÙNG channelId -> idempotent, KHÔNG setState lần 2', () => {
+      const store = createChannelStore();
+      store.selectChannel('chan-1');
+      const stateAfterFirst = store.getState();
+      store.selectChannel('chan-1');
+      expect(store.getState()).toBe(stateAfterFirst);
+    });
+
+    it('clearSelectedChannel: đóng panel -> selectedChannelId=null', () => {
+      const store = createChannelStore();
+      store.selectChannel('chan-1');
+      store.clearSelectedChannel();
+      expect(store.getState().selectedChannelId).toBeNull();
+    });
+
+    it('clearSelectedChannel khi đã null -> idempotent, KHÔNG setState (tránh re-render thừa)', () => {
+      const store = createChannelStore();
+      const stateAfterFirst = store.getState();
+      store.clearSelectedChannel();
+      expect(store.getState()).toBe(stateAfterFirst);
+    });
+
+    it('clearSelectedChannel KHÔNG ảnh hưởng channels/channelDisplayStates - lưới phía sau giữ nguyên', () => {
+      const store = createChannelStore();
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+      ]);
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      store.selectChannel('chan-1');
+      store.clearSelectedChannel();
+      expect(store.getState().channels.length).toBe(1);
+      expect(store.getState().channelDisplayStates.get('chan-1')).toBe('critical');
+    });
+  });
+
+  describe('applyHistorySnapshot / applyHistoryPoint', () => {
+    it('trạng thái ban đầu: channelHistory rỗng (đọc qua .get() coi như "loading" ở nơi tiêu thụ)', () => {
+      expect(createChannelStore().getState().channelHistory.size).toBe(0);
+    });
+
+    it('applyHistorySnapshot state=loaded -> ghi đúng points', () => {
+      const store = createChannelStore();
+      store.applyHistorySnapshot('chan-1', { state: 'loaded', points: [{ timestampMs: 1000, bitratePct: 80 }] });
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({
+        state: 'loaded',
+        points: [{ timestampMs: 1000, bitratePct: 80 }],
+      });
+    });
+
+    it('applyHistorySnapshot state=no-history-data -> ghi đúng nhánh (không phải mảng rỗng)', () => {
+      const store = createChannelStore();
+      store.applyHistorySnapshot('chan-1', { state: 'no-history-data' });
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({ state: 'no-history-data' });
+    });
+
+    it('applyHistorySnapshot gọi lại -> GHI ĐÈ toàn bộ (mirror applyRegistrySnapshot, không merge)', () => {
+      const store = createChannelStore();
+      store.applyHistorySnapshot('chan-1', { state: 'loaded', points: [{ timestampMs: 1000, bitratePct: 80 }] });
+      store.applyHistorySnapshot('chan-1', { state: 'no-history-data' });
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({ state: 'no-history-data' });
+    });
+
+    it('applyHistoryPoint trên kênh chưa có entry -> khởi tạo loaded với đúng 1 điểm', () => {
+      const store = createChannelStore();
+      store.applyHistoryPoint('chan-1', { timestampMs: 5000, bitratePct: 62.3 });
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({
+        state: 'loaded',
+        points: [{ timestampMs: 5000, bitratePct: 62.3 }],
+      });
+    });
+
+    it('applyHistoryPoint trên kênh đang no-history-data -> chuyển sang loaded, bắt đầu từ điểm này', () => {
+      const store = createChannelStore();
+      store.applyHistorySnapshot('chan-1', { state: 'no-history-data' });
+      store.applyHistoryPoint('chan-1', { timestampMs: 1000, bitratePct: 40 });
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({
+        state: 'loaded',
+        points: [{ timestampMs: 1000, bitratePct: 40 }],
+      });
+    });
+
+    it('applyHistoryPoint trên kênh đang loaded -> APPEND vào cuối mảng hiện có', () => {
+      const store = createChannelStore();
+      store.applyHistorySnapshot('chan-1', { state: 'loaded', points: [{ timestampMs: 1000, bitratePct: 40 }] });
+      store.applyHistoryPoint('chan-1', { timestampMs: 2000, bitratePct: 45 });
+      expect(store.getState().channelHistory.get('chan-1')).toEqual({
+        state: 'loaded',
+        points: [
+          { timestampMs: 1000, bitratePct: 40 },
+          { timestampMs: 2000, bitratePct: 45 },
+        ],
+      });
+    });
+
+    it('applyHistoryPoint trim điểm cũ hơn cửa sổ retention 15 phút (mirror bitrateHistory.ts backend)', () => {
+      const store = createChannelStore();
+      const fifteenMinMs = 15 * 60 * 1000;
+      store.applyHistorySnapshot('chan-1', {
+        state: 'loaded',
+        points: [
+          { timestampMs: 0, bitratePct: 10 }, // sẽ bị trim
+          { timestampMs: 1000, bitratePct: 20 }, // sẽ bị trim
+        ],
+      });
+      // Điểm mới cách điểm timestampMs=0 đúng hơn 15 phút -> điểm đó bị trim;
+      // điểm timestampMs=1000 vẫn còn trong cửa sổ (age < 15 phút).
+      store.applyHistoryPoint('chan-1', { timestampMs: fifteenMinMs + 1, bitratePct: 90 });
+      const result = store.getState().channelHistory.get('chan-1');
+      expect(result?.state).toBe('loaded');
+      const points = result?.state === 'loaded' ? result.points : [];
+      expect(points.map((p) => p.timestampMs)).toEqual([1000, fifteenMinMs + 1]);
+    });
+
+    it('applyHistoryPoint không ảnh hưởng channelHistory của kênh khác', () => {
+      const store = createChannelStore();
+      store.applyHistoryPoint('chan-1', { timestampMs: 1000, bitratePct: 10 });
+      store.applyHistoryPoint('chan-2', { timestampMs: 1000, bitratePct: 20 });
+      const c1 = store.getState().channelHistory.get('chan-1');
+      const c2 = store.getState().channelHistory.get('chan-2');
+      expect(c1?.state === 'loaded' ? c1.points[0]?.bitratePct : undefined).toBe(10);
+      expect(c2?.state === 'loaded' ? c2.points[0]?.bitratePct : undefined).toBe(20);
+    });
+
+    it('subscribe: listener được gọi mỗi lần applyHistoryPoint (không idempotent-guard)', () => {
+      const store = createChannelStore();
+      let callCount = 0;
+      store.subscribe(() => {
+        callCount++;
+      });
+      store.applyHistoryPoint('chan-1', { timestampMs: 1000, bitratePct: 10 });
+      expect(callCount).toBe(1);
+      store.applyHistoryPoint('chan-1', { timestampMs: 2000, bitratePct: 10 });
+      expect(callCount).toBe(2);
+    });
+  });
 });

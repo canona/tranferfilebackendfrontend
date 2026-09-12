@@ -34,6 +34,29 @@ export interface ChannelRegistryEntry {
 // giá trị khác, kể cả undefined -> gỡ khỏi set").
 export type DisplayStateSubType = 'config-or-security-suspected' | 'machine-offline';
 
+// Story 3.2: 1 mẫu lịch sử bitrate (mirror backend's `BitrateHistoryPoint`,
+// `HistoryPort.ts` - field/format wire giữ NGUYÊN, KHÔNG đổi timestamp sang
+// ISO - Ask First đã chốt).
+export interface HistoryPoint {
+  timestampMs: number;
+  bitratePct: number;
+}
+
+// Story 3.2: discriminated union 3 nhánh (mirror backend's `HistoryQueryResult`,
+// `HistoryPort.ts`) - `loading` là trạng thái CHỈ tồn tại ở FRONTEND, trong
+// khoảng ngắn ngay sau connect trước khi nhận `channel-history-snapshot`/kênh
+// (Design Notes) - backend không bao giờ tự gửi nhánh này qua wire.
+export type HistoryState =
+  | { state: 'loading' }
+  | { state: 'loaded'; points: readonly HistoryPoint[] }
+  | { state: 'no-history-data' };
+
+// Story 3.2: cùng cửa sổ retention với backend's `HISTORY_RETENTION_MS`
+// (`bitrateHistory.ts`, ~15 phút) - `applyHistoryPoint` tự trim client-side
+// theo đúng cửa sổ này (Code Map), tránh mảng phình to vô hạn nếu kênh sống
+// lâu hơn nhiều phiên connect.
+export const HISTORY_RETENTION_MS = 15 * 60 * 1000;
+
 export interface ChannelStoreState {
   // Rỗng cho tới khi client nhận `registry-snapshot` lần đầu (I/O matrix:
   // "App vừa mở, WS UI connect" - snapshot tới gần như ngay lập tức).
@@ -64,6 +87,20 @@ export interface ChannelStoreState {
   // có khung mới (mirror `channelDisplayStates` - không idempotent-guard,
   // AD-22: transport-core tự kiểm soát nhịp gửi).
   channelSnapshots: ReadonlyMap<string, string>;
+  // Story 3.2: kênh đang mở `detail-panel` - `null` = panel đóng (mặc định).
+  // Overlay (không route) - `page.tsx` render `DetailPanel` đọc field này để
+  // quyết định hiện/ẩn, KHÔNG điều hướng trang (Boundaries).
+  selectedChannelId: string | null;
+  // Story 3.2: lịch sử bitrate/kênh phía client - khởi tạo từ
+  // `channel-history-snapshot` lúc connect, cập nhật tiếp bởi
+  // `channel-history-point` (Design Notes: "Bitrate hiện tại" = mẫu MỚI NHẤT
+  // client từng nhận qua snapshot HOẶC point, không phải trường riêng).
+  // Thiếu entry cho 1 channelId = `loading` (mặc định, chưa nhận snapshot
+  // của kênh đó) - KHÔNG lưu tường minh nhánh 'loading' trong Map này (Design
+  // Notes: nhánh đó chỉ có ý nghĩa "chưa có entry", đọc qua `.get() ?? {
+  // state: 'loading' }` ở nơi tiêu thụ, mirror cách `channelDisplayStates`
+  // dùng `undefined` cho "chưa xác định").
+  channelHistory: ReadonlyMap<string, HistoryState>;
 }
 
 type Listener = () => void;
@@ -76,6 +113,8 @@ const EMPTY_STATE: ChannelStoreState = {
   lastConnectedAt: null,
   channelMachineOffline: new Set(),
   channelSnapshots: new Map(),
+  selectedChannelId: null,
+  channelHistory: new Map(),
 };
 
 export class ChannelStore {
@@ -203,6 +242,53 @@ export class ChannelStore {
     // re-render kép không cần thiết.
     if (this.state.connectionStatus === 'disconnected') return;
     this.setState({ ...this.state, connectionStatus: 'disconnected' });
+  }
+
+  // Story 3.2: click `channel-grid-cell` gọi method này (qua `ChannelGrid`'s
+  // `onSelect`) - mở `detail-panel` của đúng kênh đó. Idempotent-guard (mirror
+  // `applyChannelSeen`) - click lặp lại cùng kênh đã đang mở không setState/
+  // re-render thừa.
+  selectChannel(channelId: string): void {
+    if (this.state.selectedChannelId === channelId) return;
+    this.setState({ ...this.state, selectedChannelId: channelId });
+  }
+
+  // Story 3.2: đóng `detail-panel` (Esc/click backdrop gọi method này) - lưới
+  // phía sau giữ nguyên (Boundaries: state của lưới hoàn toàn độc lập field
+  // này). Idempotent-guard - gọi lặp lại khi đã đóng không setState thừa.
+  clearSelectedChannel(): void {
+    if (this.state.selectedChannelId === null) return;
+    this.setState({ ...this.state, selectedChannelId: null });
+  }
+
+  // Story 3.2: `channel-history-snapshot` (lúc connect/reconnect) - GHI ĐÈ
+  // toàn bộ `HistoryState` của đúng channelId (mirror `applyRegistrySnapshot`:
+  // "snapshot" = ảnh chụp toàn bộ tại thời điểm connect, không merge/patch).
+  applyHistorySnapshot(channelId: string, historyState: HistoryState): void {
+    const next = new Map(this.state.channelHistory);
+    next.set(channelId, historyState);
+    this.setState({ ...this.state, channelHistory: next });
+  }
+
+  // Story 3.2: `channel-history-point` - append 1 mẫu MỚI vào lịch sử hiện có
+  // của đúng channelId (mirror backend's `BitrateHistoryService.recordBitrate`:
+  // tín hiệu rời rạc, KHÔNG idempotent-guard, phát/áp dụng mọi lúc). Thiếu
+  // entry hiện có (channel-history-point tới TRƯỚC channel-history-snapshot,
+  // hoặc entry đang 'no-history-data'/'loading') -> khởi tạo mảng mới bắt đầu
+  // từ đúng mẫu này (KHÔNG chờ snapshot mới coi là "loaded" - mẫu vừa nhận
+  // chính là dữ liệu thật, không có gì phải chờ). Trim client-side theo ĐÚNG
+  // cửa sổ retention `HISTORY_RETENTION_MS` (mirror `bitrateHistory.ts`:
+  // "cũ hơn 15 phút" = strictly older, tính theo timestampMs của mẫu vừa
+  // nhận).
+  applyHistoryPoint(channelId: string, point: HistoryPoint): void {
+    const current = this.state.channelHistory.get(channelId);
+    const existingPoints = current?.state === 'loaded' ? current.points : [];
+    const cutoff = point.timestampMs - HISTORY_RETENTION_MS;
+    const trimmed = [...existingPoints, point].filter((p) => p.timestampMs >= cutoff);
+
+    const next = new Map(this.state.channelHistory);
+    next.set(channelId, { state: 'loaded', points: trimmed });
+    this.setState({ ...this.state, channelHistory: next });
   }
 }
 

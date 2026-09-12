@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
 import { startWsUiAdapter, type WsUiAdapterHandle } from '../src/adapters/outbound/wsUiAdapter.js';
 import type { ChannelRegistryEntry, ChannelRegistryPort } from '../src/ports/ChannelRegistryPort.js';
+import type { HistoryPort, HistoryQueryResult } from '../src/ports/HistoryPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
 
 class FakeRegistryPort implements ChannelRegistryPort {
@@ -24,6 +25,23 @@ class FakeLogger implements Logger {
   events: LogEvent[] = [];
   log(event: LogEvent): void {
     this.events.push(event);
+  }
+}
+
+// Story 3.2: fake `HistoryPort` (Boundaries "adapter query trực tiếp
+// getHistory(), KHÔNG cache riêng" - test bằng fake, không cần
+// BitrateHistoryService thật). Cấu hình sẵn kết quả/kênh + có thể tuỳ biến
+// throw để test I/O matrix "getHistory() throw lúc connect".
+class FakeHistoryPort implements HistoryPort {
+  constructor(private readonly results: Record<string, HistoryQueryResult | (() => HistoryQueryResult)> = {}) {}
+  recordBitrate(): void {
+    // Không dùng ở test file này (adapter chỉ ĐỌC qua getHistory(), không ghi).
+  }
+  getHistory(channelId: string): HistoryQueryResult {
+    const result = this.results[channelId];
+    if (result === undefined) return { state: 'no-history-data' };
+    if (typeof result === 'function') return result();
+    return result;
   }
 }
 
@@ -56,10 +74,13 @@ function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
   });
 }
 
-async function startTestServer(entries: (ChannelRegistryEntry & { channelId: string })[]) {
+async function startTestServer(
+  entries: (ChannelRegistryEntry & { channelId: string })[],
+  historyPort: HistoryPort = new FakeHistoryPort()
+) {
   const registryPort = new FakeRegistryPort(entries);
   const logger = new FakeLogger();
-  const handle: WsUiAdapterHandle = await startWsUiAdapter({ port: 0, host: '127.0.0.1', registryPort, logger });
+  const handle: WsUiAdapterHandle = await startWsUiAdapter({ port: 0, host: '127.0.0.1', registryPort, historyPort, logger });
   return { registryPort, logger, handle };
 }
 
@@ -70,7 +91,43 @@ async function startTestServer(entries: (ChannelRegistryEntry & { channelId: str
 // mất VĨNH VIỄN (EventEmitter không queue lại cho listener gắn muộn). Phải
 // gắn 'message' NGAY lúc tạo socket (đồng bộ, trước khi 'open' có cơ hội
 // fire) để không bỏ lỡ bất kỳ message nào server gửi ngay sau handshake.
-async function openClientWithMessages(port: number): Promise<{ ws: WebSocket; messages: unknown[] }> {
+//
+// Story 3.2: `historySnapshotMessages` tách RIÊNG khỏi `messages` chính -
+// adapter giờ luôn gửi 1 `channel-history-snapshot`/kênh đăng ký NGAY SAU
+// registry-snapshot lúc connect (Code Map), ĐỘC LẬP số lượng kênh của từng
+// test (mirror `FakeHistoryPort` mặc định trả 'no-history-data' cho mọi
+// kênh không cấu hình riêng). Tách 2 luồng để KHÔNG phải sửa lại toàn bộ các
+// test index-based (messages[0]/messages[1]/...) đã có từ Story 2.3-2.7 -
+// các test đó không quan tâm channel-history-snapshot, chỉ các test Story 3.2
+// mới (bên dưới) mới đọc `historySnapshotMessages`.
+async function openClientWithMessages(
+  port: number
+): Promise<{ ws: WebSocket; messages: unknown[]; historySnapshotMessages: unknown[] }> {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  const messages: unknown[] = [];
+  const historySnapshotMessages: unknown[] = [];
+  ws.on('message', (data) => {
+    const parsed = JSON.parse(data.toString()) as { type: string };
+    if (parsed.type === 'channel-history-snapshot') {
+      historySnapshotMessages.push(parsed);
+    } else {
+      messages.push(parsed);
+    }
+  });
+  await new Promise<void>((resolve, reject) => {
+    ws.once('open', resolve);
+    ws.once('error', reject);
+  });
+  return { ws, messages, historySnapshotMessages };
+}
+
+// Story 3.2: helper RIÊNG cho các test cần kiểm tra ĐÚNG THỨ TỰ tuyệt đối
+// giữa các loại message replay lúc connect (registry-snapshot ->
+// channel-history-snapshot -> channel-seen -> channel-state-change ->
+// channel-snapshot) - KHÔNG tách history-snapshot ra như
+// `openClientWithMessages` (helper đó cố ý tách để không phải sửa lại các
+// test index-based có từ trước, nhưng vì vậy không dùng được để test thứ tự).
+async function openClientAllMessages(port: number): Promise<{ ws: WebSocket; messages: unknown[] }> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   const messages: unknown[] = [];
   ws.on('message', (data) => {
@@ -621,6 +678,158 @@ test('publishStateChange sau khi 1 client đã đóng kết nối -> KHÔNG thro
       display_state: 'critical',
       timestamp: '2026-09-06T00:00:00.000Z',
     });
+
+    wsB.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+// --- Story 3.2: channel-history-snapshot lúc connect + channel-history-point
+// broadcast (UiOutboundPort.publishHistoryPoint) ---
+
+test('client connect -> nhận đúng 1 channel-history-snapshot/kênh, NGAY SAU registry-snapshot, đúng snake_case envelope', async () => {
+  const historyPort = new FakeHistoryPort({
+    'chan-0': { state: 'loaded', data: [{ timestampMs: 1000, bitratePct: 55.5 }] },
+  });
+  const { handle } = await startTestServer(makeEntries(2), historyPort);
+  try {
+    const { ws, historySnapshotMessages } = await openClientWithMessages(handle.port);
+
+    await waitUntil(() => historySnapshotMessages.length >= 2);
+    const byChannel = new Map((historySnapshotMessages as { channel_id: string }[]).map((m) => [m.channel_id, m]));
+    assert.deepEqual(byChannel.get('chan-0'), {
+      type: 'channel-history-snapshot',
+      channel_id: 'chan-0',
+      state: 'loaded',
+      points: [{ timestamp_ms: 1000, bitrate_pct: 55.5 }],
+    });
+    assert.deepEqual(byChannel.get('chan-1'), {
+      type: 'channel-history-snapshot',
+      channel_id: 'chan-1',
+      state: 'no-history-data',
+    });
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('thứ tự replay lúc connect: registry-snapshot -> channel-history-snapshot/kênh -> channel-seen -> channel-state-change -> channel-snapshot', async () => {
+  const historyPort = new FakeHistoryPort({ 'chan-0': { state: 'loaded', data: [{ timestampMs: 500, bitratePct: 80 }] } });
+  const { handle } = await startTestServer(makeEntries(2), historyPort);
+  try {
+    handle.publishChannelSeen('chan-0', '2026-09-09T00:00:00.000Z');
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'ok', timestamp: '2026-09-09T00:00:01.000Z' });
+    handle.publishSnapshot('chan-0', 'ZmFrZQ==', '2026-09-09T00:00:02.000Z');
+
+    const { ws, messages } = await openClientAllMessages(handle.port);
+    // registry-snapshot(1) + channel-history-snapshot(2, 1/kênh) +
+    // channel-seen(1) + channel-state-change(1) + channel-snapshot(1) = 6.
+    await waitUntil(() => messages.length >= 6);
+
+    const types = (messages as { type: string }[]).map((m) => m.type);
+    assert.deepEqual(types, [
+      'registry-snapshot',
+      'channel-history-snapshot',
+      'channel-history-snapshot',
+      'channel-seen',
+      'channel-state-change',
+      'channel-snapshot',
+    ]);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('historyPort.getHistory() throw lúc connect -> gửi channel-history-snapshot state=no-history-data cho kênh đó, log cảnh báo, KHÔNG throw/crash, các kênh khác không bị ảnh hưởng', async () => {
+  const historyPort = new FakeHistoryPort({
+    'chan-0': () => {
+      throw new Error('lỗi giả lập getHistory');
+    },
+    'chan-1': { state: 'loaded', data: [{ timestampMs: 1, bitratePct: 10 }] },
+  });
+  const { logger, handle } = await startTestServer(makeEntries(2), historyPort);
+  try {
+    const { ws, historySnapshotMessages } = await openClientWithMessages(handle.port);
+
+    await waitUntil(() => historySnapshotMessages.length >= 2);
+    const byChannel = new Map((historySnapshotMessages as { channel_id: string; state: string }[]).map((m) => [m.channel_id, m]));
+    assert.equal(byChannel.get('chan-0')?.state, 'no-history-data');
+    assert.equal(byChannel.get('chan-1')?.state, 'loaded');
+    assert.ok(
+      logger.events.some((e) => e.event_type === 'history_snapshot_query_error' && e.channel_id === 'chan-0'),
+      'phải log cảnh báo rõ ràng khi historyPort.getHistory() throw'
+    );
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test("historyPort.getHistory() trả 'loading' lúc connect (nhánh không mong đợi) -> gửi no-history-data thay thế, log cảnh báo", async () => {
+  const historyPort = new FakeHistoryPort({ 'chan-0': { state: 'loading' } });
+  const { logger, handle } = await startTestServer(makeEntries(1), historyPort);
+  try {
+    const { ws, historySnapshotMessages } = await openClientWithMessages(handle.port);
+
+    await waitUntil(() => historySnapshotMessages.length >= 1);
+    assert.deepEqual(historySnapshotMessages[0], {
+      type: 'channel-history-snapshot',
+      channel_id: 'chan-0',
+      state: 'no-history-data',
+    });
+    assert.ok(logger.events.some((e) => e.event_type === 'history_snapshot_query_error' && e.channel_id === 'chan-0'));
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishHistoryPoint -> broadcast channel-history-point tới mọi client đang mở, đúng snake_case envelope, KHÔNG idempotent-guard', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    const { ws: wsA, messages: messagesA } = await openClientWithMessages(handle.port);
+    const { ws: wsB, messages: messagesB } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messagesA.length > 0 && messagesB.length > 0); // chờ registry-snapshot trước
+
+    handle.publishHistoryPoint('chan-0', 62.3, 1234567);
+    handle.publishHistoryPoint('chan-0', 63.1, 1234568); // gọi 2 lần liên tiếp - CẢ 2 đều phải broadcast
+
+    await waitUntil(() => messagesA.length > 2 && messagesB.length > 2);
+    assert.deepEqual(messagesA[1], { type: 'channel-history-point', channel_id: 'chan-0', bitrate_pct: 62.3, timestamp_ms: 1234567 });
+    assert.deepEqual(messagesA[2], { type: 'channel-history-point', channel_id: 'chan-0', bitrate_pct: 63.1, timestamp_ms: 1234568 });
+    assert.deepEqual(messagesB[1], messagesA[1]);
+    assert.deepEqual(messagesB[2], messagesA[2]);
+
+    wsA.close();
+    wsB.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishHistoryPoint sau khi 1 client đã đóng kết nối -> KHÔNG throw, client khác vẫn nhận đúng broadcast', async () => {
+  const { logger, handle } = await startTestServer(makeEntries(1));
+  try {
+    const wsA = await openClient(handle.port);
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'ui_ws_connect'));
+
+    wsA.close();
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'ui_ws_disconnect'));
+
+    const { ws: wsB, messages: messagesB } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messagesB.length > 0);
+
+    assert.doesNotThrow(() => handle.publishHistoryPoint('chan-0', 40, 999));
+
+    await waitUntil(() => messagesB.length > 1);
+    assert.deepEqual(messagesB[1], { type: 'channel-history-point', channel_id: 'chan-0', bitrate_pct: 40, timestamp_ms: 999 });
 
     wsB.close();
   } finally {
