@@ -22,6 +22,7 @@ import { FileChannelRegistryAdapter } from '../src/adapters/outbound/fileChannel
 import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/adapters/inbound/wsTelemetryAdapter.js';
 import { startWsUiAdapter, type WsUiAdapterHandle } from '../src/adapters/outbound/wsUiAdapter.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
+import type { HistoryPort } from '../src/ports/HistoryPort.js';
 import { defaultLogger, type Logger } from '../src/logging/logger.js';
 import { isDirectRunEntrypoint } from './isDirectRun.js';
 
@@ -132,7 +133,13 @@ export interface AppHandle {
   // 1 người lỡ tay thay `historyPort: bitrateHistoryService` bằng 1 stub rỗng
   // vẫn compile sạch và mọi test cũ vẫn xanh. Expose thẳng instance để test
   // gọi `getHistory()` xác nhận.
-  bitrateHistoryService: BitrateHistoryService;
+  // Code review [patch, round 2]: khai báo qua interface `HistoryPort` (không
+  // phải concrete class `BitrateHistoryService`) - `AppHandle` là 1 boundary
+  // hexagonal public, giữ đúng nguyên tắc chỉ lộ port ra ngoài composition
+  // root, không lộ implementation cụ thể (mirror `channelStateService` field
+  // phía trên vẫn lộ class cụ thể vì đó là chính service điều phối, khác
+  // `historyPort` chỉ là 1 port phụ trợ được gọi qua interface ở mọi nơi khác).
+  bitrateHistoryService: HistoryPort;
   stop(): Promise<void>;
 }
 

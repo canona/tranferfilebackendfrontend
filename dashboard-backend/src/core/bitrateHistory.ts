@@ -56,7 +56,12 @@ export class BitrateHistoryService implements HistoryPort {
     // trả thẳng nó phá vỡ ngữ nghĩa snapshot-tại-thời-điểm-gọi mà kiểu
     // `readonly BitrateHistoryPoint[]` ngụ ý (lần `recordBitrate()` kế tiếp
     // cho đúng channelId này `.push()` vào CHÍNH mảng đó, âm thầm phình to
-    // `data` mà 1 caller đã giữ lại từ lần gọi trước). Trả bản sao nông.
-    return { state: 'loaded', data: [...points] };
+    // `data` mà 1 caller đã giữ lại từ lần gọi trước). Trả bản sao.
+    // Code review [patch, round 2]: copy nông mảng (`[...points]`) chỉ tạo
+    // mảng mới - các phần tử bên trong vẫn là CHÍNH các object điểm dữ liệu
+    // nằm trong `this.history`; sửa 1 field trên 1 điểm đã lấy ra (vd
+    // `data[0].bitratePct = ...`) vẫn âm thầm làm hỏng dữ liệu nội bộ. Copy
+    // từng điểm (`{ ...p }`) để `data` hoàn toàn độc lập với state nội bộ.
+    return { state: 'loaded', data: points.map((p) => ({ ...p })) };
   }
 }
