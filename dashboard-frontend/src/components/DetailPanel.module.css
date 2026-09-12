@@ -10,15 +10,24 @@
   inset: 0;
   /* Dưới connection-banner (z-index: 1000, "trên tất cả các lớp khác kể cả
      detail-panel" - DESIGN.md), trên channel-grid. Không dùng scrim tối màu
-     mới (Boundaries: không thêm token/màu ngoài spine) - backdrop chỉ để bắt
-     click-outside, lưới phía sau vẫn nhìn thấy nguyên vẹn/tiếp tục cập nhật. */
+     mới (Boundaries: không thêm token/màu ngoài spine) - backdrop chỉ để lo
+     layout (căn giữa `.panel`), KHÔNG bắt click nào (xem `.panel`'s
+     pointer-events bên dưới) - code review round 3 [patch, decision]: user
+     chốt cho phép click-through xuống `channel-grid-cell` phía dưới để chuyển
+     kênh trực tiếp khi panel đang mở, thay vì phải đóng panel trước
+     (DetailPanel.tsx's window click-capture listener xử lý toàn bộ logic
+     đóng/chuyển kênh, không còn dựa vào onClick của chính div này). */
   z-index: 500;
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
 }
 
 .panel {
+  /* Bật lại pointer-events cho riêng `.panel` (con) - `.backdrop` (cha) đã
+     pointer-events:none để click xuyên qua tới lưới phía sau. */
+  pointer-events: auto;
   box-sizing: border-box;
   width: 380px;
   max-width: calc(100vw - 2 * var(--spacing-4));
@@ -41,6 +50,26 @@
   line-height: var(--font-heading-line-height);
   color: var(--color-text-primary);
   margin: 0;
+  /* Code review round 3 [patch]: tên đài bất thường dài (1 token không có
+     khoảng trắng) có thể tràn khỏi panel rộng cố định 380px - mirror
+     convention overflow đã có ở `ChannelGridCell.module.css`'s `.channelName`,
+     nhưng dùng wrap (xuống dòng) thay vì ellipsis: panel có `overflow-y: auto`
+     + không giới hạn chiều cao cứng như 1 ô lưới hẹp, nên hiện đủ tên đài quan
+     trọng hơn là cắt ngắn. */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Code review round 3 [patch, decision]: `channel_id` hiện dưới tên đài để
+   phân biệt 2 kênh trùng tên đài (registry không validate unique station_name,
+   xem DetailPanel.tsx). */
+.channelId {
+  font-family: var(--font-family-numeric);
+  font-size: var(--font-caption-size);
+  font-weight: var(--font-caption-weight);
+  line-height: var(--font-caption-line-height);
+  color: var(--color-text-secondary);
+  margin-top: 2px;
 }
 
 .block {
@@ -127,6 +156,10 @@
   font-weight: var(--font-body-weight);
   line-height: var(--font-body-line-height);
   color: var(--color-text-primary);
+  /* Code review round 3 [patch]: mirror .stationName - tên đầu mối liên hệ
+     bất thường dài không được tràn khỏi panel. */
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .contactPhone {
@@ -136,4 +169,6 @@
   line-height: var(--font-body-line-height);
   color: var(--color-text-primary);
   margin-top: 2px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }

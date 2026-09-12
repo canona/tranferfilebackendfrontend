@@ -211,6 +211,18 @@ describe('DetailPanel', () => {
     expect(xs[2]).toBeCloseTo(300, 1); // CHART_WIDTH = 300, điểm cuối luôn ở max
   });
 
+  // Code review round 3 [patch, decision]: `station_name` không được validate
+  // unique ở registry - hiện `channel_id` dưới tên đài để đội trực phân biệt
+  // đúng kênh đang xem khi 2 kênh trùng tên đài.
+  it('header hiện đúng channel_id (data-testid detail-panel-channel-id) để phân biệt khi trùng tên đài', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => store.selectChannel('chan-1'));
+    render(<DetailPanel store={store} />);
+
+    expect(screen.getByTestId('detail-panel-channel-id').textContent).toBe('chan-1');
+  });
+
   it('selectedChannelId trỏ tới channelId KHÔNG có trong channels (edge case) -> không crash, tên đài/liên hệ rỗng thay vì lỗi', () => {
     const store = createChannelStore();
     act(() => store.selectChannel('chan-unknown'));

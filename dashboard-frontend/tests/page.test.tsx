@@ -271,6 +271,58 @@ describe('Page - detail-panel click wiring (Story 3.2, verification-gap)', () =>
     expect(screen.getByTestId('detail-panel-contact-phone')).toHaveTextContent('0900000002');
     cleanup();
   });
+
+  // Code review round 3 [patch, decision]: user chốt cho phép click 1
+  // `channel-grid-cell` KHÁC trong khi panel đang mở để chuyển thẳng sang kênh
+  // đó, KHÔNG cần đóng panel trước (trước patch này, backdrop full-viewport
+  // bắt mọi click chỉ để đóng panel - không cách nào click-through xuống 1 ô
+  // kênh khác trong 1 lần click). Test chuỗi thật qua đúng
+  // Page -> ChannelGrid -> ChannelGridCell -> window click-capture listener
+  // (DetailPanel.tsx) -> store.selectChannel.
+  it('click 1 channel-grid-cell KHÁC trong khi detail-panel đang mở -> chuyển thẳng sang kênh đó, không cần đóng panel trước', () => {
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'Người A', contactPhone: '0900000001', gridPosition: 0 },
+        { channelId: 'chan-2', stationName: 'Đài 2', contactName: 'Người B', contactPhone: '0900000002', gridPosition: 1 },
+      ]);
+      store.applyChannelSeen('chan-1');
+      store.applyChannelSeen('chan-2');
+      return () => {};
+    });
+
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId('channel-grid-cell-chan-1'));
+    expect(screen.getByTestId('detail-panel')).toHaveAttribute('data-channel-id', 'chan-1');
+
+    fireEvent.click(screen.getByTestId('channel-grid-cell-chan-2'));
+
+    const panel = screen.getByTestId('detail-panel');
+    expect(panel).toBeInTheDocument();
+    expect(panel).toHaveAttribute('data-channel-id', 'chan-2');
+    expect(screen.getByTestId('detail-panel-station-name')).toHaveTextContent('Đài 2');
+    expect(screen.getByTestId('detail-panel-contact-phone')).toHaveTextContent('0900000002');
+    cleanup();
+  });
+
+  it('click nền trống (không phải channel-grid-cell, không phải panel) trong khi panel đang mở -> đóng panel', () => {
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+      ]);
+      store.applyChannelSeen('chan-1');
+      return () => {};
+    });
+
+    render(<Page />);
+    fireEvent.click(screen.getByTestId('channel-grid-cell-chan-1'));
+    expect(screen.getByTestId('detail-panel')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('detail-panel-backdrop'));
+
+    expect(screen.queryByTestId('detail-panel')).toBeNull();
+    cleanup();
+  });
 });
 
 // Bổ sung video-preview thật (AD-22): channel-snapshot wiring end-to-end qua

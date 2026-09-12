@@ -15,7 +15,7 @@
 // Tên đài/đầu mối liên hệ lấy từ `channels` đã có sẵn trong store (Story
 // 2.2/2.3) - KHÔNG thêm field registry mới (Boundaries).
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ChannelStore, HistoryPoint } from '../state/channelStore';
 import { useChannelStore } from '../state/channelStore';
 import styles from './DetailPanel.module.css';
@@ -77,6 +77,7 @@ export function DetailPanel({ store }: DetailPanelProps) {
   const state = useChannelStore(store);
   const { selectedChannelId } = state;
   const isOpen = selectedChannelId !== null;
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Boundaries: "đóng bằng Esc (window keydown) ... bắt buộc, không chỉ
   // click-outside" - listener gắn TRÊN window, chỉ khi panel đang mở (tránh
@@ -92,6 +93,37 @@ export function DetailPanel({ store }: DetailPanelProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, store]);
 
+  // Code review round 3 [patch, decision]: user chốt cho phép click 1
+  // `channel-grid-cell` KHÁC trong khi panel đang mở để chuyển thẳng sang kênh
+  // đó, KHÔNG cần đóng panel trước - backdrop cũ (full-viewport, bắt mọi
+  // click để đóng) chặn hẳn việc này vì grid-cell nằm "phía dưới" backdrop
+  // trong hit-testing. Thay bằng 1 listener DUY NHẤT ở CAPTURE phase trên
+  // `window` (chạy TRƯỚC bất kỳ onClick bubble-phase nào, kể cả của chính
+  // grid-cell) - dùng `.closest('[data-channel-id]')` để nhận diện: click vào
+  // 1 ô kênh khác (mọi `channel-grid-cell` VÀ chính `.panel` đều có
+  // `data-channel-id`) -> chuyển kênh trực tiếp; click ra ngoài cả 2 (nền
+  // trống/connection-banner/...) -> đóng panel (mirror hành vi click-outside
+  // cũ). Click BÊN TRONG panel được loại trừ sớm qua `panelRef` - không đụng
+  // gì (đã có `onClick` stopPropagation riêng cho trường hợp đó, giữ nguyên
+  // như 1 lớp phòng thủ thứ 2).
+  useEffect(() => {
+    if (!isOpen) return;
+    function handlePointerDownCapture(event: MouseEvent): void {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (panelRef.current?.contains(target)) return;
+      const cellEl = (target as Element).closest?.('[data-channel-id]');
+      const clickedChannelId = cellEl?.getAttribute('data-channel-id');
+      if (clickedChannelId) {
+        store.selectChannel(clickedChannelId);
+        return;
+      }
+      store.clearSelectedChannel();
+    }
+    window.addEventListener('click', handlePointerDownCapture, true);
+    return () => window.removeEventListener('click', handlePointerDownCapture, true);
+  }, [isOpen, store]);
+
   if (selectedChannelId === null) return null;
 
   const channel = state.channels.find((c) => c.channelId === selectedChannelId);
@@ -105,12 +137,9 @@ export function DetailPanel({ store }: DetailPanelProps) {
     historyState.state === 'loaded' && latestPoint ? `${Math.round(safeBitratePctForLabel(latestPoint.bitratePct))}%` : '—';
 
   return (
-    <div
-      className={styles.backdrop}
-      data-testid="detail-panel-backdrop"
-      onClick={() => store.clearSelectedChannel()}
-    >
+    <div className={styles.backdrop} data-testid="detail-panel-backdrop">
       <div
+        ref={panelRef}
         className={styles.panel}
         role="dialog"
         aria-modal="true"
@@ -118,13 +147,22 @@ export function DetailPanel({ store }: DetailPanelProps) {
         data-testid="detail-panel"
         data-state={historyState.state}
         data-channel-id={selectedChannelId}
-        // Click BÊN TRONG panel không được lan lên backdrop (không tự đóng).
+        // Click BÊN TRONG panel không được lan lên backdrop (không tự đóng) -
+        // giữ như 1 lớp phòng thủ thứ 2, dù listener capture-phase ở trên
+        // (panelRef.contains) đã tự loại trừ trường hợp này trước.
         onClick={(event) => event.stopPropagation()}
       >
         <div className={styles.header}>
           <h2 className={styles.stationName} data-testid="detail-panel-station-name">
             {channel?.stationName ?? ''}
           </h2>
+          {/* Code review round 3 [patch, decision]: `station_name` KHÔNG được
+              validate unique ở registry (chỉ `channel_id` bị chặn trùng,
+              `fileChannelRegistryAdapter.ts`) - hiện `channel_id` để đội trực
+              phân biệt đúng kênh đang xem khi 2 kênh trùng tên đài. */}
+          <div className={styles.channelId} data-testid="detail-panel-channel-id">
+            {selectedChannelId}
+          </div>
         </div>
 
         <div className={styles.block}>
