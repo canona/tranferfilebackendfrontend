@@ -1041,6 +1041,34 @@ test('ack-command envelope thiếu channel_id -> bỏ qua, log envelope_invalid,
   }
 });
 
+// Code review [patch]: `channel_id` CÓ MẶT nhưng sai kiểu (vd number) phải bị
+// coi tương đương "thiếu" (guard `typeof === 'string'`) - test này khoá lại
+// nhánh đó, KHÁC test "thiếu channel_id" phía trên (field vắng mặt hoàn toàn).
+test('ack-command envelope có channel_id sai kiểu (number) -> bỏ qua, log envelope_invalid, KHÔNG forward', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 123,
+        timestamp: '2026-09-12T00:00:00.000Z',
+        event_type: 'ack-command',
+        payload: { operator_label: 'NV.A' },
+      })
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'envelope_invalid'));
+    assert.equal(ackCommandPort.calls.length, 0);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
 test('ack-command envelope thiếu payload.operator_label -> bỏ qua, log envelope_invalid, KHÔNG forward', async () => {
   const ackCommandPort = new FakeAckCommandPort();
   const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);

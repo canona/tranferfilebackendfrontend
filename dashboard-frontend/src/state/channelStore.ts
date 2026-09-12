@@ -146,8 +146,21 @@ export class ChannelStore {
   // `registry-snapshot` là nguồn DUY NHẤT liệt kê kênh/vị trí (AD-26) - GHI
   // ĐÈ toàn bộ danh sách, không merge/patch từng phần (khớp đúng ngữ nghĩa
   // "snapshot": ảnh chụp toàn bộ tại thời điểm connect, không phải delta).
+  //
+  // Code review [patch]: `registry-snapshot` LUÔN là message đầu tiên của MỌI
+  // lần connect mới (kể cả reconnect sau network blip - `wsUiAdapter.ts`'s
+  // 'connection' handler) - dùng làm điểm neo để reset `channelAck` TRƯỚC khi
+  // luồng replay `channel-ack-change` chạy tiếp. Backend's replay-on-connect
+  // CHỈ gửi lại entry `acknowledged===true` (KHÔNG replay `false` - "không có
+  // gì để replay" theo I/O matrix của Story 3.3), nên nếu KHÔNG reset ở đây,
+  // 1 client rớt kết nối đúng lúc backend tự xoá ack (đổi trạng thái/
+  // machine-offline/phục hồi) sẽ giữ mãi ack-label cũ từ trước lúc rớt kết
+  // nối sau khi reconnect - không có tín hiệu "acknowledged=false" nào sửa lại
+  // nó, vi phạm AC2 ("...ack-label tự biến mất ở MỌI client"). Reset ở đây rồi
+  // để đúng luồng replay `acknowledged===true` điền lại dữ liệu hiện tại ngay
+  // sau đó (mirror ngữ nghĩa "snapshot" - bắt đầu lại từ đầu mỗi lần connect).
   applyRegistrySnapshot(channels: ReadonlyArray<ChannelRegistryEntry>): void {
-    this.setState({ ...this.state, channels });
+    this.setState({ ...this.state, channels, channelAck: new Map() });
   }
 
   // `channel-seen` chỉ CỘNG THÊM vào tập đã seen - idempotent (gọi lại cho

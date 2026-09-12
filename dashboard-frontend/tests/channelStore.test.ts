@@ -560,6 +560,24 @@ describe('ChannelStore', () => {
       expect(store.getState().channelAck.get('chan-2')).toBe('NV.B');
     });
 
+    // Code review [patch]: reconnect (registry-snapshot mới) PHẢI reset
+    // channelAck - backend's replay-on-connect chỉ gửi lại entry
+    // acknowledged===true, KHÔNG bao giờ gửi false, nên nếu KHÔNG reset ở đây
+    // 1 ack đã bị auto-clear ở phía backend TRONG LÚC client này rớt kết nối
+    // sẽ kẹt vĩnh viễn trên UI của đúng client đó sau khi reconnect (vi phạm
+    // AC2 "...tự biến mất ở MỌI client").
+    it('applyRegistrySnapshot (mô phỏng reconnect) -> reset channelAck về rỗng', () => {
+      const store = createChannelStore();
+      store.applyAckChange('chan-1', 'NV.A');
+      expect(store.getState().channelAck.size).toBe(1);
+
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '0900000001', gridPosition: 0 },
+      ]);
+
+      expect(store.getState().channelAck.size).toBe(0);
+    });
+
     it('applyAckChange(channelId, null) cho channelId CHƯA từng ack -> idempotent, KHÔNG setState (tránh re-render thừa)', () => {
       const store = createChannelStore();
       const stateAfterFirst = store.getState();

@@ -291,11 +291,17 @@ function handleAckMessage(raw: string, ctx: AckMessageContext): void {
   }
 
   if (!envelopeChannelId) {
+    // Code review [patch]: `envelopeChannelId` gộp chung 2 case "thiếu field"
+    // VÀ "có field nhưng sai kiểu" (guard `typeof === 'string'` ở trên) thành
+    // cùng 1 giá trị rỗng - log PHẢI phản ánh đúng cả 2 khả năng (mirror cách
+    // nhánh `operator_label` bên dưới đã diễn đạt "thiếu/không hợp lệ"), tránh
+    // gây hiểu nhầm khi đọc log rằng field "thiếu" trong khi thực ra nó có mặt
+    // nhưng sai kiểu (vd number).
     ctx.logger.log({
       channel_id: '',
       event_type: 'envelope_invalid',
       source: ctx.source,
-      reason: 'ack-command envelope thiếu channel_id',
+      reason: 'ack-command envelope thiếu/không hợp lệ channel_id',
     });
     return;
   }
