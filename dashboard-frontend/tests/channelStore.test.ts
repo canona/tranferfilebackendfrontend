@@ -522,4 +522,73 @@ describe('ChannelStore', () => {
       expect(callCount).toBe(2);
     });
   });
+
+  describe('applyAckChange (Story 3.3)', () => {
+    it('trạng thái ban đầu: channelAck rỗng', () => {
+      const store = createChannelStore();
+      expect(store.getState().channelAck.size).toBe(0);
+    });
+
+    it('applyAckChange(channelId, label) -> thêm entry vào channelAck', () => {
+      const store = createChannelStore();
+      store.applyAckChange('chan-1', 'NV.A');
+      expect(store.getState().channelAck.get('chan-1')).toBe('NV.A');
+    });
+
+    it('applyAckChange(channelId, null) -> gỡ entry khỏi channelAck (auto-clear)', () => {
+      const store = createChannelStore();
+      store.applyAckChange('chan-1', 'NV.A');
+      store.applyAckChange('chan-1', null);
+      expect(store.getState().channelAck.has('chan-1')).toBe(false);
+    });
+
+    it('applyAckChange ghi đè label MỚI khi gọi lại cho CÙNG channelId (mirror channelDisplayStates - trạng thái đổi qua lại được)', () => {
+      const store = createChannelStore();
+      store.applyAckChange('chan-1', 'NV.A');
+      store.applyAckChange('chan-1', 'NV.B');
+      expect(store.getState().channelAck.get('chan-1')).toBe('NV.B');
+    });
+
+    it('mỗi kênh có ack độc lập (per-channel)', () => {
+      const store = createChannelStore();
+      store.applyAckChange('chan-1', 'NV.A');
+      store.applyAckChange('chan-2', 'NV.B');
+      expect(store.getState().channelAck.get('chan-1')).toBe('NV.A');
+      expect(store.getState().channelAck.get('chan-2')).toBe('NV.B');
+      store.applyAckChange('chan-1', null);
+      expect(store.getState().channelAck.has('chan-1')).toBe(false);
+      expect(store.getState().channelAck.get('chan-2')).toBe('NV.B');
+    });
+
+    it('applyAckChange(channelId, null) cho channelId CHƯA từng ack -> idempotent, KHÔNG setState (tránh re-render thừa)', () => {
+      const store = createChannelStore();
+      const stateAfterFirst = store.getState();
+      store.applyAckChange('chan-unknown', null);
+      expect(store.getState()).toBe(stateAfterFirst);
+    });
+
+    it('applyAckChange gọi lại với ĐÚNG label đã có -> idempotent, KHÔNG setState (tránh re-render thừa)', () => {
+      const store = createChannelStore();
+      store.applyAckChange('chan-1', 'NV.A');
+      const stateAfterFirst = store.getState();
+      store.applyAckChange('chan-1', 'NV.A');
+      expect(store.getState()).toBe(stateAfterFirst);
+    });
+
+    it('subscribe: listener được gọi đúng số lần khi channelAck thực sự đổi, KHÔNG gọi khi no-op', () => {
+      const store = createChannelStore();
+      let callCount = 0;
+      store.subscribe(() => {
+        callCount++;
+      });
+      store.applyAckChange('chan-1', 'NV.A');
+      expect(callCount).toBe(1);
+      store.applyAckChange('chan-1', 'NV.A'); // no-op - không gọi lại
+      expect(callCount).toBe(1);
+      store.applyAckChange('chan-1', null);
+      expect(callCount).toBe(2);
+      store.applyAckChange('chan-1', null); // no-op - không gọi lại
+      expect(callCount).toBe(2);
+    });
+  });
 });

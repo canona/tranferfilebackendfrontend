@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChannelGrid } from '../src/components/ChannelGrid';
 import { ConnectionBanner } from '../src/components/ConnectionBanner';
 import { DetailPanel } from '../src/components/DetailPanel';
@@ -29,10 +29,22 @@ export default function Page() {
   const store = useMemo(() => createChannelStore(), []);
   const state = useChannelStore(store);
 
+  // Story 3.3: `connectUiWsClient` giờ trả về `{ close, sendAckCommand }`
+  // (Code Map) - giữ `sendAckCommand` qua `useRef` (không phải state) vì gọi
+  // nó không cần trigger re-render, chỉ cần tham chiếu ổn định cho `onAck`
+  // truyền xuống `DetailPanel` bên dưới. Mặc định no-op TRƯỚC KHI effect chạy
+  // lần đầu (SSR/lần render đầu tiên) - tránh throw nếu 1 sự kiện nào đó gọi
+  // ref.current trước khi `useEffect` kịp gán instance thật.
+  const sendAckCommandRef = useRef<(channelId: string, operatorLabel: string) => void>(() => {});
+
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_DASHBOARD_UI_WS_URL ?? DEFAULT_UI_WS_URL;
-    const disconnect = connectUiWsClient(url, store);
-    return disconnect;
+    const client = connectUiWsClient(url, store);
+    sendAckCommandRef.current = client.sendAckCommand;
+    return () => {
+      client.close();
+      sendAckCommandRef.current = () => {};
+    };
   }, [store]);
 
   // Story 2.5: fixture audioLevel dao động theo thời gian (Boundaries: "hàm
@@ -75,13 +87,14 @@ export default function Page() {
           channelAudioLevels={channelAudioLevels}
           channelMachineOffline={state.channelMachineOffline}
           channelSnapshots={state.channelSnapshots}
+          channelAck={state.channelAck}
           onSelect={(channelId) => store.selectChannel(channelId)}
         />
         {state.connectionStatus === 'disconnected' ? (
           <div className={styles.gridOverlay} data-testid="grid-overlay" aria-hidden="true" />
         ) : null}
       </div>
-      <DetailPanel store={store} />
+      <DetailPanel store={store} onAck={(channelId, operatorLabel) => sendAckCommandRef.current(channelId, operatorLabel)} />
     </>
   );
 }

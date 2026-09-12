@@ -152,6 +152,11 @@ export interface ChannelGridCellProps {
   // không phải trạng thái lỗi. Chỉ có hiệu lực khi effectiveDisplayState là
   // 'ok'/'warning' (nhánh 'critical' luôn dùng color-bars, bất kể prop này).
   snapshotDataUri?: string;
+  // Story 3.3: nhãn ack hiện tại (`channelStore.ts`'s `channelAck.get(channelId)`).
+  // Có mặt (string) -> đổi border sang dashed + hiện `ack-label` góc trên-phải
+  // (Boundaries: KHÔNG đổi màu nền/viền/badge gốc). Thiếu (undefined) -> ô
+  // hiển thị hoàn toàn như cũ (chưa ack/đã tự xoá).
+  ackLabel?: string;
   // Story 3.2: click BẤT KỲ đâu trên ô gọi `onSelect(channelId)` - mở đúng
   // `detail-panel` của kênh đó (Boundaries/Epic 3 context). Optional - thiếu
   // (undefined) giữ nguyên hành vi cũ (không click được), tương thích ngược
@@ -168,6 +173,7 @@ export function ChannelGridCell({
   audioLevel,
   subType,
   snapshotDataUri,
+  ackLabel,
   onSelect,
 }: ChannelGridCellProps) {
   const { row, col } = gridPositionToRowCol(gridPosition);
@@ -177,6 +183,11 @@ export function ChannelGridCell({
   // Story 2.7: chỉ thực sự "machine-offline" khi ĐANG hiển thị critical (badge
   // riêng không có ý nghĩa gì ở ok/warning/loaded-neutral/skeleton).
   const isMachineOffline = effectiveDisplayState === 'critical' && subType === 'machine-offline';
+  // Story 3.3: gate theo `loaded` (mirror cách `.channelName`/badge đã gate) -
+  // dù `ackLabel` không reachable thực tế khi `!loaded` (ack chỉ tới sau khi
+  // kênh đã warning/critical, tức đã loaded từ lâu), giữ nhất quán pattern gate
+  // hiện có của component thay vì để 1 ngoại lệ ngầm.
+  const showAck = loaded && ackLabel !== undefined;
 
   const cellStateClass = !loaded
     ? styles.skeleton
@@ -186,7 +197,7 @@ export function ChannelGridCell({
 
   return (
     <div
-      className={`${styles.cell} ${cellStateClass}`}
+      className={`${styles.cell} ${cellStateClass}${showAck ? ` ${styles.acknowledged ?? ''}` : ''}`}
       // DESIGN.md's channel-grid: "vị trí theo đài không đổi" - đặt tường
       // minh grid-row/grid-column theo gridPosition (KHÔNG dựa vào thứ tự
       // DOM/mảng channels), CSS Grid tự đặt đúng ô bất kể thứ tự render.
@@ -318,6 +329,15 @@ export function ChannelGridCell({
           data-testid={`alert-badge-${channelId}`}
         >
           {isMachineOffline ? MACHINE_OFFLINE_BADGE_LABEL : BADGE_LABEL[effectiveDisplayState]}
+        </span>
+      ) : null}
+
+      {/* Story 3.3 (Boundaries): "✓ Đã nhận: {operator_label}" nguyên văn, góc
+          trên-phải (khác góc của `.badge`, không đè lên) - CHỈ đổi border-style
+          sang dashed + hiện nhãn này, KHÔNG đổi màu nền/viền/badge gốc. */}
+      {showAck ? (
+        <span className={styles.ackLabel} data-testid={`ack-label-${channelId}`}>
+          ✓ Đã nhận: {ackLabel}
         </span>
       ) : null}
     </div>

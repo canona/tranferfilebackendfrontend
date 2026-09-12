@@ -29,6 +29,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
     const cells = screen.getAllByRole('gridcell');
@@ -50,6 +51,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
 
@@ -72,6 +74,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
 
@@ -97,6 +100,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
     expect(screen.getAllByRole('gridcell').length).toBe(2);
@@ -116,6 +120,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
     const cells = screen.getAllByRole('gridcell');
@@ -149,6 +154,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
 
@@ -171,6 +177,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
 
@@ -196,6 +203,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={channelAudioLevels}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
 
@@ -213,6 +221,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map([['chan-0', [-30, -30]]])}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
 
@@ -232,6 +241,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map([['chan-0', 'data:image/jpeg;base64,ZmFrZQ==']])}
+        channelAck={new Map()}
       />,
     );
 
@@ -250,6 +260,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set(['chan-0'])}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
 
@@ -274,6 +285,7 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
         onSelect={onSelect}
       />,
     );
@@ -294,10 +306,31 @@ describe('ChannelGrid', () => {
         channelAudioLevels={new Map()}
         channelMachineOffline={new Set()}
         channelSnapshots={new Map()}
+        channelAck={new Map()}
       />,
     );
 
     expect(screen.getByTestId('channel-grid-cell-chan-0')).not.toHaveAttribute('data-sub-type');
     expect(screen.getByTestId('channel-grid-cell-chan-1')).not.toHaveAttribute('data-sub-type');
+  });
+
+  // Story 3.3: `channelAck` truyền đúng xuống từng cell theo channelId -
+  // mirror test channelSnapshots/channelAudioLevels ở trên.
+  it('truyền đúng ackLabel xuống từng cell theo channelId (channelAck)', () => {
+    const channels = makeChannels(2);
+    render(
+      <ChannelGrid
+        channels={channels}
+        seenChannelIds={new Set(['chan-0', 'chan-1'])}
+        channelDisplayStates={new Map([['chan-0', 'warning' as const]])}
+        channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
+        channelAck={new Map([['chan-0', 'NV.A']])}
+      />,
+    );
+
+    expect(screen.getByTestId('ack-label-chan-0')).toHaveTextContent('✓ Đã nhận: NV.A');
+    expect(screen.queryByTestId('ack-label-chan-1')).toBeNull();
   });
 });

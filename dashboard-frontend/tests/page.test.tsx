@@ -29,7 +29,7 @@ vi.mock('../src/services/uiWsClient', () => ({
     // `state.channelDisplayStates` (bỏ fixture `buildChannelDisplayStatesFixture`
     // của Story 2.4, đã xoá).
     store.applyChannelDisplayStateChange('chan-1', 'warning');
-    return () => {};
+    return { close: () => {}, sendAckCommand: () => {} };
   }),
 }));
 
@@ -147,7 +147,7 @@ describe('Page - ConnectionBanner + grid-overlay (Story 2.7)', () => {
       ]);
       store.setConnectionStatus('connected', lastConnectedIso);
       store.setConnectionStatus('disconnected');
-      return () => {};
+      return { close: () => {}, sendAckCommand: () => {} };
     });
 
     render(<Page />);
@@ -169,7 +169,7 @@ describe('Page - ConnectionBanner + grid-overlay (Story 2.7)', () => {
     vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
       capturedStore = store;
       store.setConnectionStatus('disconnected');
-      return () => {};
+      return { close: () => {}, sendAckCommand: () => {} };
     });
 
     render(<Page />);
@@ -195,7 +195,7 @@ describe('Page - channelMachineOffline badge (Story 2.7)', () => {
       ]);
       store.applyChannelSeen('chan-1');
       store.applyChannelDisplayStateChange('chan-1', 'critical', 'machine-offline');
-      return () => {};
+      return { close: () => {}, sendAckCommand: () => {} };
     });
 
     render(<Page />);
@@ -216,7 +216,7 @@ describe('Page - channelMachineOffline badge (Story 2.7)', () => {
       ]);
       store.applyChannelSeen('chan-1');
       store.applyChannelDisplayStateChange('chan-1', 'critical', 'machine-offline');
-      return () => {};
+      return { close: () => {}, sendAckCommand: () => {} };
     });
 
     render(<Page />);
@@ -253,7 +253,7 @@ describe('Page - detail-panel click wiring (Story 3.2, verification-gap)', () =>
       ]);
       store.applyChannelSeen('chan-1');
       store.applyChannelSeen('chan-2');
-      return () => {};
+      return { close: () => {}, sendAckCommand: () => {} };
     });
 
     render(<Page />);
@@ -287,7 +287,7 @@ describe('Page - detail-panel click wiring (Story 3.2, verification-gap)', () =>
       ]);
       store.applyChannelSeen('chan-1');
       store.applyChannelSeen('chan-2');
-      return () => {};
+      return { close: () => {}, sendAckCommand: () => {} };
     });
 
     render(<Page />);
@@ -311,7 +311,7 @@ describe('Page - detail-panel click wiring (Story 3.2, verification-gap)', () =>
         { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
       ]);
       store.applyChannelSeen('chan-1');
-      return () => {};
+      return { close: () => {}, sendAckCommand: () => {} };
     });
 
     render(<Page />);
@@ -336,13 +336,70 @@ describe('Page - channelSnapshots wiring (video-preview thật)', () => {
       store.applyChannelSeen('chan-1');
       store.applyChannelDisplayStateChange('chan-1', 'ok');
       store.applyChannelSnapshot('chan-1', 'ZmFrZS1qcGVn');
-      return () => {};
+      return { close: () => {}, sendAckCommand: () => {} };
     });
 
     render(<Page />);
 
     const style = screen.getByTestId('thumbnail-chan-1').style.backgroundImage;
     expect(style).toContain('data:image/jpeg;base64,ZmFrZS1qcGVn');
+    cleanup();
+  });
+});
+
+// Story 3.3: ack-command wiring end-to-end qua
+// Page -> DetailPanel (bấm nút) -> sendAckCommand thật (từ connectUiWsClient) VÀ
+// Page -> store.applyAckChange (channel-ack-change) -> ChannelGrid -> ChannelGridCell.
+describe('Page - Ack wiring (Story 3.3)', () => {
+  it('bấm "Xác nhận đã tiếp nhận" trong detail-panel -> gọi ĐÚNG sendAckCommand trả về từ connectUiWsClient với channelId/operatorLabel đã trim()', () => {
+    const sendAckCommand = vi.fn();
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+      ]);
+      store.applyChannelSeen('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      return { close: () => {}, sendAckCommand };
+    });
+
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId('channel-grid-cell-chan-1'));
+    fireEvent.change(screen.getByTestId('detail-panel-ack-input'), { target: { value: '  NV.A  ' } });
+    fireEvent.click(screen.getByTestId('detail-panel-ack-button'));
+
+    expect(sendAckCommand).toHaveBeenCalledTimes(1);
+    expect(sendAckCommand).toHaveBeenCalledWith('chan-1', 'NV.A');
+    cleanup();
+  });
+
+  it('channel-ack-change (qua store.applyAckChange, mirror uiWsClient) -> ô kênh tương ứng hiện ack-label, border đổi dashed; ack tự xoá -> ack-label biến mất', () => {
+    let capturedStore: ChannelStore | undefined;
+    vi.mocked(connectUiWsClient).mockImplementationOnce((_url: string, store: ChannelStore) => {
+      capturedStore = store;
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+      ]);
+      store.applyChannelSeen('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      return { close: () => {}, sendAckCommand: () => {} };
+    });
+
+    render(<Page />);
+    expect(screen.queryByTestId('ack-label-chan-1')).toBeNull();
+
+    act(() => {
+      capturedStore?.applyAckChange('chan-1', 'NV.A');
+    });
+    expect(screen.getByTestId('ack-label-chan-1')).toHaveTextContent('✓ Đã nhận: NV.A');
+
+    // Kênh chuyển cảnh báo mới (warning -> critical) - mirror backend auto-clear
+    // (channel-ack-change acknowledged=false) áp dụng qua applyAckChange(null).
+    act(() => {
+      capturedStore?.applyChannelDisplayStateChange('chan-1', 'critical');
+      capturedStore?.applyAckChange('chan-1', null);
+    });
+    expect(screen.queryByTestId('ack-label-chan-1')).toBeNull();
     cleanup();
   });
 });

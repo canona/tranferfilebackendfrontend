@@ -17,13 +17,20 @@
 // không cần tự quản lý 1 danh sách riêng.
 
 import { createServer, type Server as HttpServer, type IncomingMessage } from 'node:http';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { ChannelRegistryEntry, ChannelRegistryPort } from '../../ports/ChannelRegistryPort.js';
 import type { UiOutboundPort } from '../../ports/UiOutboundPort.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../../ports/AlertOutboundPort.js';
 import type { SnapshotOutboundPort } from '../../ports/SnapshotOutboundPort.js';
 import type { HistoryPort, HistoryQueryResult } from '../../ports/HistoryPort.js';
+import type { AckCommandPort } from '../../ports/AckCommandPort.js';
 import type { Logger } from '../../logging/logger.js';
+
+// Story 3.3 (Code Map): giới hạn hợp lý cho `payload.operator_label` (validate
+// lớp 2, mirror tinh thần các giới hạn/validate hình dạng khác của kênh này) -
+// tên tắt operator không có lý do gì cần dài hơn 1 tên người/nhóm trực bình
+// thường.
+const MAX_OPERATOR_LABEL_LENGTH = 64;
 
 // Code review (mirror wsTelemetryAdapter.ts): WS UI không auth (LAN-only,
 // Boundaries/Never) nhưng vẫn cần chặn payload/khung dữ liệu bất thường -
@@ -41,6 +48,11 @@ export interface WsUiAdapterOptions {
   // (Design Notes: "KHÔNG thêm cache Map mới trong wsUiAdapter.ts như
   // lastState/lastSnapshot" - query trực tiếp `getHistory()` mỗi lần connect).
   historyPort: HistoryPort;
+  // Story 3.3: port MỚI, bắt buộc (mirror `historyPort` - không optional).
+  // Nguồn xử lý DUY NHẤT cho envelope `ack-command` nhận được qua kênh WS UI
+  // này (AD-25) - `main.ts` wiring 1 forwarder cục bộ để giải quyết circular-
+  // dependency với `ChannelStateService` (xem Design Notes).
+  ackCommandPort: AckCommandPort;
   logger: Logger;
 }
 
@@ -170,6 +182,27 @@ function toChannelHistoryPointMessage(channelId: string, bitratePct: number, tim
   return { type: 'channel-history-point', channel_id: channelId, bitrate_pct: bitratePct, timestamp_ms: timestampMs };
 }
 
+// Story 3.3: envelope `channel-ack-change` - broadcast tới TẤT CẢ client mỗi
+// khi `acknowledged`/`ackLabel` của 1 kênh đổi (mirror snake_case shape đóng
+// của kênh này). `ack_label` chỉ có mặt khi `acknowledged===true` (object
+// spread có điều kiện, mirror `sub_type` của `ChannelStateChangeMessage` -
+// KHÔNG gửi `ack_label: undefined` tường minh khi acknowledged=false).
+interface ChannelAckChangeMessage {
+  type: 'channel-ack-change';
+  channel_id: string;
+  acknowledged: boolean;
+  ack_label?: string;
+}
+
+function toChannelAckChangeMessage(channelId: string, acknowledged: boolean, ackLabel: string | undefined): ChannelAckChangeMessage {
+  return {
+    type: 'channel-ack-change',
+    channel_id: channelId,
+    acknowledged,
+    ...(acknowledged && ackLabel !== undefined ? { ack_label: ackLabel } : {}),
+  };
+}
+
 function toSnapshotChannel(entry: ChannelRegistryEntry & { channelId: string }): RegistrySnapshotChannel {
   return {
     channel_id: entry.channelId,
@@ -189,6 +222,7 @@ function send(
     | ChannelSnapshotMessage
     | ChannelHistorySnapshotMessage
     | ChannelHistoryPointMessage
+    | ChannelAckChangeMessage
 ): void {
   // Code review: chỉ gửi khi socket còn ở trạng thái OPEN - client vừa
   // connect rồi rớt ngay lập tức (trước khi kịp gửi snapshot) không được
@@ -197,8 +231,141 @@ function send(
   ws.send(JSON.stringify(message));
 }
 
+// Story 3.3 (mirror `wsTelemetryAdapter.ts`'s `rawDataToString`): kiểu khai báo
+// của `ws` cho sự kiện 'message' là `RawData = Buffer | ArrayBuffer | Buffer[]`
+// (không phải luôn luôn là Buffer đơn) - `.toString()` ngầm định trên
+// ArrayBuffer/Buffer[] KHÔNG cho ra JSON text đúng.
+function rawDataToString(data: RawData): string {
+  if (Buffer.isBuffer(data)) {
+    return data.toString();
+  }
+  if (Array.isArray(data)) {
+    return Buffer.concat(data).toString();
+  }
+  return Buffer.from(data).toString();
+}
+
+interface AckMessageContext {
+  ackCommandPort: AckCommandPort;
+  logger: Logger;
+  source: string;
+}
+
+// Story 3.3: kênh WS UI này CHỈ nhận đúng 1 loại message từ client
+// (`event_type=ack-command`, AD-25) - mirror hình dạng envelope chung + cách
+// parse/validate của `wsTelemetryAdapter.ts`'s `handleMessage` (Code Map), thu
+// hẹp lại cho đúng 1 event_type duy nhất (khác hẳn tập đóng nhiều event_type
+// của kênh telemetry).
+function handleAckMessage(raw: string, ctx: AckMessageContext): void {
+  let envelope: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) {
+      throw new Error('envelope không phải JSON object');
+    }
+    envelope = parsed as Record<string, unknown>;
+  } catch (err) {
+    ctx.logger.log({
+      channel_id: '',
+      event_type: 'envelope_parse_error',
+      source: ctx.source,
+      reason: (err as Error).message,
+    });
+    return;
+  }
+
+  const eventType = envelope.event_type;
+  const envelopeChannelId = typeof envelope.channel_id === 'string' ? envelope.channel_id : '';
+
+  if (eventType !== 'ack-command') {
+    // Boundaries: kênh WS UI này chỉ định nghĩa đúng 1 message client->backend
+    // (ack-command, AD-25) - mọi event_type khác bị bỏ qua âm thầm (log debug),
+    // không throw, không đóng kết nối.
+    ctx.logger.log({
+      channel_id: envelopeChannelId,
+      event_type: 'event_type_ignored',
+      source: ctx.source,
+      reason: `event_type=${JSON.stringify(eventType)} khác 'ack-command' - bỏ qua`,
+    });
+    return;
+  }
+
+  if (!envelopeChannelId) {
+    ctx.logger.log({
+      channel_id: '',
+      event_type: 'envelope_invalid',
+      source: ctx.source,
+      reason: 'ack-command envelope thiếu channel_id',
+    });
+    return;
+  }
+
+  const payload = envelope.payload;
+  const rawOperatorLabel =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>).operator_label : undefined;
+
+  if (typeof rawOperatorLabel !== 'string') {
+    ctx.logger.log({
+      channel_id: envelopeChannelId,
+      event_type: 'envelope_invalid',
+      source: ctx.source,
+      reason: 'ack-command envelope thiếu/không hợp lệ payload.operator_label',
+    });
+    return;
+  }
+
+  // Code review [patch, round 1]: PHẢI trim() TRƯỚC khi forward vào
+  // `ackCommandPort.handleAckCommand` (KHÔNG forward giá trị thô) - nhãn thừa
+  // khoảng trắng đầu/cuối vẫn lưu/broadcast nếu không trim ở đây.
+  const operatorLabel = rawOperatorLabel.trim();
+
+  // Code review [patch, round 2]: `operatorLabel` sau `.trim()` rỗng (chuỗi
+  // gốc rỗng/toàn khoảng trắng) - tầng UI (`DetailPanel.tsx`) đã disable nút
+  // gửi cho trường hợp này, nhưng 1 client WS UI KHÁC (không phải dashboard-
+  // frontend) có thể gửi thẳng qua kênh WS mà không qua UI guard đó - reject
+  // ở lớp validate thứ 2 này (mirror đúng nhánh envelope_invalid bên dưới) để
+  // KHÔNG lưu/broadcast 1 ack với ackLabel rỗng ("✓ Đã nhận: " không tên).
+  if (operatorLabel.length === 0) {
+    ctx.logger.log({
+      channel_id: envelopeChannelId,
+      event_type: 'envelope_invalid',
+      source: ctx.source,
+      reason: 'ack-command envelope có payload.operator_label rỗng/toàn khoảng trắng sau khi trim()',
+    });
+    return;
+  }
+
+  // Code review [patch, round 1]: giới hạn hợp lý <=64 ký tự (validate lớp 2,
+  // mirror tinh thần các giới hạn hình dạng khác của kênh này) - reject qua
+  // đúng nhánh `envelope_invalid` như mọi trường hợp envelope hỏng khác.
+  if (operatorLabel.length > MAX_OPERATOR_LABEL_LENGTH) {
+    ctx.logger.log({
+      channel_id: envelopeChannelId,
+      event_type: 'envelope_invalid',
+      source: ctx.source,
+      reason: `ack-command envelope có payload.operator_label vượt quá ${MAX_OPERATOR_LABEL_LENGTH} ký tự (length=${operatorLabel.length})`,
+    });
+    return;
+  }
+
+  // Code review (mirror `telemetryPort.handleTelemetry`/`heartbeatPort.handleHeartbeat`
+  // ở `wsTelemetryAdapter.ts`): 1 exception từ implementation của
+  // `AckCommandPort` không được thoát ra khỏi handler 'message', crash cả tiến
+  // trình.
+  try {
+    ctx.ackCommandPort.handleAckCommand(envelopeChannelId, operatorLabel, Date.now());
+  } catch (err) {
+    ctx.logger.log({
+      channel_id: envelopeChannelId,
+      event_type: 'ack_command_handler_error',
+      source: ctx.source,
+      reason: (err as Error).message,
+    });
+  }
+}
+
 export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapterHandle> {
-  const { registryPort, historyPort, logger } = options;
+  const { registryPort, historyPort, ackCommandPort, logger } = options;
 
   // `channelId -> timestamp` của lần publishChannelSeen đầu tiên/kênh - dùng
   // để (a) chặn publish lặp lại cho cùng 1 kênh (idempotent theo đúng ngữ
@@ -223,6 +390,15 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
   // 2 loại message replay-on-connect khác, tránh tạo 2 nguồn sự thật khác
   // nhau cho cùng 1 khái niệm.
   const lastSnapshot = new Map<string, { imageBase64: string; timestamp: string }>();
+
+  // Story 3.3 (review round 1 [bad_spec]): cache THUẦN cho mục đích replay
+  // (mirror `lastState`/`lastSnapshot` - Design Notes: "channelState.ts's
+  // ChannelRecord.acknowledged/ackLabel vẫn là nguồn sự thật DUY NHẤT, cache
+  // này KHÔNG phải nguồn sự thật"). Không có port nào expose để query trực
+  // tiếp ack-state hiện tại (khác `historyPort.getHistory()` mà
+  // `channel-history-snapshot` dùng) - phải tự giữ cache riêng ở đây thì mới
+  // replay được cho client connect muộn/reconnect.
+  const lastAckState = new Map<string, { acknowledged: boolean; ackLabel: string | undefined }>();
 
   const httpServer: HttpServer = createServer((_req, res) => {
     res.writeHead(404).end();
@@ -319,12 +495,24 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
     for (const [channelId, snap] of lastSnapshot) {
       send(ws, toChannelSnapshotMessage(channelId, snap.imageBase64, snap.timestamp));
     }
+    // Story 3.3 (review round 1 [bad_spec]): replay bước 5, SAU channel-snapshot
+    // - client mới connect/reconnect PHẢI thấy ack đã có ngay (không chờ tới
+    // lần ack tiếp theo), đúng mục đích cốt lõi chống-gọi-trùng của tính năng.
+    // Chỉ replay entry `acknowledged===true` (I/O matrix: entry `false` không
+    // có gì để replay - client mới connect mặc định coi mọi kênh chưa ack).
+    for (const [channelId, ackState] of lastAckState) {
+      if (!ackState.acknowledged) continue;
+      send(ws, toChannelAckChangeMessage(channelId, true, ackState.ackLabel));
+    }
 
-    // Adapter này chỉ PHÁT tới frontend (outbound) - story 2.3 không định
-    // nghĩa message nào frontend gửi lên qua kênh này (ack-command dùng WS
-    // telemetry theo AD-25, ngoài scope story này) nên không cần handler
-    // 'message'. Vẫn cần 'error' để tránh uncaught exception (cùng lớp lỗi
-    // remotely-triggerable đã vá ở wsTelemetryAdapter.ts).
+    // Story 3.3: kênh WS UI này giờ nhận đúng 1 loại message TỪ client
+    // (`event_type=ack-command`, AD-25) - ngoại lệ chiều ngược DUY NHẤT
+    // frontend->backend của toàn bộ hệ thống. Gắn TRƯỚC 'error'/'close' (mirror
+    // thứ tự của `wsTelemetryAdapter.ts`'s connection handler).
+    ws.on('message', (data: RawData) => {
+      handleAckMessage(rawDataToString(data), { ackCommandPort, logger, source });
+    });
+
     ws.on('error', (err: Error) => {
       logger.log({ channel_id: '', event_type: 'ui_ws_disconnect', source, reason: err.message });
     });
@@ -420,6 +608,22 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
         // `publishChannelSeen`).
         publishHistoryPoint(channelId: string, bitratePct: number, timestampMs: number): void {
           const message = toChannelHistoryPointMessage(channelId, bitratePct, timestampMs);
+          for (const client of wss.clients) {
+            send(client, message);
+          }
+        },
+
+        // Story 3.3: gọi bởi `channelState.ts`'s `handleAckCommand` (ack mới)
+        // VÀ `clearAckIfAcknowledged` (auto-clear, `acknowledged=false`) - mirror
+        // `publishStateChange`/`publishSnapshot` (GHI ĐÈ vô điều kiện, KHÔNG
+        // idempotent-guard như `publishChannelSeen`). Cập nhật `lastAckState`
+        // TRƯỚC khi broadcast (mirror cách `publishStateChange`/snapshot cập
+        // nhật cache của chúng trước broadcast - Design Notes: cache có thể tạm
+        // lệch nếu broadcast throw SAU khi cache đã cập nhật, chấp nhận được vì
+        // lần đổi ack tiếp theo tự sửa qua broadcast mới).
+        publishAckChange(channelId: string, acknowledged: boolean, ackLabel: string | undefined): void {
+          lastAckState.set(channelId, { acknowledged, ackLabel });
+          const message = toChannelAckChangeMessage(channelId, acknowledged, ackLabel);
           for (const client of wss.clients) {
             send(client, message);
           }

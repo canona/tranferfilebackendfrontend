@@ -14,6 +14,7 @@ import type { ChannelRegistryPort } from '../ports/ChannelRegistryPort.js';
 import type { UiOutboundPort } from '../ports/UiOutboundPort.js';
 import type { HeartbeatInboundPort } from '../ports/HeartbeatInboundPort.js';
 import type { HistoryPort } from '../ports/HistoryPort.js';
+import type { AckCommandPort } from '../ports/AckCommandPort.js';
 import type { Logger } from '../logging/logger.js';
 import { computeBitratePct, mapToDisplayState, type DisplayCandidate } from './bitrateThreshold.js';
 
@@ -52,6 +53,12 @@ interface ChannelRecord {
   // Story 2.7: cờ "đang machine-offline" - Boundaries: field mới trên CHÍNH
   // ChannelRecord hiện có (Map theo channelId), KHÔNG Map riêng.
   machineOfflineActive?: boolean;
+  // Story 3.3: `acknowledged`/`ackLabel` lưu trên CHÍNH `ChannelRecord` hiện có
+  // (Boundaries: mirror `machineOfflineActive` - KHÔNG tạo Map riêng theo
+  // channelId cho ack-state). `ackLabel` chỉ có ý nghĩa khi `acknowledged===true`
+  // (undefined khi chưa từng ack/đã tự xoá).
+  acknowledged?: boolean;
+  ackLabel?: string;
 }
 
 export interface ChannelStateServiceOptions {
@@ -75,7 +82,7 @@ function sameCandidate(a: DisplayCandidate | undefined, b: DisplayCandidate): bo
   return a !== undefined && a.state === b.state && a.subType === b.subType;
 }
 
-export class ChannelStateService implements TelemetryInboundPort, HeartbeatInboundPort {
+export class ChannelStateService implements TelemetryInboundPort, HeartbeatInboundPort, AckCommandPort {
   private readonly registryPort: ChannelRegistryPort;
   private readonly alertPort: AlertOutboundPort;
   private readonly uiPort: UiOutboundPort;
@@ -239,6 +246,11 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
 
     const previous = record.committed;
     record.committed = candidate;
+    // Story 3.3 (Boundaries): "tự xoá ack ở MỌI điểm commit 1 candidate MỚI
+    // khác candidate đã chốt" - candidate vừa đổi (khác candidate cũ, đã qua
+    // guard `sameCandidate` phía trên) đúng nghĩa "chuyển cảnh báo mới", kể cả
+    // khi candidate mới là 'ok' (phục hồi).
+    this.clearAckIfAcknowledged(channelId, record);
     this.channels.set(channelId, record);
 
     this.logger.log({
@@ -295,6 +307,14 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
     const wasOffline = record.machineOfflineActive === true;
     if (wasOffline) {
       record.machineOfflineActive = false;
+      // Story 3.3 (Code Map/[patch] review round 1): máy trung tâm phục hồi ->
+      // hiển thị UI đổi từ critical/machine-offline về lại `record.committed`
+      // thật (vd warning/ok) NGAY DƯỚI ĐÂY dù `record.committed` không tự đổi
+      // giá trị nào - đây VẪN là 1 lần "chuyển cảnh báo" theo góc nhìn người
+      // xem (AC2), ack phải tự xoá theo, nếu không ack-label kẹt vô thời hạn
+      // trên lưới dù kênh đã không còn ở đúng trạng thái lúc ack. Gọi TRƯỚC khi
+      // re-publish record.committed bên dưới.
+      this.clearAckIfAcknowledged(channelId, record);
     }
     this.channels.set(channelId, record);
 
@@ -365,6 +385,9 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
     if (now - record.lastHeartbeatAt < HEARTBEAT_TIMEOUT_MS) return;
 
     record.machineOfflineActive = true;
+    // Story 3.3 (Boundaries): machine-offline "cũng là chuyển cảnh báo mới" -
+    // ack phải tự xoá đúng lúc kênh chuyển sang critical/machine-offline.
+    this.clearAckIfAcknowledged(channelId, record);
     this.channels.set(channelId, record);
 
     this.logger.log({
@@ -382,6 +405,77 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
       timestamp: new Date(now).toISOString(),
     };
     this.alertPort.publishStateChange(change);
+  }
+
+  // Story 3.3: `AckCommandPort` - caller duy nhất là `wsUiAdapter.ts` (kênh WS
+  // UI, AD-25 - ngoại lệ chiều ngược DUY NHẤT frontend->backend). `operatorLabel`
+  // ĐÃ được adapter `.trim()` + giới hạn <=64 ký tự TRƯỚC khi gọi vào đây (Code
+  // Map) - core không validate lại nội dung chuỗi này, chỉ validate registry.
+  handleAckCommand(channelId: string, operatorLabel: string, timestampMs: number): void {
+    // I/O matrix: "Ack cho channel_id không có trong registry -> Bỏ qua, log
+    // channel_unregistered (mirror heartbeat)" - registry vẫn là nguồn xác
+    // thực channel_id hợp lệ DUY NHẤT (Story 2.2), kể cả cho ack-command.
+    if (this.registryPort.getEntry(channelId) === undefined) {
+      this.logger.log({
+        channel_id: channelId,
+        event_type: 'channel_unregistered',
+        reason: `channel_id không có trong channel-registry - bỏ qua ack-command này (operator_label=${operatorLabel})`,
+      });
+      return;
+    }
+
+    // Design Notes: `handleAckCommand` KHÔNG kiểm tra kênh có đang
+    // warning/critical hay không trước khi áp dụng ack (chỉ validate registry,
+    // đúng phạm vi AD-25) - tầng UI (nút disabled khi không phải warning/
+    // critical, `DetailPanel.tsx`) là nơi enforce đúng AC's "Given", tránh
+    // over-engineer 1 rule mà kiến trúc không yêu cầu ở tầng core.
+    const record = this.channels.get(channelId) ?? {};
+    record.acknowledged = true;
+    record.ackLabel = operatorLabel;
+    this.channels.set(channelId, record);
+
+    // AD-30: log audit ack_command_applied - reason chứa operator_label.
+    this.logger.log({
+      channel_id: channelId,
+      event_type: 'ack_command_applied',
+      reason: `operator_label=${operatorLabel} (timestamp_ms=${timestampMs})`,
+    });
+
+    // Mirror try/catch của `uiPort.publishChannelSeen`/`historyPort.recordBitrate`
+    // ở `handleTelemetry` - 1 exception từ implementation của `UiOutboundPort`
+    // (bug tương lai ở adapter) không được thoát ra khỏi `handleAckCommand`.
+    try {
+      this.uiPort.publishAckChange(channelId, true, operatorLabel);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.log({
+        channel_id: channelId,
+        event_type: 'ui_publish_error',
+        reason: `uiPort.publishAckChange throw: ${message}`,
+      });
+    }
+  }
+
+  // Story 3.3 (Boundaries): "tự xoá ack ở MỌI điểm commit 1 candidate MỚI khác
+  // candidate đã chốt" - helper dùng chung ở ĐỦ 3 điểm: `applyCandidate`,
+  // `checkOneChannelHeartbeatTimeout` (kích hoạt machine-offline), VÀ
+  // `handleHeartbeat`'s nhánh recovery machine-offline. No-op nếu kênh chưa
+  // từng ack (`record.acknowledged !== true`) - không publish/log thừa mỗi
+  // lần commit bình thường của 1 kênh chưa ai ack.
+  private clearAckIfAcknowledged(channelId: string, record: ChannelRecord): void {
+    if (record.acknowledged !== true) return;
+    record.acknowledged = false;
+    record.ackLabel = undefined;
+    try {
+      this.uiPort.publishAckChange(channelId, false, undefined);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.log({
+        channel_id: channelId,
+        event_type: 'ui_publish_error',
+        reason: `uiPort.publishAckChange throw (auto-clear): ${message}`,
+      });
+    }
   }
 
   // Test/diagnostic: trạng thái hiển thị ĐÃ CHỐT hiện tại của 1 kênh (không

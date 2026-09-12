@@ -30,6 +30,11 @@ export interface ChannelGridProps {
   // (`channelStore.ts`'s `channelSnapshots`). Thiếu entry cho 1 channelId ->
   // ChannelGridCell fallback gradient placeholder (xem ChannelGridCell.tsx).
   channelSnapshots: ReadonlyMap<string, string>;
+  // Story 3.3: ack-label hiện tại theo channelId (`channelStore.ts`'s
+  // `channelAck`). Thiếu entry cho 1 channelId -> ChannelGridCell không render
+  // ack-label/dashed-border cho ô đó (prop `ackLabel` optional ở
+  // ChannelGridCell.tsx).
+  channelAck: ReadonlyMap<string, string>;
   // Story 3.2: forward xuống mỗi `ChannelGridCell` - click ô mở detail-panel
   // của đúng kênh đó (Boundaries). Optional - thiếu thì các ô không click
   // được gì (tương thích ngược với test cũ không truyền prop này).
@@ -62,6 +67,7 @@ export function ChannelGrid({
   channelAudioLevels,
   channelMachineOffline,
   channelSnapshots,
+  channelAck,
   onSelect,
 }: ChannelGridProps) {
   // `channels` rỗng CHỈ xảy ra trước lần `registry-snapshot` đầu tiên (snapshot
@@ -92,6 +98,7 @@ export function ChannelGrid({
           audioLevel={channelAudioLevels.get(channel.channelId)}
           subType={channelMachineOffline.has(channel.channelId) ? 'machine-offline' : undefined}
           snapshotDataUri={channelSnapshots.get(channel.channelId)}
+          ackLabel={channelAck.get(channel.channelId)}
           onSelect={onSelect}
         />
       ))}

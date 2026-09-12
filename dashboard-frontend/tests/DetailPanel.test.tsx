@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { DetailPanel } from '../src/components/DetailPanel';
 import { createChannelStore } from '../src/state/channelStore';
@@ -228,5 +228,167 @@ describe('DetailPanel', () => {
     act(() => store.selectChannel('chan-unknown'));
     expect(() => render(<DetailPanel store={store} />)).not.toThrow();
     expect(screen.getByTestId('detail-panel-station-name').textContent).toBe('');
+  });
+});
+
+// Story 3.3: nút "Xác nhận đã tiếp nhận" + input tên tắt - CHỈ hiện khi kênh
+// đang warning/critical (Boundaries: đọc channelDisplayStates, KHÔNG phải
+// historyState).
+describe('DetailPanel - Ack (Story 3.3)', () => {
+  it('displayState="ok" -> KHÔNG render nút/input ack', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+    });
+    render(<DetailPanel store={store} />);
+
+    expect(screen.queryByTestId('detail-panel-ack-button')).toBeNull();
+    expect(screen.queryByTestId('detail-panel-ack-input')).toBeNull();
+  });
+
+  it('displayState="warning" -> render nút "Xác nhận đã tiếp nhận" (nguyên văn) + input, nút disabled khi input rỗng', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+    });
+    render(<DetailPanel store={store} />);
+
+    expect(screen.getByTestId('detail-panel-ack-button')).toHaveTextContent('Xác nhận đã tiếp nhận');
+    expect(screen.getByTestId('detail-panel-ack-button')).toBeDisabled();
+    expect(screen.getByTestId('detail-panel-ack-input')).toBeInTheDocument();
+  });
+
+  it('displayState="critical" -> nút ack cũng render (không chỉ warning)', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+    });
+    render(<DetailPanel store={store} />);
+
+    expect(screen.getByTestId('detail-panel-ack-button')).toBeInTheDocument();
+  });
+
+  it('nhập tên tắt (không rỗng) -> nút hết disabled; xoá hết về rỗng -> disabled lại', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+    });
+    render(<DetailPanel store={store} />);
+
+    const input = screen.getByTestId('detail-panel-ack-input');
+    fireEvent.change(input, { target: { value: 'NV.A' } });
+    expect(screen.getByTestId('detail-panel-ack-button')).not.toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '' } });
+    expect(screen.getByTestId('detail-panel-ack-button')).toBeDisabled();
+  });
+
+  it('input TOÀN khoảng trắng -> nút vẫn disabled (I/O matrix: rỗng/toàn khoảng trắng)', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+    });
+    render(<DetailPanel store={store} />);
+
+    fireEvent.change(screen.getByTestId('detail-panel-ack-input'), { target: { value: '   ' } });
+    expect(screen.getByTestId('detail-panel-ack-button')).toBeDisabled();
+  });
+
+  it('input có maxLength=64 (khớp giới hạn backend)', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+    });
+    render(<DetailPanel store={store} />);
+
+    expect(screen.getByTestId('detail-panel-ack-input')).toHaveAttribute('maxlength', '64');
+  });
+
+  it('bấm nút (input không rỗng, có khoảng trắng đầu/cuối) -> gọi onAck(channelId, label ĐÃ trim())', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+    });
+    const onAck = vi.fn();
+    render(<DetailPanel store={store} onAck={onAck} />);
+
+    fireEvent.change(screen.getByTestId('detail-panel-ack-input'), { target: { value: '  NV.A  ' } });
+    fireEvent.click(screen.getByTestId('detail-panel-ack-button'));
+
+    expect(onAck).toHaveBeenCalledTimes(1);
+    expect(onAck).toHaveBeenCalledWith('chan-1', 'NV.A');
+  });
+
+  it('không truyền prop onAck -> bấm nút KHÔNG throw (tương thích ngược)', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+    });
+    render(<DetailPanel store={store} />);
+
+    fireEvent.change(screen.getByTestId('detail-panel-ack-input'), { target: { value: 'NV.A' } });
+    expect(() => fireEvent.click(screen.getByTestId('detail-panel-ack-button'))).not.toThrow();
+  });
+
+  it('kênh đang acknowledged (channelAck có entry) -> hiện "✓ Đã nhận: {label}" (nguyên văn)', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      store.applyAckChange('chan-1', 'NV.A');
+    });
+    render(<DetailPanel store={store} />);
+
+    expect(screen.getByTestId('detail-panel-ack-status')).toHaveTextContent('✓ Đã nhận: NV.A');
+  });
+
+  it('kênh CHƯA ack -> KHÔNG hiện trạng thái ack-status', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+    });
+    render(<DetailPanel store={store} />);
+
+    expect(screen.queryByTestId('detail-panel-ack-status')).toBeNull();
+  });
+
+  it('chuyển sang xem kênh KHÁC -> input reset về rỗng (không giữ nguyên text đã gõ của kênh trước)', () => {
+    const store = createChannelStore();
+    act(() => {
+      store.applyRegistrySnapshot([
+        { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '090', gridPosition: 0 },
+        { channelId: 'chan-2', stationName: 'Đài 2', contactName: 'B', contactPhone: '091', gridPosition: 1 },
+      ]);
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      store.applyChannelDisplayStateChange('chan-2', 'critical');
+      store.selectChannel('chan-1');
+    });
+    render(<DetailPanel store={store} />);
+
+    fireEvent.change(screen.getByTestId('detail-panel-ack-input'), { target: { value: 'NV.A' } });
+    expect(screen.getByTestId('detail-panel-ack-input')).toHaveValue('NV.A');
+
+    act(() => store.selectChannel('chan-2'));
+
+    expect(screen.getByTestId('detail-panel-ack-input')).toHaveValue('');
   });
 });

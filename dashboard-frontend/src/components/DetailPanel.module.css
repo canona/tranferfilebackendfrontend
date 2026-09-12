@@ -172,3 +172,67 @@
   overflow-wrap: break-word;
   word-break: break-word;
 }
+
+/*
+ * Story 3.3: trạng thái ack hiện tại ("✓ Đã nhận: {operator_label}") - mirror
+ * ĐÚNG rule overflow-wrap/word-break đã áp dụng cho `.stationName`/
+ * `.contactName`/`.contactPhone` ở trên (review round 1 [patch]: operator_label
+ * dài bất thường có thể tràn panel).
+ */
+.ackStatus {
+  font-family: var(--font-family-base);
+  font-size: var(--font-body-size);
+  font-weight: var(--font-body-weight);
+  line-height: var(--font-body-line-height);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-2);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.ackInput {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  font-family: var(--font-family-base);
+  font-size: var(--font-body-size);
+  font-weight: var(--font-body-weight);
+  line-height: var(--font-body-line-height);
+  color: var(--color-text-primary);
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-2) var(--spacing-3);
+  margin-bottom: var(--spacing-2);
+}
+
+.ackInput:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.ackButton {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  font-family: var(--font-family-base);
+  font-size: var(--font-body-size);
+  font-weight: 600;
+  line-height: var(--font-body-line-height);
+  color: var(--color-on-state-ok);
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-2) var(--spacing-3);
+  cursor: pointer;
+}
+
+.ackButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ackButton:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}

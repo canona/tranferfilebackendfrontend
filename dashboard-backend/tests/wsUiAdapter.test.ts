@@ -9,6 +9,7 @@ import { WebSocket } from 'ws';
 import { startWsUiAdapter, type WsUiAdapterHandle } from '../src/adapters/outbound/wsUiAdapter.js';
 import type { ChannelRegistryEntry, ChannelRegistryPort } from '../src/ports/ChannelRegistryPort.js';
 import type { HistoryPort, HistoryQueryResult } from '../src/ports/HistoryPort.js';
+import type { AckCommandPort } from '../src/ports/AckCommandPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
 
 class FakeRegistryPort implements ChannelRegistryPort {
@@ -45,6 +46,16 @@ class FakeHistoryPort implements HistoryPort {
   }
 }
 
+// Story 3.3: fake `AckCommandPort` (Boundaries "adapter chỉ parse/validate
+// hình dạng, forward vào port" - test được bằng fake, không cần
+// `ChannelStateService` thật).
+class FakeAckCommandPort implements AckCommandPort {
+  calls: { channelId: string; operatorLabel: string; timestampMs: number }[] = [];
+  handleAckCommand(channelId: string, operatorLabel: string, timestampMs: number): void {
+    this.calls.push({ channelId, operatorLabel, timestampMs });
+  }
+}
+
 function makeEntries(count: number): (ChannelRegistryEntry & { channelId: string })[] {
   return Array.from({ length: count }, (_, i) => ({
     channelId: `chan-${i}`,
@@ -76,11 +87,19 @@ function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
 
 async function startTestServer(
   entries: (ChannelRegistryEntry & { channelId: string })[],
-  historyPort: HistoryPort = new FakeHistoryPort()
+  historyPort: HistoryPort = new FakeHistoryPort(),
+  ackCommandPort: AckCommandPort = new FakeAckCommandPort()
 ) {
   const registryPort = new FakeRegistryPort(entries);
   const logger = new FakeLogger();
-  const handle: WsUiAdapterHandle = await startWsUiAdapter({ port: 0, host: '127.0.0.1', registryPort, historyPort, logger });
+  const handle: WsUiAdapterHandle = await startWsUiAdapter({
+    port: 0,
+    host: '127.0.0.1',
+    registryPort,
+    historyPort,
+    ackCommandPort,
+    logger,
+  });
   return { registryPort, logger, handle };
 }
 
@@ -832,6 +851,396 @@ test('publishHistoryPoint sau khi 1 client đã đóng kết nối -> KHÔNG thr
     assert.deepEqual(messagesB[1], { type: 'channel-history-point', channel_id: 'chan-0', bitrate_pct: 40, timestamp_ms: 999 });
 
     wsB.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+// --- Story 3.3: ack-command (inbound, client->backend) + publishAckChange
+// (outbound) + replay-on-connect ---
+
+test('publishAckChange(true, label) -> broadcast channel-ack-change tới mọi client đang mở, đúng snake_case envelope', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messages.length > 0); // chờ registry-snapshot trước
+
+    handle.publishAckChange('chan-0', true, 'NV.A');
+
+    await waitUntil(() => messages.length > 1);
+    assert.deepEqual(messages[1], {
+      type: 'channel-ack-change',
+      channel_id: 'chan-0',
+      acknowledged: true,
+      ack_label: 'NV.A',
+    });
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishAckChange(false, undefined) -> broadcast channel-ack-change KHÔNG có field ack_label', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messages.length > 0);
+
+    handle.publishAckChange('chan-0', false, undefined);
+
+    await waitUntil(() => messages.length > 1);
+    assert.deepEqual(messages[1], { type: 'channel-ack-change', channel_id: 'chan-0', acknowledged: false });
+    assert.ok(!('ack_label' in (messages[1] as object)), 'KHÔNG được gửi ack_label khi acknowledged=false');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishAckChange broadcast tới TẤT CẢ client đang mở kết nối cùng lúc', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    const { ws: wsA, messages: messagesA } = await openClientWithMessages(handle.port);
+    const { ws: wsB, messages: messagesB } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messagesA.length > 0 && messagesB.length > 0);
+
+    handle.publishAckChange('chan-1', true, 'NV.B');
+
+    await waitUntil(() => messagesA.length > 1 && messagesB.length > 1);
+    assert.equal((messagesA[1] as { channel_id: string }).channel_id, 'chan-1');
+    assert.equal((messagesB[1] as { channel_id: string }).channel_id, 'chan-1');
+
+    wsA.close();
+    wsB.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('client gửi ack-command hợp lệ -> forward vào ackCommandPort với ĐÚNG channelId, operatorLabel ĐÃ trim()', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-0',
+        timestamp: '2026-09-12T00:00:00.000Z',
+        event_type: 'ack-command',
+        payload: { operator_label: '  NV.A  ' },
+      })
+    );
+
+    await waitUntil(() => ackCommandPort.calls.length > 0);
+    assert.equal(ackCommandPort.calls[0]?.channelId, 'chan-0');
+    assert.equal(ackCommandPort.calls[0]?.operatorLabel, 'NV.A', 'operatorLabel phải ĐÃ trim() trước khi forward');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('ackCommandPort.handleAckCommand -> publishAckChange -> client (kể cả CHÍNH client vừa gửi ack-command) nhận channel-ack-change', async () => {
+  // FakeAckCommandPort ở test này gọi thẳng handle.publishAckChange (mirror
+  // hành vi thật của ChannelStateService.handleAckCommand) để xác nhận round-
+  // trip end-to-end qua đúng 1 kết nối WS thật.
+  let handleRef: WsUiAdapterHandle | undefined;
+  const ackCommandPort: AckCommandPort = {
+    handleAckCommand(channelId: string, operatorLabel: string): void {
+      handleRef?.publishAckChange(channelId, true, operatorLabel);
+    },
+  };
+  const { handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  handleRef = handle;
+  try {
+    const { ws, messages } = await openClientWithMessages(handle.port);
+    await waitUntil(() => messages.length > 0); // registry-snapshot
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-0',
+        timestamp: '2026-09-12T00:00:00.000Z',
+        event_type: 'ack-command',
+        payload: { operator_label: 'NV.A' },
+      })
+    );
+
+    await waitUntil(() => messages.length > 1);
+    assert.deepEqual(messages[1], {
+      type: 'channel-ack-change',
+      channel_id: 'chan-0',
+      acknowledged: true,
+      ack_label: 'NV.A',
+    });
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('ack-command envelope hỏng (JSON lỗi) -> bỏ qua, log envelope_parse_error, KHÔNG throw/crash, KHÔNG forward vào ackCommandPort', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+
+    ws.send('{not-valid-json');
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'envelope_parse_error'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(ackCommandPort.calls.length, 0);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('ack-command envelope event_type khác -> bỏ qua âm thầm, log event_type_ignored, KHÔNG forward', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+
+    ws.send(
+      JSON.stringify({ schema_version: 1, channel_id: 'chan-0', timestamp: '2026-09-12T00:00:00.000Z', event_type: 'telemetry', payload: {} })
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'event_type_ignored'));
+    assert.equal(ackCommandPort.calls.length, 0);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('ack-command envelope thiếu channel_id -> bỏ qua, log envelope_invalid, KHÔNG forward', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+
+    ws.send(
+      JSON.stringify({ schema_version: 1, timestamp: '2026-09-12T00:00:00.000Z', event_type: 'ack-command', payload: { operator_label: 'NV.A' } })
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'envelope_invalid'));
+    assert.equal(ackCommandPort.calls.length, 0);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('ack-command envelope thiếu payload.operator_label -> bỏ qua, log envelope_invalid, KHÔNG forward', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+
+    ws.send(JSON.stringify({ schema_version: 1, channel_id: 'chan-0', timestamp: '2026-09-12T00:00:00.000Z', event_type: 'ack-command', payload: {} }));
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'envelope_invalid'));
+    assert.equal(ackCommandPort.calls.length, 0);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+// Code review [patch, round 2]: `operatorLabel` rỗng/toàn khoảng trắng sau
+// trim() phải bị reject ở ĐÚNG lớp validate này (mirror nhánh >64 ký tự) - dù
+// `DetailPanel.tsx` đã disable nút gửi cho trường hợp này, 1 client WS UI KHÁC
+// (không phải dashboard-frontend) có thể gửi thẳng qua kênh WS.
+test('ack-command envelope với payload.operator_label TOÀN khoảng trắng (rỗng sau trim) -> bỏ qua, log envelope_invalid, KHÔNG forward', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-0',
+        timestamp: '2026-09-12T00:00:00.000Z',
+        event_type: 'ack-command',
+        payload: { operator_label: '   ' },
+      })
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'envelope_invalid'));
+    assert.equal(ackCommandPort.calls.length, 0);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('ack-command envelope với payload.operator_label vượt quá 64 ký tự -> bỏ qua, log envelope_invalid, KHÔNG forward', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+    const tooLong = 'A'.repeat(65);
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-0',
+        timestamp: '2026-09-12T00:00:00.000Z',
+        event_type: 'ack-command',
+        payload: { operator_label: tooLong },
+      })
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'envelope_invalid'));
+    assert.equal(ackCommandPort.calls.length, 0);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('ack-command envelope với payload.operator_label ĐÚNG 64 ký tự (biên) -> forward bình thường (KHÔNG bị reject)', async () => {
+  const ackCommandPort = new FakeAckCommandPort();
+  const { handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+    const exactly64 = 'A'.repeat(64);
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-0',
+        timestamp: '2026-09-12T00:00:00.000Z',
+        event_type: 'ack-command',
+        payload: { operator_label: exactly64 },
+      })
+    );
+
+    await waitUntil(() => ackCommandPort.calls.length > 0);
+    assert.equal(ackCommandPort.calls[0]?.operatorLabel.length, 64);
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('ackCommandPort.handleAckCommand throw (bug giả lập ở core) -> log ack_command_handler_error, KHÔNG throw/crash', async () => {
+  const ackCommandPort: AckCommandPort = {
+    handleAckCommand(): void {
+      throw new Error('lỗi giả lập từ ackCommandPort');
+    },
+  };
+  const { logger, handle } = await startTestServer(makeEntries(1), new FakeHistoryPort(), ackCommandPort);
+  try {
+    const ws = await openClient(handle.port);
+
+    ws.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-0',
+        timestamp: '2026-09-12T00:00:00.000Z',
+        event_type: 'ack-command',
+        payload: { operator_label: 'NV.A' },
+      })
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'ack_command_handler_error'));
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('client connect MUỘN (sau khi backend đã publishAckChange(true, label) cho 1 kênh) -> replay channel-ack-change NGAY SAU channel-snapshot replay (bước cuối)', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    handle.publishAckChange('chan-0', true, 'NV.A');
+
+    const { ws, messages } = await openClientAllMessages(handle.port);
+    // registry-snapshot(1) + channel-history-snapshot(2, 1/kênh) + channel-ack-change(1).
+    await waitUntil(() => messages.length >= 4);
+
+    const types = (messages as { type: string }[]).map((m) => m.type);
+    assert.deepEqual(types, ['registry-snapshot', 'channel-history-snapshot', 'channel-history-snapshot', 'channel-ack-change']);
+    assert.deepEqual(messages[3], { type: 'channel-ack-change', channel_id: 'chan-0', acknowledged: true, ack_label: 'NV.A' });
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('client connect MUỘN, kênh chưa từng ack -> KHÔNG replay channel-ack-change nào', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    const { ws, messages } = await openClientAllMessages(handle.port);
+    await waitUntil(() => messages.length >= 2); // registry-snapshot + channel-history-snapshot
+
+    await new Promise((resolve) => setTimeout(resolve, 50)); // đảm bảo không có message trễ
+    assert.ok(
+      messages.every((m) => (m as { type: string }).type !== 'channel-ack-change'),
+      'không có ack nào từng xảy ra -> không replay gì'
+    );
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('client connect MUỘN, kênh đã ack RỒI TỰ XOÁ (acknowledged=false) -> KHÔNG replay channel-ack-change (I/O matrix: entry false không có gì để replay)', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    handle.publishAckChange('chan-0', true, 'NV.A');
+    handle.publishAckChange('chan-0', false, undefined);
+
+    const { ws, messages } = await openClientAllMessages(handle.port);
+    await waitUntil(() => messages.length >= 2);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.ok(
+      messages.every((m) => (m as { type: string }).type !== 'channel-ack-change'),
+      'entry acknowledged=false không được replay'
+    );
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('publishAckChange gọi lại (đổi label khác, vẫn acknowledged=true) -> replay đúng label MỚI NHẤT cho client connect sau đó', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    handle.publishAckChange('chan-0', true, 'NV.A');
+    handle.publishAckChange('chan-0', true, 'NV.B'); // ghi đè, mirror lastState/lastSnapshot
+
+    const { ws, messages } = await openClientAllMessages(handle.port);
+    // registry-snapshot(1) + channel-history-snapshot(1, makeEntries(1)) +
+    // channel-ack-change(1, ghi đè - chỉ giá trị MỚI NHẤT được replay) = 3.
+    await waitUntil(() => messages.length >= 3);
+
+    const ackMessages = messages.filter((m) => (m as { type: string }).type === 'channel-ack-change');
+    assert.equal(ackMessages.length, 1);
+    assert.equal((ackMessages[0] as { ack_label: string }).ack_label, 'NV.B');
+
+    ws.close();
   } finally {
     await handle.close();
   }

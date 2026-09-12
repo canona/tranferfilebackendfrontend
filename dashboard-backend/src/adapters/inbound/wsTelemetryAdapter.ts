@@ -333,8 +333,13 @@ function handleMessage(raw: string, ctx: MessageContext): void {
 
   if (eventType !== 'telemetry') {
     // Trong tập đóng nhưng KHÔNG phải telemetry/heartbeat/snapshot (alert/
-    // ack-command/handshake_*) - thuộc scope story sau (Never: AckCommandPort/
-    // HistoryPort thật ở Epic 3). Bỏ qua có chủ đích, không throw.
+    // ack-command/handshake_*) - bỏ qua có chủ đích ở CHÍNH adapter này, không
+    // throw. `alert`/`handshake_*` ngoài scope dashboard-backend hiện tại.
+    // Story 3.3 [comment stale fix]: `ack-command` KHÔNG đi qua kênh WS
+    // telemetry này - AD-25 định tuyến envelope này qua kênh WS UI riêng
+    // (`wsUiAdapter.ts`'s `ws.on('message', ...)`, AckCommandPort), vì đây là
+    // giao tiếp frontend->backend (ngoại lệ chiều ngược DUY NHẤT), không phải
+    // transport-core->backend như mọi event_type khác của adapter này.
     return;
   }
 

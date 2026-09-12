@@ -639,3 +639,86 @@ describe('ChannelGridCell - onSelect (Story 3.2)', () => {
     expect(() => fireEvent.keyDown(cell, { key: ' ' })).not.toThrow();
   });
 });
+
+// Story 3.3 (Boundaries): `.acknowledged` CHỈ đổi border-style sang dashed +
+// thêm `ack-label`, KHÔNG đổi màu nền/viền/badge gốc.
+describe('ChannelGridCell - ackLabel (Story 3.3)', () => {
+  it('ackLabel có giá trị + loaded=true -> render ack-label đúng nguyên văn "✓ Đã nhận: {label}", className kèm class acknowledged', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-ack-1"
+        stationName="Đài Ack 01"
+        gridPosition={0}
+        loaded={true}
+        displayState="warning"
+        ackLabel="NV.A"
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-ack-1');
+    expect(screen.getByTestId('ack-label-chan-ack-1')).toHaveTextContent('✓ Đã nhận: NV.A');
+    expect(cell.className).toMatch(/acknowledged/);
+  });
+
+  it('ackLabel=undefined (chưa ack) -> KHÔNG render ack-label, KHÔNG có class acknowledged', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-ack-2"
+        stationName="Đài Ack 02"
+        gridPosition={0}
+        loaded={true}
+        displayState="warning"
+      />,
+    );
+    const cell = screen.getByTestId('channel-grid-cell-chan-ack-2');
+    expect(screen.queryByTestId('ack-label-chan-ack-2')).toBeNull();
+    expect(cell.className).not.toMatch(/acknowledged/);
+  });
+
+  it('ackLabel có giá trị NHƯNG loaded=false (skeleton) -> KHÔNG render ack-label (gate theo loaded, mirror channelName/badge)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-ack-3"
+        stationName="Đài Ack 03"
+        gridPosition={0}
+        loaded={false}
+        ackLabel="NV.A"
+      />,
+    );
+    expect(screen.queryByTestId('ack-label-chan-ack-3')).toBeNull();
+  });
+
+  it('ackLabel có giá trị + displayState="critical" -> badge/border-color gốc KHÔNG đổi (chỉ thêm ack-label + border-style dashed)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-ack-4"
+        stationName="Đài Ack 04"
+        gridPosition={0}
+        loaded={true}
+        displayState="critical"
+      />,
+    );
+    const badgeWithoutAck = screen.getByTestId('alert-badge-chan-ack-4').className;
+    const cellWithoutAck = screen.getByTestId('channel-grid-cell-chan-ack-4').className;
+    cleanup();
+
+    render(
+      <ChannelGridCell
+        channelId="chan-ack-5"
+        stationName="Đài Ack 05"
+        gridPosition={0}
+        loaded={true}
+        displayState="critical"
+        ackLabel="NV.A"
+      />,
+    );
+    const badgeWithAck = screen.getByTestId('alert-badge-chan-ack-5').className;
+    const cellWithAck = screen.getByTestId('channel-grid-cell-chan-ack-5').className;
+
+    expect(badgeWithAck).toBe(badgeWithoutAck);
+    // className chỉ THÊM đúng 1 class acknowledged, không đổi/xoá class trạng
+    // thái critical đã có (Boundaries: "CHỈ override border-style").
+    expect(cellWithAck.startsWith(cellWithoutAck)).toBe(true);
+    expect(cellWithAck.slice(cellWithoutAck.length)).toMatch(/acknowledged/);
+    expect(screen.getByTestId('alert-badge-chan-ack-5')).toHaveTextContent('✕ MẤT TÍN HIỆU');
+  });
+});

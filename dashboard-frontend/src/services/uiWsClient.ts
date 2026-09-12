@@ -88,6 +88,16 @@ interface ChannelHistoryPointMessage {
   timestamp_ms: number;
 }
 
+// Story 3.3: envelope nhận từ `wsUiAdapter.ts` - mirror snake_case shape của
+// kênh này. `ack_label` chỉ có mặt khi `acknowledged===true` (mirror
+// `sub_type` của `ChannelStateChangeMessage`).
+interface ChannelAckChangeMessage {
+  type: 'channel-ack-change';
+  channel_id: string;
+  acknowledged: boolean;
+  ack_label?: string;
+}
+
 // Code review [patch]: phòng thủ lớp 2 (nhất quán tinh thần `channelState.ts`
 // validate lại `connection_state` dù `wsTelemetryAdapter.ts` đã validate lớp
 // 1) - `grid_position` không chỉ cần là `number`, phải là số nguyên 0-19
@@ -197,6 +207,21 @@ function isChannelHistoryPointMessage(value: unknown): value is ChannelHistoryPo
   );
 }
 
+// Story 3.3: phòng thủ lớp 2 (mirror `isValidDisplayState`/`isValidSubType`) -
+// `ack_label` khi có mặt phải là string (không validate nội dung/độ dài ở
+// đây - backend đã validate <=64 ký tự lúc nhận `ack-command`, đây chỉ là
+// message NHẬN VỀ, hình dạng khác hẳn).
+function isChannelAckChangeMessage(value: unknown): value is ChannelAckChangeMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === 'channel-ack-change' &&
+    typeof v.channel_id === 'string' &&
+    typeof v.acknowledged === 'boolean' &&
+    (v.ack_label === undefined || typeof v.ack_label === 'string')
+  );
+}
+
 function toHistoryState(raw: ChannelHistorySnapshotMessage): HistoryState {
   if (raw.state === 'loaded') {
     // `raw.points` đã được `isChannelHistorySnapshotMessage` xác nhận là mảng
@@ -265,7 +290,36 @@ export function applyUiWsMessage(store: ChannelStore, raw: string): void {
     store.applyHistoryPoint(parsed.channel_id, { timestampMs: parsed.timestamp_ms, bitratePct: parsed.bitrate_pct });
     return;
   }
+  if (isChannelAckChangeMessage(parsed)) {
+    // `acknowledged=false` (tự xoá) -> `null` (mirror cách backend KHÔNG gửi
+    // `ack_label` khi acknowledged=false, xem `channelStore.ts`'s
+    // `applyAckChange`).
+    store.applyAckChange(parsed.channel_id, parsed.acknowledged ? (parsed.ack_label ?? null) : null);
+    return;
+  }
   // type lạ khác (message tương lai chưa định nghĩa ở story này) - bỏ qua.
+}
+
+// Story 3.3 (AD-25): envelope chung duy nhất mà dashboard-frontend GỬI LÊN
+// qua kênh WS UI này (ngoại lệ chiều ngược DUY NHẤT frontend->backend, chỉ
+// giữa frontend<->backend - KHÔNG dùng chung schema_version/event_type đóng
+// của transport-core nào khác, chỉ TÌNH CỜ giống hình dạng envelope chung).
+interface AckCommandMessage {
+  schema_version: 1;
+  channel_id: string;
+  timestamp: string;
+  event_type: 'ack-command';
+  payload: { operator_label: string };
+}
+
+function buildAckCommandMessage(channelId: string, operatorLabel: string): AckCommandMessage {
+  return {
+    schema_version: 1,
+    channel_id: channelId,
+    timestamp: new Date().toISOString(),
+    event_type: 'ack-command',
+    payload: { operator_label: operatorLabel },
+  };
 }
 
 // Story 2.7 (Boundaries): "connectUiWsClient tự reconnect khi onclose/onerror
@@ -292,7 +346,20 @@ const RECONNECT_DELAY_MS = 2000;
 // Boundaries: "Hàm dọn dẹp trả về PHẢI chặn mọi lần reconnect còn treo sau khi
 // gọi (cờ disposed)" - `disposed` được kiểm tra ở MỌI điểm có thể lên lịch
 // hoặc thực hiện 1 lần connect mới, tránh rò rỉ socket/timer sau unmount.
-export function connectUiWsClient(url: string, store: ChannelStore): () => void {
+//
+// Story 3.3 (Code Map): trả về `{ close, sendAckCommand }` (THAY VÌ hàm dọn
+// dẹp thuần trước đây) - `close` giữ ĐÚNG hành vi cleanup cũ (đổi tên, không
+// đổi logic); `sendAckCommand` là cầu nối WS hai chiều ĐẦU TIÊN của toàn bộ
+// dashboard-frontend (AD-25: ngoại lệ chiều ngược duy nhất frontend->backend).
+export interface UiWsClientHandle {
+  close(): void;
+  // No-op an toàn nếu socket chưa/không còn OPEN (mirror `ws.readyState !==
+  // ws.OPEN` guard của `wsUiAdapter.ts`'s `send()` phía backend) - `page.tsx`
+  // không cần tự kiểm tra connectionStatus trước khi gọi.
+  sendAckCommand(channelId: string, operatorLabel: string): void;
+}
+
+export function connectUiWsClient(url: string, store: ChannelStore): UiWsClientHandle {
   let disposed = false;
   let ws: WebSocket | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -359,12 +426,18 @@ export function connectUiWsClient(url: string, store: ChannelStore): () => void 
 
   connect();
 
-  return () => {
-    disposed = true;
-    if (reconnectTimer !== undefined) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = undefined;
-    }
-    ws?.close();
+  return {
+    close: () => {
+      disposed = true;
+      if (reconnectTimer !== undefined) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
+      ws?.close();
+    },
+    sendAckCommand: (channelId: string, operatorLabel: string) => {
+      if (!ws || ws.readyState !== ws.OPEN) return;
+      ws.send(JSON.stringify(buildAckCommandMessage(channelId, operatorLabel)));
+    },
   };
 }

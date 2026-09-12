@@ -60,14 +60,19 @@ class FakeAlertPort implements AlertOutboundPort {
 // Story 2.3: fake `UiOutboundPort` (Boundaries "src/core hoàn toàn thuần" -
 // test được bằng fake, không cần WsUiAdapter/WS thật).
 // Story 3.2: mở rộng thêm `publishHistoryPoint` (mirror `seenCalls`).
+// Story 3.3: mở rộng thêm `publishAckChange` (mirror `historyPointCalls`).
 class FakeUiPort implements UiOutboundPort {
   seenCalls: { channelId: string; timestamp: string }[] = [];
   historyPointCalls: { channelId: string; bitratePct: number; timestampMs: number }[] = [];
+  ackChangeCalls: { channelId: string; acknowledged: boolean; ackLabel: string | undefined }[] = [];
   publishChannelSeen(channelId: string, timestamp: string): void {
     this.seenCalls.push({ channelId, timestamp });
   }
   publishHistoryPoint(channelId: string, bitratePct: number, timestampMs: number): void {
     this.historyPointCalls.push({ channelId, bitratePct, timestampMs });
+  }
+  publishAckChange(channelId: string, acknowledged: boolean, ackLabel: string | undefined): void {
+    this.ackChangeCalls.push({ channelId, acknowledged, ackLabel });
   }
 }
 
@@ -78,6 +83,9 @@ class ThrowingUiPort implements UiOutboundPort {
     throw new Error('lỗi giả lập từ uiPort');
   }
   publishHistoryPoint(): void {
+    throw new Error('lỗi giả lập từ uiPort');
+  }
+  publishAckChange(): void {
     throw new Error('lỗi giả lập từ uiPort');
   }
 }
@@ -94,6 +102,9 @@ class ThrowingPublishHistoryPointUiPort implements UiOutboundPort {
   }
   publishHistoryPoint(): void {
     throw new Error('lỗi giả lập từ uiPort.publishHistoryPoint');
+  }
+  publishAckChange(): void {
+    // Không dùng ở test file này (không liên quan nhánh publishHistoryPoint).
   }
 }
 
@@ -802,4 +813,176 @@ test('checkHeartbeatTimeouts(): kênh ĐÃ machineOfflineActive rồi mới bị
     logger.events.some((e) => e.event_type === 'channel_unregistered' && e.channel_id === 'chan-1'),
     'phải log channel_unregistered dù kênh đã machineOfflineActive từ trước (registry check phải chạy TRƯỚC early-return của machineOfflineActive)'
   );
+});
+
+// --- Story 3.3: handleAckCommand + auto-clear ở ĐỦ 3 điểm commit ---
+
+test('handleAckCommand: channel_id hợp lệ trong registry -> publishAckChange(true, operatorLabel), log ack_command_applied', () => {
+  const { ui, logger, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleAckCommand('chan-1', 'NV.A', 123456);
+
+  assert.equal(ui.ackChangeCalls.length, 1);
+  assert.deepEqual(ui.ackChangeCalls[0], { channelId: 'chan-1', acknowledged: true, ackLabel: 'NV.A' });
+  const auditEvent = logger.events.find((e) => e.event_type === 'ack_command_applied' && e.channel_id === 'chan-1');
+  assert.ok(auditEvent, 'phải log 1 event_type=ack_command_applied');
+  assert.ok(auditEvent?.reason?.includes('NV.A'), 'reason phải chứa operator_label');
+});
+
+test('handleAckCommand: channel_id KHÔNG có trong registry -> bỏ qua, log channel_unregistered, KHÔNG publish', () => {
+  const { ui, logger, service } = makeService({}); // registry rỗng
+
+  assert.doesNotThrow(() => service.handleAckCommand('unknown-chan', 'NV.A', 123456));
+
+  assert.equal(ui.ackChangeCalls.length, 0);
+  assert.ok(
+    logger.events.some((e) => e.event_type === 'channel_unregistered' && e.channel_id === 'unknown-chan'),
+    'phải log channel_unregistered mirror handleHeartbeat/handleTelemetry'
+  );
+});
+
+test('handleAckCommand: KHÔNG kiểm tra kênh đang warning/critical hay không (chỉ validate registry, đúng phạm vi AD-25) - ack áp dụng được cả khi kênh chưa từng chốt trạng thái nào', () => {
+  const { ui, service } = makeService({ 'chan-1': 4000 }); // chưa handleTelemetry lần nào
+
+  assert.doesNotThrow(() => service.handleAckCommand('chan-1', 'NV.B', 0));
+  assert.equal(ui.ackChangeCalls.length, 1);
+  assert.equal(ui.ackChangeCalls[0]?.acknowledged, true);
+});
+
+test('handleAckCommand: uiPort.publishAckChange throw -> log ui_publish_error, KHÔNG throw ra ngoài, ack vẫn đã lưu (state không bị mất)', () => {
+  const clock = new FakeClock();
+  const registry = new FakeRegistryPort({ 'chan-1': 4000 });
+  const alert = new FakeAlertPort();
+  const ui = new ThrowingUiPort();
+  const historyPort = new FakeHistoryPort();
+  const logger = new FakeLogger();
+  const service = new ChannelStateService({ registryPort: registry, alertPort: alert, uiPort: ui, historyPort, logger, clock });
+
+  assert.doesNotThrow(() => service.handleAckCommand('chan-1', 'NV.C', 999));
+
+  assert.ok(
+    logger.events.some((e) => e.event_type === 'ui_publish_error' && e.channel_id === 'chan-1'),
+    'phải log 1 event_type=ui_publish_error rõ ràng'
+  );
+  assert.ok(
+    logger.events.some((e) => e.event_type === 'ack_command_applied' && e.channel_id === 'chan-1'),
+    'audit log vẫn phải ghi dù publishAckChange throw (state đã lưu thành công trước đó)'
+  );
+});
+
+test('applyCandidate: kênh đang acknowledged=true, commit candidate MỚI khác candidate đã ack (vd ok->warning) -> auto-clear, publishAckChange(false, undefined)', () => {
+  const { clock, ui, service } = makeService({ 'chan-1': 4000 });
+
+  // Chốt "ok" trước.
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' });
+
+  service.handleAckCommand('chan-1', 'NV.A', 0);
+  assert.equal(ui.ackChangeCalls.at(-1)?.acknowledged, true);
+
+  // Commit candidate MỚI (ok -> warning).
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 })); // 50%
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'warning' });
+
+  const lastAckChange = ui.ackChangeCalls.at(-1);
+  assert.deepEqual(lastAckChange, { channelId: 'chan-1', acknowledged: false, ackLabel: undefined });
+});
+
+test('applyCandidate: kênh đang acknowledged=true, commit candidate MỚI là "ok" (phục hồi) -> auto-clear vẫn áp dụng (I/O matrix: phục hồi ok CŨNG xoá ack)', () => {
+  const { clock, ui, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 })); // 50% -> warning
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'warning' });
+
+  service.handleAckCommand('chan-1', 'NV.A', 0);
+
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 })); // 100% -> ok
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' });
+
+  assert.deepEqual(ui.ackChangeCalls.at(-1), { channelId: 'chan-1', acknowledged: false, ackLabel: undefined });
+});
+
+test('applyCandidate: kênh CHƯA từng ack -> commit candidate mới KHÔNG gọi publishAckChange (no-op, không log/publish thừa)', () => {
+  const { clock, ui, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+
+  assert.equal(ui.ackChangeCalls.length, 0, 'kênh chưa từng ack -> không có lý do gì để publishAckChange');
+});
+
+test('checkOneChannelHeartbeatTimeout: kênh đang acknowledged=true, im lặng heartbeat -> kích hoạt machine-offline VÀ auto-clear ack, publishAckChange(false, undefined)', () => {
+  const { clock, ui, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 })); // warning
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+
+  service.handleAckCommand('chan-1', 'NV.A', 0);
+  assert.equal(ui.ackChangeCalls.at(-1)?.acknowledged, true);
+
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:00.000Z');
+  clock.advance(HEARTBEAT_TIMEOUT_MS);
+  service.checkHeartbeatTimeouts();
+
+  assert.deepEqual(ui.ackChangeCalls.at(-1), { channelId: 'chan-1', acknowledged: false, ackLabel: undefined });
+});
+
+test('handleHeartbeat (nhánh recovery machine-offline): kênh đang acknowledged=true khi máy trung tâm phục hồi -> auto-clear ack dù record.committed không đổi giá trị', () => {
+  const { clock, ui, service } = makeService({ 'chan-1': 4000 });
+
+  // Chốt "warning" qua telemetry TRƯỚC KHI machine-offline xảy ra.
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'warning' });
+
+  // Máy trung tâm im lặng -> machine-offline (auto-clear ở điểm này không áp
+  // dụng vì CHƯA có ack nào - ack được thực hiện SAU KHI đã machine-offline,
+  // đúng kịch bản thật: đội trực thấy critical/machine-offline rồi mới ack).
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:00.000Z');
+  clock.advance(HEARTBEAT_TIMEOUT_MS);
+  service.checkHeartbeatTimeouts();
+
+  service.handleAckCommand('chan-1', 'NV.A', 0);
+  assert.equal(ui.ackChangeCalls.at(-1)?.acknowledged, true);
+
+  // Máy trung tâm phục hồi - record.committed VẪN là 'warning' (không đổi giá
+  // trị), nhưng hiển thị UI đổi từ critical/machine-offline về lại 'warning'
+  // thật -> đây VẪN là 1 lần "chuyển cảnh báo" theo góc nhìn người xem, ack
+  // phải tự xoá (review round 1 [patch]).
+  clock.advance(1000);
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:16.000Z');
+
+  assert.deepEqual(ui.ackChangeCalls.at(-1), { channelId: 'chan-1', acknowledged: false, ackLabel: undefined });
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'warning' }, 'record.committed không đổi giá trị');
+});
+
+test('handleHeartbeat (nhánh recovery): kênh KHÔNG acknowledged -> resume vẫn hoạt động bình thường (re-publish committed), KHÔNG gọi publishAckChange thừa', () => {
+  const { clock, ui, alert, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:00.000Z');
+  clock.advance(HEARTBEAT_TIMEOUT_MS);
+  service.checkHeartbeatTimeouts();
+
+  clock.advance(1000);
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:16.000Z');
+
+  assert.equal(ui.ackChangeCalls.length, 0, 'kênh chưa từng ack -> không publishAckChange nào ở nhánh recovery');
+  assert.equal(alert.changes.at(-1)?.displayState, 'warning', 're-publish committed vẫn hoạt động bình thường');
 });

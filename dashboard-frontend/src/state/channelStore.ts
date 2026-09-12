@@ -101,6 +101,13 @@ export interface ChannelStoreState {
   // state: 'loading' }` ở nơi tiêu thụ, mirror cách `channelDisplayStates`
   // dùng `undefined` cho "chưa xác định").
   channelHistory: ReadonlyMap<string, HistoryState>;
+  // Story 3.3: channelId -> ack-label hiện tại (mirror `channelDisplayStates`:
+  // GHI ĐÈ theo channelId, KHÔNG idempotent-guard - Boundaries: "acknowledged
+  // là cờ độc lập chồng lên trạng thái warning/critical"). Thiếu entry cho 1
+  // channelId = chưa ack/đã tự xoá - KHÔNG lưu tường minh 1 giá trị "false"
+  // nào trong Map này (mirror cách `channelDisplayStates` dùng "thiếu entry"
+  // cho "chưa xác định", tránh phình Map với các entry vô nghĩa).
+  channelAck: ReadonlyMap<string, string>;
 }
 
 type Listener = () => void;
@@ -115,6 +122,7 @@ const EMPTY_STATE: ChannelStoreState = {
   channelSnapshots: new Map(),
   selectedChannelId: null,
   channelHistory: new Map(),
+  channelAck: new Map(),
 };
 
 export class ChannelStore {
@@ -289,6 +297,27 @@ export class ChannelStore {
     const next = new Map(this.state.channelHistory);
     next.set(channelId, { state: 'loaded', points: trimmed });
     this.setState({ ...this.state, channelHistory: next });
+  }
+
+  // Story 3.3: `channel-ack-change` - `ackLabel=string` (acknowledged=true) ghi
+  // đè/thêm entry; `ackLabel=null` (acknowledged=false, tự xoá) gỡ entry khỏi
+  // Map (mirror cách `channelHistory` dùng "thiếu entry" thay vì lưu tường
+  // minh 1 giá trị rỗng). KHÔNG idempotent-guard hoàn toàn - vẫn setState khi
+  // giá trị thực sự đổi (mirror `applyChannelDisplayStateChange`'s "trạng thái
+  // đổi qua lại được"), nhưng bỏ qua no-op rõ ràng (xoá 1 entry không tồn tại,
+  // hoặc ghi đè đúng label đã có) để tránh re-render thừa.
+  applyAckChange(channelId: string, ackLabel: string | null): void {
+    if (ackLabel === null) {
+      if (!this.state.channelAck.has(channelId)) return;
+      const next = new Map(this.state.channelAck);
+      next.delete(channelId);
+      this.setState({ ...this.state, channelAck: next });
+      return;
+    }
+    if (this.state.channelAck.get(channelId) === ackLabel) return;
+    const next = new Map(this.state.channelAck);
+    next.set(channelId, ackLabel);
+    this.setState({ ...this.state, channelAck: next });
   }
 }
 

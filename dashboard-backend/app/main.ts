@@ -23,6 +23,7 @@ import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/a
 import { startWsUiAdapter, type WsUiAdapterHandle } from '../src/adapters/outbound/wsUiAdapter.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
 import type { HistoryPort } from '../src/ports/HistoryPort.js';
+import type { AckCommandPort } from '../src/ports/AckCommandPort.js';
 import { defaultLogger, type Logger } from '../src/logging/logger.js';
 import { isDirectRunEntrypoint } from './isDirectRun.js';
 
@@ -277,6 +278,36 @@ export async function startApp(config?: {
   // `historyPort.recordBitrate(...)`, không nhờ service này tự đọc clock.
   const bitrateHistoryService = new BitrateHistoryService();
 
+  // Story 3.3 (Design Notes): circular-dependency - `wsUiAdapter` (khối bên
+  // dưới) cần tồn tại TRƯỚC `channelStateService` (vì `channelStateService`
+  // cần `uiPort` ngay ở constructor), nhưng `wsUiAdapter` giờ CŨNG cần gọi VÀO
+  // `channelStateService` (`AckCommandPort.handleAckCommand`, cho envelope
+  // `ack-command` từ client WS UI - AD-25). Không có pattern có sẵn để copy y
+  // hệt trong codebase (port inbound ĐẦU TIÊN có caller là `wsUiAdapter.ts`
+  // thay vì `wsTelemetryAdapter.ts`) - giải quyết bằng 1 forwarder cục bộ: biến
+  // `let` trỏ tới instance THẬT, gán NGAY SAU KHI `channelStateService` khởi
+  // tạo xong (bên dưới) - `startWsUiAdapter(...)` nhận forwarder này, KHÔNG
+  // phải `channelStateService` trực tiếp.
+  let ackCommandTarget: AckCommandPort | undefined;
+  const ackCommandForwarder: AckCommandPort = {
+    handleAckCommand(channelId: string, operatorLabel: string, timestampMs: number): void {
+      if (!ackCommandTarget) {
+        // Không nên xảy ra ở production - `channelStateService` được gán vào
+        // forwarder này ngay sau khi khởi tạo xong, TRƯỚC KHI `wsUiAdapter` có
+        // cơ hội nhận bất kỳ `ack-command` thật nào từ client (WS UI chỉ mới
+        // bind cổng, chưa accept connection nào ở thời điểm đó). Log rõ ràng
+        // thay vì throw/mất âm thầm nếu thứ tự này bị phá vỡ trong tương lai.
+        logger.log({
+          channel_id: channelId,
+          event_type: 'ack_command_forwarder_not_ready',
+          reason: 'ackCommandForwarder nhận ack-command trước khi channelStateService khởi tạo xong - bỏ qua',
+        });
+        return;
+      }
+      ackCommandTarget.handleAckCommand(channelId, operatorLabel, timestampMs);
+    },
+  };
+
   // Story 2.3: WS UI khởi động TRƯỚC `ChannelStateService` (`uiPort` là
   // dependency bắt buộc của constructor) - cùng tinh thần dọn dẹp lỗi khởi
   // động của khối `ws` bên dưới: nếu bind cổng UI thất bại (vd EADDRINUSE),
@@ -284,7 +315,14 @@ export async function startApp(config?: {
   // watcher/debounce timer khi `startApp()` được gọi lại trong-process.
   let ui: WsUiAdapterHandle;
   try {
-    ui = await startWsUiAdapter({ port: uiPort, host: uiHost, registryPort, historyPort: bitrateHistoryService, logger });
+    ui = await startWsUiAdapter({
+      port: uiPort,
+      host: uiHost,
+      registryPort,
+      historyPort: bitrateHistoryService,
+      ackCommandPort: ackCommandForwarder,
+      logger,
+    });
   } catch (err) {
     registryPort.stop();
     throw err;
@@ -314,6 +352,10 @@ export async function startApp(config?: {
     debounceMs: config?.debounceMs,
     clock: config?.clock,
   });
+  // Story 3.3: gán forwarder NGAY SAU khi channelStateService khởi tạo xong -
+  // từ đây `ackCommandForwarder` (đã truyền vào `startWsUiAdapter` ở trên) định
+  // tuyến đúng vào instance thật này.
+  ackCommandTarget = channelStateService;
 
   // Story 2.7 (Design Notes): "checkHeartbeatTimeouts() KHÔNG tự quản lý timer
   // nội bộ ... production tự gọi định kỳ từ composition root" - đây CHÍNH là

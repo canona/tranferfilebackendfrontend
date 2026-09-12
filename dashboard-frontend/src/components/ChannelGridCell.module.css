@@ -288,3 +288,45 @@
   background: var(--color-state-critical);
   color: var(--color-on-state-critical);
 }
+
+/*
+ * Story 3.3 (Boundaries): ".acknowledged (CSS) CHỈ override border-style:
+ * dashed, KHÔNG đụng border-color/background của class trạng thái (ok/
+ * warning/critical/loaded) hiện có" - mirror cách `.skeleton` override
+ * border-style ở trên, nhưng KHÔNG đổi border-color/background (khác
+ * .skeleton - ack không phải 1 trạng thái tải dữ liệu, chỉ là 1 cờ chồng lên
+ * trạng thái hiện có). Đặt SAU .ok/.warning/.critical trong file (thứ tự
+ * cascade - class trạng thái set border-color/background TRƯỚC, class này chỉ
+ * ghi đè đúng 1 thuộc tính border-style, không cần !important).
+ */
+.acknowledged {
+  border-style: dashed;
+}
+
+/*
+ * Story 3.3: `ack-label` - nhãn "✓ Đã nhận: {operator_label}" góc trên-phải
+ * (đối xứng `.badge` góc trên-trái, không đè lên nhau). Typography `body`
+ * (nâng lên 14px thay vì caption - epic-3-context: "đây là tín hiệu
+ * chống-gọi-trùng"), bo `rounded.pill`. Màu trung tính (KHÔNG dùng token
+ * state-ok/warning/critical nào - đây không phải 1 mức độ cảnh báo, chỉ là 1
+ * nhãn thông tin chồng lên trạng thái cảnh báo gốc).
+ */
+.ackLabel {
+  position: absolute;
+  z-index: 2;
+  top: var(--spacing-2);
+  right: var(--spacing-2);
+  max-width: calc(100% - 2 * var(--spacing-2));
+  font-family: var(--font-family-base);
+  font-size: var(--font-body-size);
+  font-weight: var(--font-body-weight);
+  line-height: var(--font-body-line-height);
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: var(--spacing-1) var(--spacing-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -79,6 +79,7 @@ describe('applyUiWsMessage', () => {
       channelSnapshots: new Map(),
       selectedChannelId: null,
       channelHistory: new Map(),
+      channelAck: new Map(),
     });
   });
 
@@ -380,6 +381,53 @@ describe('applyUiWsMessage', () => {
       expect(store.getState().channelHistory.size).toBe(0);
     });
   });
+
+  describe('channel-ack-change (Story 3.3)', () => {
+    it('acknowledged=true kèm ack_label -> channelAck ghi đúng label theo channelId', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-ack-change', channel_id: 'chan-1', acknowledged: true, ack_label: 'NV.A' })
+      );
+      expect(store.getState().channelAck.get('chan-1')).toBe('NV.A');
+    });
+
+    it('acknowledged=false -> gỡ entry khỏi channelAck (auto-clear)', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-ack-change', channel_id: 'chan-1', acknowledged: true, ack_label: 'NV.A' })
+      );
+      applyUiWsMessage(store, JSON.stringify({ type: 'channel-ack-change', channel_id: 'chan-1', acknowledged: false }));
+      expect(store.getState().channelAck.has('chan-1')).toBe(false);
+    });
+
+    it('thiếu channel_id -> bỏ qua âm thầm, KHÔNG throw', () => {
+      const store = createChannelStore();
+      expect(() =>
+        applyUiWsMessage(store, JSON.stringify({ type: 'channel-ack-change', acknowledged: true, ack_label: 'NV.A' }))
+      ).not.toThrow();
+      expect(store.getState().channelAck.size).toBe(0);
+    });
+
+    it('acknowledged không phải boolean -> toàn bộ message bị coi không hợp lệ, bỏ qua', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-ack-change', channel_id: 'chan-1', acknowledged: 'true', ack_label: 'NV.A' })
+      );
+      expect(store.getState().channelAck.size).toBe(0);
+    });
+
+    it('ack_label không phải string (khi có mặt) -> toàn bộ message bị coi không hợp lệ, bỏ qua', () => {
+      const store = createChannelStore();
+      applyUiWsMessage(
+        store,
+        JSON.stringify({ type: 'channel-ack-change', channel_id: 'chan-1', acknowledged: true, ack_label: 123 })
+      );
+      expect(store.getState().channelAck.size).toBe(0);
+    });
+  });
 });
 
 // Code review [patch #2]: `connectUiWsClient` (hàm thật mở WebSocket) chưa
@@ -438,7 +486,7 @@ describe('connectUiWsClient', () => {
     });
 
     const store = createChannelStore();
-    const disconnect = connectUiWsClient(url, store);
+    const disconnect = connectUiWsClient(url, store).close;
     try {
       await waitUntil(() => store.getState().channels.length > 0 && store.getState().seenChannelIds.has('chan-1'));
       expect(store.getState().channels[0]?.channelId).toBe('chan-1');
@@ -455,7 +503,7 @@ describe('connectUiWsClient', () => {
     });
 
     const store = createChannelStore();
-    const disconnect = connectUiWsClient(url, store);
+    const disconnect = connectUiWsClient(url, store).close;
     try {
       await waitUntil(() => store.getState().channelDisplayStates.get('chan-1') === 'warning');
       expect(store.getState().channelDisplayStates.get('chan-1')).toBe('warning');
@@ -471,7 +519,7 @@ describe('connectUiWsClient', () => {
     });
 
     const store = createChannelStore();
-    const disconnect = connectUiWsClient(url, store);
+    const disconnect = connectUiWsClient(url, store).close;
     try {
       await waitUntil(() => store.getState().channelSnapshots.has('chan-1'));
       expect(store.getState().channelSnapshots.get('chan-1')).toBe('data:image/jpeg;base64,ZmFrZS1qcGVn');
@@ -494,7 +542,7 @@ describe('connectUiWsClient', () => {
     });
 
     const store = createChannelStore();
-    const disconnect = connectUiWsClient(url, store);
+    const disconnect = connectUiWsClient(url, store).close;
     await waitUntil(() => store.getState().seenChannelIds.has('chan-x'));
 
     disconnect();
@@ -509,7 +557,7 @@ describe('connectUiWsClient', () => {
     const store = createChannelStore();
     let disconnect: () => void = () => {};
     expect(() => {
-      disconnect = connectUiWsClient('khong-phai-url-hop-le', store);
+      disconnect = connectUiWsClient('khong-phai-url-hop-le', store).close;
     }).not.toThrow();
     expect(() => disconnect()).not.toThrow();
   });
@@ -522,7 +570,7 @@ describe('connectUiWsClient', () => {
   it('url sai định dạng -> connectionStatus chuyển "disconnected" (mirror onclose/onerror)', () => {
     const store = createChannelStore();
     expect(store.getState().connectionStatus).toBe('connected'); // mặc định lạc quan lúc mount
-    const disconnect = connectUiWsClient('khong-phai-url-hop-le', store);
+    const disconnect = connectUiWsClient('khong-phai-url-hop-le', store).close;
     try {
       expect(store.getState().connectionStatus).toBe('disconnected');
     } finally {
@@ -535,7 +583,7 @@ describe('connectUiWsClient', () => {
   it('connect thành công (onopen) -> connectionStatus="connected", lastConnectedAt được set (kể cả lần connect ĐẦU TIÊN)', async () => {
     const { url } = await startFakeBackend();
     const store = createChannelStore();
-    const disconnect = connectUiWsClient(url, store);
+    const disconnect = connectUiWsClient(url, store).close;
     try {
       await waitUntil(() => store.getState().lastConnectedAt !== null);
       expect(store.getState().connectionStatus).toBe('connected');
@@ -548,7 +596,7 @@ describe('connectUiWsClient', () => {
   it('server đóng kết nối đột ngột (mirror backend chết) -> connectionStatus chuyển "disconnected" NGAY', async () => {
     const { url, server } = await startFakeBackend();
     const store = createChannelStore();
-    const disconnect = connectUiWsClient(url, store);
+    const disconnect = connectUiWsClient(url, store).close;
     try {
       await waitUntil(() => store.getState().lastConnectedAt !== null);
 
@@ -568,7 +616,7 @@ describe('connectUiWsClient', () => {
     const port = new URL(first.url).port;
 
     const store = createChannelStore();
-    const disconnect = connectUiWsClient(first.url, store);
+    const disconnect = connectUiWsClient(first.url, store).close;
     try {
       await waitUntil(() => store.getState().lastConnectedAt !== null);
       const firstConnectedAt = store.getState().lastConnectedAt;
@@ -611,7 +659,7 @@ describe('connectUiWsClient', () => {
     const port = new URL(url).port;
 
     const store = createChannelStore();
-    const disconnect = connectUiWsClient(url, store);
+    const disconnect = connectUiWsClient(url, store).close;
     await waitUntil(() => store.getState().lastConnectedAt !== null);
 
     for (const client of server.clients) client.terminate();
@@ -634,4 +682,87 @@ describe('connectUiWsClient', () => {
     await new Promise((resolve) => setTimeout(resolve, 2500));
     expect(store.getState().connectionStatus).toBe('disconnected');
   }, 10000);
+
+  // Story 3.3: `connectUiWsClient` giờ trả về `{ close, sendAckCommand }` -
+  // `sendAckCommand` là cầu nối WS hai chiều ĐẦU TIÊN của dashboard-frontend
+  // (AD-25). Test bằng 1 WS server THẬT (mirror mọi test khác ở describe này).
+  describe('sendAckCommand (Story 3.3)', () => {
+    it('gửi đúng envelope chung (schema_version=1, channel_id, timestamp ISO, event_type=ack-command, payload.operator_label)', async () => {
+      const { url, server } = await startFakeBackend();
+      const received: unknown[] = [];
+      server.on('connection', (ws) => {
+        ws.on('message', (data) => received.push(JSON.parse(data.toString())));
+      });
+
+      const store = createChannelStore();
+      const client = connectUiWsClient(url, store);
+      try {
+        await waitUntil(() => server.clients.size > 0);
+        client.sendAckCommand('chan-1', 'NV.A');
+
+        await waitUntil(() => received.length > 0);
+        const message = received[0] as Record<string, unknown>;
+        expect(message.schema_version).toBe(1);
+        expect(message.channel_id).toBe('chan-1');
+        expect(message.event_type).toBe('ack-command');
+        expect(typeof message.timestamp).toBe('string');
+        expect(new Date(message.timestamp as string).toISOString()).toBe(message.timestamp);
+        expect(message.payload).toEqual({ operator_label: 'NV.A' });
+      } finally {
+        client.close();
+      }
+    });
+
+    it('gọi TRƯỚC khi socket kịp OPEN (vd ngay sau connectUiWsClient()) -> no-op an toàn, KHÔNG throw', () => {
+      const store = createChannelStore();
+      const client = connectUiWsClient('ws://127.0.0.1:1', store); // port không ai lắng nghe - socket không bao giờ OPEN
+      try {
+        expect(() => client.sendAckCommand('chan-1', 'NV.A')).not.toThrow();
+      } finally {
+        client.close();
+      }
+    });
+
+    it('gọi sau khi close() -> no-op an toàn, KHÔNG throw', async () => {
+      const { url } = await startFakeBackend();
+      const store = createChannelStore();
+      const client = connectUiWsClient(url, store);
+      await waitUntil(() => store.getState().lastConnectedAt !== null);
+
+      client.close();
+
+      expect(() => client.sendAckCommand('chan-1', 'NV.A')).not.toThrow();
+    });
+
+    it('server (mọi client WS UI khác) nhận đúng channel-ack-change broadcast SAU KHI backend xử lý ack-command này - round-trip end-to-end qua applyUiWsMessage', async () => {
+      const { url, server } = await startFakeBackend();
+      server.on('connection', (ws) => {
+        ws.on('message', (data) => {
+          const parsed = JSON.parse(data.toString()) as { channel_id: string; payload: { operator_label: string } };
+          // Mirror hành vi thật của backend: nhận ack-command -> broadcast
+          // channel-ack-change tới mọi client (kể cả chính client vừa gửi).
+          ws.send(
+            JSON.stringify({
+              type: 'channel-ack-change',
+              channel_id: parsed.channel_id,
+              acknowledged: true,
+              ack_label: parsed.payload.operator_label,
+            })
+          );
+        });
+      });
+
+      const store = createChannelStore();
+      const client = connectUiWsClient(url, store);
+      try {
+        await waitUntil(() => server.clients.size > 0);
+        client.sendAckCommand('chan-1', 'NV.A');
+
+        await waitUntil(() => store.getState().channelAck.get('chan-1') === 'NV.A');
+        expect(store.getState().channelAck.get('chan-1')).toBe('NV.A');
+      } finally {
+        client.close();
+      }
+    });
+  });
 });

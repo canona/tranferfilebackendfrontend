@@ -28,4 +28,16 @@ export interface UiOutboundPort {
   // clock), giữ nhất quán tuyệt đối giữa ring buffer nội bộ và những gì
   // client nhận qua wire.
   publishHistoryPoint(channelId: string, bitratePct: number, timestampMs: number): void;
+
+  // Story 3.3: broadcast tới TẤT CẢ client WS UI mỗi khi `acknowledged`/
+  // `ackLabel` của 1 kênh đổi (mirror tinh thần `publishChannelSeen`/
+  // `publishHistoryPoint`: KHÔNG riêng theo panel đang mở - Boundaries).
+  // `channelState.ts` gọi method này ở CẢ 4 điểm: (1) `handleAckCommand` chốt
+  // ack mới (acknowledged=true, ackLabel=nhãn), (2) `applyCandidate` chốt 1
+  // candidate MỚI khác candidate đã ack, (3) `checkOneChannelHeartbeatTimeout`
+  // khi kích hoạt machine-offline, (4) `handleHeartbeat`'s nhánh recovery
+  // machine-offline - cả 3 nhánh tự-xoá (2)(3)(4) gọi với `acknowledged=false`,
+  // `ackLabel=undefined`. KHÔNG idempotent-guard (mirror `publishStateChange`/
+  // `publishSnapshot` - trạng thái đổi qua lại được).
+  publishAckChange(channelId: string, acknowledged: boolean, ackLabel: string | undefined): void;
 }

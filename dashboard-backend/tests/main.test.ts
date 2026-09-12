@@ -806,3 +806,74 @@ test('startApp(): wiring thật historyPort vào startWsUiAdapter -> WS UI clien
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Story 3.3 (Design Notes): `wsUiAdapter` bind cổng UI TRƯỚC khi
+// `channelStateService` tồn tại - `main.ts` wiring 1 forwarder cục bộ (biến
+// `let` gán NGAY SAU KHI `channelStateService` khởi tạo xong) để giải quyết
+// circular-dependency. Test integration THẬT (start cả `startApp()`, không
+// fake) xác nhận forwarder này định tuyến ĐÚNG vào `ChannelStateService` thật -
+// nếu wiring bị lỡ tay quên gán `ackCommandTarget` hoặc quên truyền
+// `ackCommandPort: ackCommandForwarder` vào `startWsUiAdapter(...)`, test này
+// phải fail (timeout chờ `channel-ack-change` không bao giờ tới).
+test('startApp(): forwarder AckCommandPort wiring thật - client WS UI gửi ack-command -> ChannelStateService.handleAckCommand thật xử lý -> mọi client nhận channel-ack-change', async () => {
+  const { dir, filePath } = writeValidRegistryFile(); // chan-1, baseline_kbps=4000, grid_position=0
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+  });
+
+  try {
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string; channel_id?: string; acknowledged?: boolean; ack_label?: string }[] = [];
+    uiWs.on('message', (data) => {
+      uiMessages.push(JSON.parse(data.toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+    await waitUntil(() => uiMessages.some((m) => m.type === 'registry-snapshot'));
+
+    uiWs.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-1',
+        timestamp: new Date().toISOString(),
+        event_type: 'ack-command',
+        payload: { operator_label: 'NV.Test' },
+      })
+    );
+
+    await waitUntil(() => uiMessages.some((m) => m.type === 'channel-ack-change'));
+    const ackChange = uiMessages.find((m) => m.type === 'channel-ack-change');
+    assert.equal(ackChange?.channel_id, 'chan-1');
+    assert.equal(ackChange?.acknowledged, true);
+    assert.equal(ackChange?.ack_label, 'NV.Test');
+
+    // channel_id lạ -> bỏ qua (mirror heartbeat/telemetry), không broadcast gì
+    // thêm - xác nhận registry validation của ChannelStateService thật cũng
+    // chạy đúng qua đường dây forwarder này (không phải 1 stub bỏ qua mọi
+    // validate).
+    const messagesBefore = uiMessages.length;
+    uiWs.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'unknown-chan',
+        timestamp: new Date().toISOString(),
+        event_type: 'ack-command',
+        payload: { operator_label: 'NV.Test' },
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(uiMessages.length, messagesBefore, 'channel_id lạ không được broadcast channel-ack-change nào thêm');
+
+    uiWs.close();
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
