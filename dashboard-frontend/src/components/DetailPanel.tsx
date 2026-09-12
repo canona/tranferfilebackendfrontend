@@ -250,10 +250,18 @@ export function DetailPanel({ store, onAck }: DetailPanelProps) {
           </div>
         </div>
 
-        {/* Story 3.3 (Boundaries): nút ack CHỈ hiện khi kênh đang
-            warning/critical (đọc channelDisplayStates, KHÔNG phải
-            historyState) - kênh ok/loaded-neutral không render block này. */}
-        {showAckControls ? (
+        {/* Review round 2 [patch]: trạng thái "đã ack" (ackLabel) và NÚT ack
+            (input+button) có 2 điều kiện hiện KHÁC NHAU, không được gộp
+            chung 1 gate như trước (bug: cả block ẩn theo showAckControls khiến
+            "✓ Đã nhận" biến mất nếu kênh không còn warning/critical, dù
+            backend CỐ Ý không xoá ack theo điều kiện này ngoài 3 điểm commit
+            candidate - channelState.ts's handleAckCommand không kiểm tra
+            displayState, mirror ChannelGridCell's ack-label vốn đã hiện độc
+            lập effectiveDisplayState). Trạng thái ack hiện bất cứ khi nào có
+            `ackLabel` (không phụ thuộc showAckControls) - CHỈ nút bấm ack
+            MỚI (input+button) mới gate theo warning/critical (Boundaries:
+            "Nút ack chỉ hiện/enable khi kênh đang warning/critical"). */}
+        {ackLabel !== undefined || showAckControls ? (
           <div className={styles.block}>
             <div className={styles.label}>Xác nhận tiếp nhận</div>
             {ackLabel !== undefined ? (
@@ -261,30 +269,34 @@ export function DetailPanel({ store, onAck }: DetailPanelProps) {
                 ✓ Đã nhận: {ackLabel}
               </div>
             ) : null}
-            <input
-              type="text"
-              className={styles.ackInput}
-              value={operatorLabel}
-              maxLength={MAX_OPERATOR_LABEL_LENGTH}
-              onChange={(event) => setOperatorLabel(event.target.value)}
-              placeholder="Tên tắt của bạn"
-              aria-label="Tên tắt người tiếp nhận"
-              data-testid="detail-panel-ack-input"
-            />
-            <button
-              type="button"
-              className={styles.ackButton}
-              // Boundaries/I/O matrix: "Operator label rỗng/toàn khoảng trắng ->
-              // Nút disabled, không gửi ack-command" - `disabled` (thuộc
-              // tính HTML chuẩn) tự chặn CẢ click chuột LẪN Enter/Space khi
-              // input đang focus nút này (mirror hành vi native <button>,
-              // không cần tự bắt onKeyDown như `ChannelGridCell`'s div).
-              disabled={trimmedOperatorLabel.length === 0}
-              onClick={() => onAck?.(selectedChannelId, trimmedOperatorLabel)}
-              data-testid="detail-panel-ack-button"
-            >
-              Xác nhận đã tiếp nhận
-            </button>
+            {showAckControls ? (
+              <>
+                <input
+                  type="text"
+                  className={styles.ackInput}
+                  value={operatorLabel}
+                  maxLength={MAX_OPERATOR_LABEL_LENGTH}
+                  onChange={(event) => setOperatorLabel(event.target.value)}
+                  placeholder="Tên tắt của bạn"
+                  aria-label="Tên tắt người tiếp nhận"
+                  data-testid="detail-panel-ack-input"
+                />
+                <button
+                  type="button"
+                  className={styles.ackButton}
+                  // Boundaries/I/O matrix: "Operator label rỗng/toàn khoảng trắng ->
+                  // Nút disabled, không gửi ack-command" - `disabled` (thuộc
+                  // tính HTML chuẩn) tự chặn CẢ click chuột LẪN Enter/Space khi
+                  // input đang focus nút này (mirror hành vi native <button>,
+                  // không cần tự bắt onKeyDown như `ChannelGridCell`'s div).
+                  disabled={trimmedOperatorLabel.length === 0}
+                  onClick={() => onAck?.(selectedChannelId, trimmedOperatorLabel)}
+                  data-testid="detail-panel-ack-button"
+                >
+                  Xác nhận đã tiếp nhận
+                </button>
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>

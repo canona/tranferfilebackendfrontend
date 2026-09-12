@@ -359,6 +359,33 @@ describe('DetailPanel - Ack (Story 3.3)', () => {
     expect(screen.getByTestId('detail-panel-ack-status')).toHaveTextContent('✓ Đã nhận: NV.A');
   });
 
+  it('Review round 2 [patch]: kênh đã acknowledged nhưng displayState là "ok" (backend cho phép ack độc lập trạng thái) -> VẪN hiện "✓ Đã nhận: {label}", KHÔNG ẩn theo showAckControls; nút/input ack (chỉ dành cho ack MỚI) không hiện vì không phải warning/critical', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      store.applyAckChange('chan-1', 'NV.A');
+    });
+    render(<DetailPanel store={store} />);
+
+    expect(screen.getByTestId('detail-panel-ack-status')).toHaveTextContent('✓ Đã nhận: NV.A');
+    expect(screen.queryByTestId('detail-panel-ack-button')).toBeNull();
+    expect(screen.queryByTestId('detail-panel-ack-input')).toBeNull();
+  });
+
+  it('Review round 2 [patch]: kênh đã acknowledged nhưng CHƯA từng có displayState nào (channelDisplayStates rỗng) -> VẪN hiện "✓ Đã nhận: {label}"', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+    act(() => {
+      store.selectChannel('chan-1');
+      store.applyAckChange('chan-1', 'NV.A');
+    });
+    render(<DetailPanel store={store} />);
+
+    expect(screen.getByTestId('detail-panel-ack-status')).toHaveTextContent('✓ Đã nhận: NV.A');
+  });
+
   it('kênh CHƯA ack -> KHÔNG hiện trạng thái ack-status', () => {
     const store = createChannelStore();
     setupChannel(store);
