@@ -80,6 +80,7 @@ describe('applyUiWsMessage', () => {
       selectedChannelId: null,
       channelHistory: new Map(),
       channelAck: new Map(),
+      alertSoundToken: 0,
     });
   });
 

@@ -108,6 +108,13 @@ export interface ChannelStoreState {
   // nào trong Map này (mirror cách `channelDisplayStates` dùng "thiếu entry"
   // cho "chưa xác định", tránh phình Map với các entry vô nghĩa).
   channelAck: ReadonlyMap<string, string>;
+  // Story 4.1: tăng đúng 1 lần mỗi khi 1 kênh THỰC SỰ chuyển sang
+  // warning/critical (transition mới - so sánh previous/next ngay trong
+  // `applyChannelDisplayStateChange`, TRƯỚC khi ghi đè). Store vẫn thuần -
+  // KHÔNG tự phát âm ở đây; `page.tsx` theo dõi field này qua effect để gọi
+  // `playAlertBeep()` (Code Map, tách side-effect trình duyệt khỏi store,
+  // dễ mock ở test).
+  alertSoundToken: number;
 }
 
 type Listener = () => void;
@@ -123,6 +130,7 @@ const EMPTY_STATE: ChannelStoreState = {
   selectedChannelId: null,
   channelHistory: new Map(),
   channelAck: new Map(),
+  alertSoundToken: 0,
 };
 
 export class ChannelStore {
@@ -182,6 +190,12 @@ export class ChannelStore {
   // hồi backend's `handleHeartbeat` re-publish `record.committed` không kèm
   // subType khi máy trung tâm hoạt động lại bình thường).
   applyChannelDisplayStateChange(channelId: string, displayState: DisplayState, subType?: DisplayStateSubType): void {
+    // Story 4.1: đọc `previous` TRƯỚC khi ghi đè - nguồn duy nhất để phân biệt
+    // 1 transition THẬT (previous đã có, khác next) với việc công bố trạng
+    // thái hiện tại lúc mount/reconnect (previous===undefined - I/O matrix:
+    // "replay lúc connect -> Không phát âm").
+    const previous = this.state.channelDisplayStates.get(channelId);
+
     const nextDisplayStates = new Map(this.state.channelDisplayStates);
     nextDisplayStates.set(channelId, displayState);
 
@@ -216,11 +230,23 @@ export class ChannelStore {
       nextSnapshots = updated;
     }
 
+    // Story 4.1 (SM-1): đúng 1 lần/transition sang warning/critical -
+    // `previous !== undefined` loại trừ replay lúc connect/reconnect,
+    // `previous !== displayState` loại trừ set lại cùng giá trị (KHÔNG phải
+    // transition mới), 2 nhánh còn lại (mọi cặp ok<->warning<->critical trừ
+    // về ok) đều tính là cảnh báo mới (Boundaries).
+    const isNewAlertTransition =
+      previous !== undefined &&
+      previous !== displayState &&
+      (displayState === 'warning' || displayState === 'critical');
+    const nextAlertSoundToken = isNewAlertTransition ? this.state.alertSoundToken + 1 : this.state.alertSoundToken;
+
     this.setState({
       ...this.state,
       channelDisplayStates: nextDisplayStates,
       channelMachineOffline: nextMachineOffline,
       channelSnapshots: nextSnapshots,
+      alertSoundToken: nextAlertSoundToken,
     });
   }
 

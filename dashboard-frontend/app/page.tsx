@@ -11,6 +11,7 @@ import { ConnectionBanner } from '../src/components/ConnectionBanner';
 import { DetailPanel } from '../src/components/DetailPanel';
 import { createChannelStore, useChannelStore } from '../src/state/channelStore';
 import { connectUiWsClient } from '../src/services/uiWsClient';
+import { playAlertBeep, primeAlertAudioContext } from '../src/services/alertSound';
 import { computeAudioLevelFixture } from '../src/fixtures/channelAudioLevels';
 import styles from './page.module.css';
 
@@ -70,6 +71,54 @@ export default function Page() {
     }
     return map;
   }, [state.channels, elapsedSeconds]);
+
+  // Story 4.1 (code review round 1 [patch]): âm báo động tại chỗ (SM-1) -
+  // theo dõi `alertSoundToken` (channelStore thuần, chỉ đếm transition thật)
+  // và gọi `playAlertBeep()` ở ĐÂY (side-effect trình duyệt tập trung ở
+  // page.tsx, mirror `sendAckCommandRef`).
+  //
+  // So sánh GIÁ TRỊ token (không phải cờ boolean "đã chạy chưa") - 2 lý do:
+  // (1) React StrictMode (mặc định `true` ở Next.js App Router, `next dev`)
+  // cố ý gọi effect 2 lần lúc mount (setup->cleanup->setup) để lộ side-effect
+  // không idempotent; 1 cờ boolean bị "tiêu thụ" ở lần gọi ĐẦU sẽ khiến lần
+  // gọi THỨ HAI phát bíp giả dù không có transition thật nào xảy ra (đã xác
+  // nhận bằng thực nghiệm ở review round 1) - so sánh token thay vì cờ khiến
+  // effect idempotent với chính giá trị token, sống sót qua double-invoke.
+  // (2) Nếu React gộp (batch) nhiều lần tăng token thật vào cùng 1 commit
+  // (vd 2 kênh cùng chuyển cảnh báo gần như đồng thời), effect chỉ chạy 1
+  // lần/commit - phát đúng SỐ LẦN bằng độ lệch token (`delta`) thay vì luôn
+  // đúng 1 tiếng, tránh im lặng bỏ sót cảnh báo.
+  //
+  // Khởi tạo `useRef(state.alertSoundToken)` - đối số khởi tạo của `useRef`
+  // CHỈ được dùng ở lần render đầu tiên (React bỏ qua ở mọi lần render sau,
+  // kể cả StrictMode double-render) - đúng ngữ nghĩa "mốc token lúc mount",
+  // KHÔNG phải "0 cứng" (mount/reconnect có thể có kênh đã warning/critical
+  // sẵn nhưng KHÔNG tăng token - `channelStore.ts` - nên token lúc mount có
+  // thể khác 0 nếu tái sử dụng cùng 1 store qua re-render, dù thực tế
+  // `createChannelStore()` luôn tạo store mới ở `useMemo` phía trên).
+  const lastAlertTokenRef = useRef(state.alertSoundToken);
+  useEffect(() => {
+    const delta = state.alertSoundToken - lastAlertTokenRef.current;
+    if (delta <= 0) return;
+    lastAlertTokenRef.current = state.alertSoundToken;
+    for (let i = 0; i < delta; i += 1) {
+      playAlertBeep();
+    }
+  }, [state.alertSoundToken]);
+
+  // Story 4.1: "prime" AudioContext ngay lần tương tác đầu tiên của người
+  // dùng - trình duyệt giữ AudioContext mới tạo ở trạng thái 'suspended' cho
+  // tới khi có gesture (Design Notes: rủi ro autoplay). `{once:true}` tự gỡ
+  // listener sau lần đầu, không cần cleanup thủ công lúc unmount.
+  useEffect(() => {
+    const prime = () => primeAlertAudioContext();
+    document.addEventListener('pointerdown', prime, { once: true });
+    document.addEventListener('keydown', prime, { once: true });
+    return () => {
+      document.removeEventListener('pointerdown', prime);
+      document.removeEventListener('keydown', prime);
+    };
+  }, []);
 
   // Story 2.7: `ConnectionBanner` (full-width, trên mọi layer) + `grid-overlay`
   // (phủ CHÍNH `channel-grid` khi disconnected, DESIGN.md's `connection-banner`

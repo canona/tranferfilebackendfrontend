@@ -609,4 +609,110 @@ describe('ChannelStore', () => {
       expect(callCount).toBe(2);
     });
   });
+
+  // --- Story 4.1: alertSoundToken (âm báo động tại chỗ khi có cảnh báo mới) ---
+
+  describe('applyChannelDisplayStateChange - alertSoundToken (Story 4.1)', () => {
+    it('trạng thái ban đầu: alertSoundToken=0', () => {
+      expect(createChannelStore().getState().alertSoundToken).toBe(0);
+    });
+
+    it('ok -> warning: tăng alertSoundToken đúng 1', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      expect(store.getState().alertSoundToken).toBe(1);
+    });
+
+    it('ok -> critical: tăng alertSoundToken đúng 1', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      expect(store.getState().alertSoundToken).toBe(1);
+    });
+
+    it('warning -> critical: tăng alertSoundToken đúng 1', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      expect(store.getState().alertSoundToken).toBe(1);
+    });
+
+    it('critical -> warning: VẪN tăng alertSoundToken (mọi cặp trừ về ok đều là cảnh báo mới, Boundaries)', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      expect(store.getState().alertSoundToken).toBe(1);
+    });
+
+    it('critical -> ok (phục hồi): KHÔNG tăng alertSoundToken', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      expect(store.getState().alertSoundToken).toBe(0);
+    });
+
+    it('warning -> ok (phục hồi): KHÔNG tăng alertSoundToken', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      expect(store.getState().alertSoundToken).toBe(0);
+    });
+
+    it('mount/reconnect - previous CHƯA có entry, next=warning/critical (replay lúc connect): KHÔNG tăng alertSoundToken', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      expect(store.getState().alertSoundToken).toBe(0);
+
+      const store2 = createChannelStore();
+      store2.applyChannelDisplayStateChange('chan-2', 'critical');
+      expect(store2.getState().alertSoundToken).toBe(0);
+    });
+
+    it('gọi lại với CÙNG giá trị (ghi đè, không phải transition mới): KHÔNG tăng thêm alertSoundToken', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      store.applyChannelDisplayStateChange('chan-1', 'warning'); // transition thật -> +1
+      store.applyChannelDisplayStateChange('chan-1', 'warning'); // set lại CÙNG giá trị -> +0
+      expect(store.getState().alertSoundToken).toBe(1);
+    });
+
+    it('nhiều transition liên tiếp trên CÙNG kênh -> alertSoundToken tăng dồn, mỗi transition 1 đơn vị', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      store.applyChannelDisplayStateChange('chan-1', 'warning'); // +1
+      store.applyChannelDisplayStateChange('chan-1', 'critical'); // +1
+      store.applyChannelDisplayStateChange('chan-1', 'ok'); // phục hồi, +0
+      store.applyChannelDisplayStateChange('chan-1', 'warning'); // +1
+      expect(store.getState().alertSoundToken).toBe(3);
+    });
+
+    it('token dùng CHUNG cho mọi kênh (không phải per-channel) - 2 kênh khác nhau cùng cộng dồn vào 1 token', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'ok');
+      store.applyChannelDisplayStateChange('chan-2', 'ok');
+      store.applyChannelDisplayStateChange('chan-1', 'warning'); // +1
+      store.applyChannelDisplayStateChange('chan-2', 'critical'); // +1
+      expect(store.getState().alertSoundToken).toBe(2);
+    });
+
+    it('subType="machine-offline" kèm transition warning/critical hợp lệ -> VẪN áp dụng đúng rule chung, không cần logic riêng (Boundaries)', () => {
+      const store = createChannelStore();
+      store.applyChannelDisplayStateChange('chan-1', 'warning');
+      store.applyChannelDisplayStateChange('chan-1', 'critical', 'machine-offline');
+      expect(store.getState().alertSoundToken).toBe(1);
+    });
+
+    it('subscribe: setState vẫn được gọi bình thường khi alertSoundToken không đổi (no-op chỉ áp dụng cho phần token, không thêm guard mới cho toàn method)', () => {
+      const store = createChannelStore();
+      let callCount = 0;
+      store.applyChannelDisplayStateChange('chan-1', 'critical');
+      store.subscribe(() => {
+        callCount++;
+      });
+      store.applyChannelDisplayStateChange('chan-1', 'ok'); // phục hồi - alertSoundToken không đổi nhưng channelDisplayStates đổi
+      expect(callCount).toBe(1);
+      expect(store.getState().alertSoundToken).toBe(0);
+    });
+  });
 });
