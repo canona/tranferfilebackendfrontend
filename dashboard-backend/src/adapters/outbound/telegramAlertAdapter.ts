@@ -1,10 +1,18 @@
 // Story 4.2: `TelegramAlertAdapter` implement `AlertOutboundPort` - đẩy tin
-// nhắn Telegram tới 1 chat chung của đội trực sóng khi 1 kênh chuyển sang
-// `warning` (ABR hạ bitrate) - trước đây chỉ có `LogAlertAdapter` ghi log nội
-// bộ, không ai được chủ động báo (Intent). Chỉ phản ứng
-// `displayState==='warning'` (Boundaries: bỏ qua `ok`/`critical` - thuộc
-// Story 4.3/4.4), áp cooldown 60s ĐỘC LẬP theo từng `channelId` qua `Clock`
+// nhắn Telegram tới 1 chat khi 1 kênh chuyển sang 1 `displayState` cụ thể -
+// trước đây chỉ có `LogAlertAdapter` ghi log nội bộ, không ai được chủ động
+// báo (Intent). Áp cooldown 60s ĐỘC LẬP theo từng `channelId` qua `Clock`
 // injectable (test được bằng fake clock, mirror `channelState.ts`).
+//
+// Story 4.3: tổng quát hoá - `displayState` ('warning'|'critical') giờ là
+// tham số BẮT BUỘC của constructor (không hardcode `'warning'` nữa), để 1
+// pipeline duy nhất phục vụ được cả instance warning (Story 4.2, hành vi
+// KHÔNG đổi khi `displayState: 'warning'`) LẪN 2 instance critical mới (đội
+// trực + lãnh đạo, `app/main.ts`) - tránh trùng lặp code giữa 2 story (Design
+// Notes spec-4-3). Mỗi INSTANCE có `lastSentAt` Map riêng (field instance,
+// không static/module-level) nên cooldown độc lập tuyệt đối giữa các instance
+// dù dùng chung `chatId` (Boundaries spec-4-3: "instance critical không dùng
+// chung bộ đếm với instance warning hiện có, dù dùng chung chatId đội trực").
 //
 // Boundaries: lỗi gọi Telegram Bot API (network throw/HTTP status != 2xx)
 // phải bị NUỐT + log qua `Logger`, KHÔNG throw ra ngoài - adapter TỰ chịu
@@ -14,7 +22,7 @@
 // bất đồng bộ bên trong (interface `AlertOutboundPort.publishStateChange` trả
 // về `void`, không phải `Promise<void>` - không thể `await` ở đây).
 
-import type { AlertOutboundPort, ChannelStateChange } from '../../ports/AlertOutboundPort.js';
+import type { AlertOutboundPort, ChannelStateChange, DisplayState } from '../../ports/AlertOutboundPort.js';
 import type { Logger } from '../../logging/logger.js';
 import { systemClock, type Clock } from '../../core/channelState.js';
 
@@ -65,9 +73,18 @@ export const defaultTelegramSendMessage: TelegramSendMessage = async (botToken, 
   }
 };
 
+// Story 4.3: chỉ 'warning'/'critical' hợp lệ cho adapter này ('ok' KHÔNG bao
+// giờ có instance riêng - Never: "Không gửi Email/Telegram lãnh đạo ở mức
+// warning ... không xử lý thông báo phục hồi").
+export type TelegramAlertDisplayState = Extract<DisplayState, 'warning' | 'critical'>;
+
 export interface TelegramAlertAdapterOptions {
   botToken: string;
   chatId: string;
+  // Story 4.3: BẮT BUỘC (không có default) - 1 instance chỉ phục vụ ĐÚNG 1
+  // displayState (mirror 3 instance ở `app/main.ts`: warning đội trực, critical
+  // đội trực, critical lãnh đạo).
+  displayState: TelegramAlertDisplayState;
   logger: Logger;
   clock?: Clock;
   sendMessage?: TelegramSendMessage;
@@ -77,19 +94,25 @@ export interface TelegramAlertAdapterOptions {
 export class TelegramAlertAdapter implements AlertOutboundPort {
   private readonly botToken: string;
   private readonly chatId: string;
+  private readonly displayState: TelegramAlertDisplayState;
   private readonly logger: Logger;
   private readonly clock: Clock;
   private readonly sendMessage: TelegramSendMessage;
   private readonly cooldownMs: number;
-  // Key `${channelId}:warning` (Boundaries) -> epoch ms (Clock injectable) của
-  // lần GỬI gần nhất cho key này. In-memory thuần, không cần bền vững qua
-  // restart (Design Notes: "restart hiếm và epic context đã chấp nhận không
-  // có escalation/persistence phức tạp ở epic này").
+  // Key `${channelId}:${displayState}` (Story 4.3: trước đây hardcode
+  // `:warning`) -> epoch ms (Clock injectable) của lần GỬI gần nhất cho key
+  // này. Field INSTANCE (không static/module-level) - 2 instance khác nhau
+  // (vd critical đội trực vs critical lãnh đạo, dùng chung chatId đội trực)
+  // luôn có Map RIÊNG, cooldown không bao giờ lẫn giữa 2 instance. In-memory
+  // thuần, không cần bền vững qua restart (Design Notes: "restart hiếm và
+  // epic context đã chấp nhận không có escalation/persistence phức tạp ở epic
+  // này").
   private readonly lastSentAt = new Map<string, number>();
 
   constructor(options: TelegramAlertAdapterOptions) {
     this.botToken = options.botToken;
     this.chatId = options.chatId;
+    this.displayState = options.displayState;
     this.logger = options.logger;
     this.clock = options.clock ?? systemClock;
     this.sendMessage = options.sendMessage ?? defaultTelegramSendMessage;
@@ -97,13 +120,13 @@ export class TelegramAlertAdapter implements AlertOutboundPort {
   }
 
   publishStateChange(change: ChannelStateChange): void {
-    // Boundaries: "Chỉ gửi khi change.displayState==='warning' - bỏ qua
-    // ok/critical (thuộc Story 4.3/4.4)". I/O matrix: bỏ qua hoàn toàn, không
-    // gọi Telegram, KHÔNG tính cooldown (early-return TRƯỚC khi đụng
-    // `lastSentAt`).
-    if (change.displayState !== 'warning') return;
+    // Boundaries (Story 4.2/4.3): "Chỉ gửi khi change.displayState ===
+    // this.displayState" - 1 instance warning bỏ qua critical/ok, 1 instance
+    // critical bỏ qua warning/ok. I/O matrix: bỏ qua hoàn toàn, không gọi
+    // Telegram, KHÔNG tính cooldown (early-return TRƯỚC khi đụng `lastSentAt`).
+    if (change.displayState !== this.displayState) return;
 
-    const key = `${change.channelId}:warning`;
+    const key = `${change.channelId}:${this.displayState}`;
     const now = this.clock.now();
     const last = this.lastSentAt.get(key);
     if (last !== undefined && now - last < this.cooldownMs) {
@@ -114,18 +137,19 @@ export class TelegramAlertAdapter implements AlertOutboundPort {
         channel_id: change.channelId,
         event_type: 'telegram_alert_cooldown_skipped',
         reason:
-          `Bỏ qua gửi Telegram (đang trong cooldown ${this.cooldownMs}ms, lần gửi trước cách đây ${now - last}ms)`,
+          `Bỏ qua gửi Telegram ${this.displayState} (chat_id=${this.chatId}, đang trong cooldown ` +
+          `${this.cooldownMs}ms, lần gửi trước cách đây ${now - last}ms)`,
       });
       return;
     }
 
     // Ghi `lastSentAt` NGAY (trước khi Promise của `sendMessage` resolve/
-    // reject) - 1 warning kế tiếp cùng channelId tới trong lúc request đang
-    // bay vẫn phải bị chặn bởi cooldown ngay lập tức, không phải chờ tới khi
-    // request thật sự xong mới có hiệu lực.
+    // reject) - 1 thay đổi kế tiếp cùng channelId/displayState tới trong lúc
+    // request đang bay vẫn phải bị chặn bởi cooldown ngay lập tức, không phải
+    // chờ tới khi request thật sự xong mới có hiệu lực.
     this.lastSentAt.set(key, now);
 
-    const text = formatWarningMessage(change);
+    const text = formatAlertMessage(change, this.displayState);
     // `publishStateChange()` là API ĐỒNG BỘ (AlertOutboundPort) - không thể
     // `await` `sendMessage()` ở đây. Fire-and-forget + `.catch` riêng (xem
     // comment đầu file: adapter TỰ nuốt lỗi async này, `createCompositeAlertPort`'s
@@ -152,7 +176,7 @@ export class TelegramAlertAdapter implements AlertOutboundPort {
         this.logger.log({
           channel_id: change.channelId,
           event_type: 'telegram_alert_sent',
-          reason: `Đã gửi cảnh báo warning tới Telegram đội trực (chat_id=${this.chatId})`,
+          reason: `Đã gửi cảnh báo ${this.displayState} tới Telegram (chat_id=${this.chatId})`,
         });
       })
       .catch((err: unknown) => {
@@ -160,12 +184,21 @@ export class TelegramAlertAdapter implements AlertOutboundPort {
         this.logger.log({
           channel_id: change.channelId,
           event_type: 'telegram_alert_send_error',
-          reason: `Gọi Telegram Bot API lỗi, đã nuốt (KHÔNG throw): ${message}`,
+          reason: `Gọi Telegram Bot API lỗi (displayState=${this.displayState}, chat_id=${this.chatId}), đã nuốt (KHÔNG throw): ${message}`,
         });
       });
   }
 }
 
-function formatWarningMessage(change: ChannelStateChange): string {
-  return `⚠️ Kênh ${change.channelId} chuyển sang WARNING (ABR hạ bitrate) lúc ${change.timestamp}`;
+// Story 4.3: tổng quát hoá `formatWarningMessage` cũ thành 1 formatter theo
+// `displayState` - nhánh warning giữ NGUYÊN VĂN text cũ (Boundaries: "hành vi
+// warning Story 4.2 không đổi"), thêm nhánh critical mới (kèm `subType` nếu
+// có - `config-or-security-suspected`/`machine-offline` - để đội trực/lãnh
+// đạo phân biệt được ngay trong tin nhắn Telegram).
+function formatAlertMessage(change: ChannelStateChange, displayState: TelegramAlertDisplayState): string {
+  if (displayState === 'warning') {
+    return `⚠️ Kênh ${change.channelId} chuyển sang WARNING (ABR hạ bitrate) lúc ${change.timestamp}`;
+  }
+  const subTypeNote = change.subType ? ` (${change.subType})` : '';
+  return `🚨 Kênh ${change.channelId} chuyển sang CRITICAL (mất tín hiệu hoàn toàn)${subTypeNote} lúc ${change.timestamp}`;
 }

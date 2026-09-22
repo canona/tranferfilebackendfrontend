@@ -18,21 +18,35 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import WebSocket from 'ws';
-import { parsePort, parseBearerTokens, startApp, createCompositeAlertPort } from '../app/main.js';
+import { parsePort, parseBearerTokens, parseEmailRecipients, startApp, createCompositeAlertPort } from '../app/main.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
 import type { Clock } from '../src/core/channelState.js';
 
 // Story 4.2: `startApp()` giờ fail-fast nếu thiếu Telegram bot token/chat_id
 // (mirror `validBearerTokens`) - mọi test integration thật gọi `startApp()`
-// bên dưới (trừ 2 test fail TRƯỚC khi chạm tới điểm đọc config này) phải bơm
+// bên dưới (trừ vài test fail TRƯỚC khi chạm tới điểm đọc config này) phải bơm
 // bộ giá trị giả + `telegramSendMessage` no-op qua config, để không cần set
 // biến môi trường thật/gọi mạng Telegram thật (mirror cách `validBearerTokens`/
 // `channelRegistryFilePath` đã override qua config ở các test có sẵn).
-const FAKE_TELEGRAM_CONFIG = {
+//
+// Story 4.3: mở rộng (đổi tên `FAKE_TELEGRAM_CONFIG` -> `FAKE_ALERT_CONFIG`,
+// bao quát cả 3 kênh cảnh báo mới) - `startApp()` giờ CŨNG fail-fast nếu
+// thiếu leadership chat id/SMTP config/email recipients (mirror pattern
+// Telegram 4.2). Mọi test hiện có (không chủ đích test riêng nhánh fail-fast
+// 4.2/4.3) bơm nốt bộ giá trị giả mới qua đây để không bị fail-fast chặn.
+const FAKE_ALERT_CONFIG = {
   telegramBotToken: 'test-telegram-bot-token',
   telegramChatId: 'test-telegram-chat-id',
   telegramSendMessage: async () => {},
+  telegramLeadershipChatId: 'test-telegram-leadership-chat-id',
+  smtpHost: 'smtp.example.com',
+  smtpPort: 587,
+  smtpUser: 'smtp-user',
+  smtpPassword: 'smtp-password',
+  smtpFrom: 'alerts@example.com',
+  emailCriticalRecipients: ['team@example.com', 'leadership@example.com'],
+  emailSendMail: async () => {},
 };
 
 // Story 2.7: mirror `channelState.test.ts`'s `FakeClock` - dùng để verify
@@ -142,6 +156,33 @@ test('parseBearerTokens: danh sách cách nhau bởi dấu phẩy -> trim + bỏ
   assert.deepEqual([...tokens].sort(), ['tok-a', 'tok-b', 'tok-c']);
 });
 
+// Code review (patch): `parseEmailRecipients`'s split/trim/filter/dedupe body
+// trước đây chưa từng được test trực tiếp - mọi `startApp()` test hoặc bơm
+// `emailCriticalRecipients` thẳng qua config (bypass hàm này) hoặc chỉ chạm
+// nhánh `if (!raw) return []` (rỗng). Test trực tiếp, mirror
+// `parseBearerTokens` phía trên.
+test('parseEmailRecipients: undefined/rỗng -> mảng rỗng', () => {
+  assert.deepEqual(parseEmailRecipients(undefined), []);
+  assert.deepEqual(parseEmailRecipients(''), []);
+});
+
+test('parseEmailRecipients: danh sách cách nhau bởi dấu phẩy, có khoảng trắng đệm + entry rỗng -> trim + bỏ entry rỗng', () => {
+  const recipients = parseEmailRecipients(' a@example.com ,b@example.com,, c@example.com ');
+  assert.deepEqual(recipients, ['a@example.com', 'b@example.com', 'c@example.com']);
+});
+
+test('parseEmailRecipients: entry trùng lặp -> dedupe, giữ thứ tự xuất hiện ĐẦU TIÊN', () => {
+  const recipients = parseEmailRecipients('a@example.com,b@example.com,a@example.com, b@example.com ');
+  assert.deepEqual(recipients, ['a@example.com', 'b@example.com']);
+});
+
+test('parseEmailRecipients: entry không phải định dạng email hợp lệ -> throw rõ ràng (fail-fast, không âm thầm lọt qua)', () => {
+  assert.throws(
+    () => parseEmailRecipients('a@example.com,khong-phai-email,b@example.com'),
+    /DASHBOARD_EMAIL_CRITICAL_RECIPIENTS không hợp lệ.*khong-phai-email/
+  );
+});
+
 test('startApp(): channelRegistryFilePath hợp lệ -> khởi động thành công, wiring registryPort vào ChannelStateService, stop() không throw', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'dashboard-backend-main-test-'));
   const filePath = path.join(dir, 'channel-registry.json');
@@ -166,7 +207,7 @@ test('startApp(): channelRegistryFilePath hợp lệ -> khởi động thành c�
       uiPort: 0,
       validBearerTokens: new Set(['test-token']),
       channelRegistryFilePath: filePath,
-      ...FAKE_TELEGRAM_CONFIG,
+      ...FAKE_ALERT_CONFIG,
     });
     try {
       // Wiring đúng: chưa có telemetry nào -> chưa có display state đã chốt,
@@ -272,6 +313,124 @@ test('startApp(): DASHBOARD_TELEGRAM_BOT_TOKEN/CHAT_ID toàn khoảng trắng ->
   }
 });
 
+// Story 4.3 (Boundaries/AC): "Thiếu bất kỳ biến môi trường bắt buộc nào
+// (leadership chat id, SMTP host/port/user/password/from, danh sách người
+// nhận email) lúc khởi động -> fail-fast rõ ràng, registryPort.stop() trước
+// khi throw." Mirror pattern Telegram 4.2 phía trên nhưng data-driven (7 biến
+// mới, 1 test/biến sẽ trùng lặp gần như y hệt) - mỗi vòng lặp bơm ĐỦ 6 biến
+// còn lại qua `config` (mirror `FAKE_ALERT_CONFIG`), bỏ ĐÚNG 1 field khỏi
+// config VÀ đảm bảo env thật cũng không set biến tương ứng
+// (`withEnvVar(..., undefined, ...)`) để cô lập đúng nhánh đang test.
+const STORY_4_3_CONFIG_FIELD_BY_ENV_VAR: Record<string, keyof typeof FAKE_ALERT_CONFIG> = {
+  DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID: 'telegramLeadershipChatId',
+  DASHBOARD_SMTP_HOST: 'smtpHost',
+  DASHBOARD_SMTP_PORT: 'smtpPort',
+  DASHBOARD_SMTP_USER: 'smtpUser',
+  DASHBOARD_SMTP_PASSWORD: 'smtpPassword',
+  DASHBOARD_SMTP_FROM: 'smtpFrom',
+  DASHBOARD_EMAIL_CRITICAL_RECIPIENTS: 'emailCriticalRecipients',
+};
+
+function omitAlertConfigField<K extends keyof typeof FAKE_ALERT_CONFIG>(field: K): Omit<typeof FAKE_ALERT_CONFIG, K> {
+  const { [field]: _omitted, ...rest } = FAKE_ALERT_CONFIG;
+  return rest;
+}
+
+for (const [envVarName, configField] of Object.entries(STORY_4_3_CONFIG_FIELD_BY_ENV_VAR)) {
+  test(`startApp(): thiếu ${envVarName} (config lẫn env) -> throw rõ ràng, KHÔNG âm thầm start thiếu kênh critical (Story 4.3)`, async () => {
+    const { dir, filePath } = writeValidRegistryFile();
+    try {
+      await withEnvVar(envVarName, undefined, async () => {
+        await assert.rejects(
+          () =>
+            startApp({
+              port: 0,
+              host: '127.0.0.1',
+              uiPort: 0,
+              validBearerTokens: new Set(['test-token']),
+              channelRegistryFilePath: filePath,
+              ...omitAlertConfigField(configField),
+            }),
+          new RegExp(`${envVarName} không hợp lệ`)
+        );
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test('startApp(): DASHBOARD_SMTP_PORT không phải số nguyên hợp lệ -> throw rõ ràng (không âm thầm dùng NaN)', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  try {
+    await assert.rejects(
+      () =>
+        startApp({
+          port: 0,
+          host: '127.0.0.1',
+          uiPort: 0,
+          validBearerTokens: new Set(['test-token']),
+          channelRegistryFilePath: filePath,
+          ...omitAlertConfigField('smtpPort'),
+          smtpPort: Number('không-phải-số'), // NaN - mirror kịch bản 1 env var bị set nhầm ký tự
+        }),
+      /DASHBOARD_SMTP_PORT không hợp lệ/
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('startApp(): DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID toàn khoảng trắng -> throw rõ ràng (không âm thầm coi như đã set)', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  try {
+    await withEnvVar('DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID', '   ', async () => {
+      await assert.rejects(
+        () =>
+          startApp({
+            port: 0,
+            host: '127.0.0.1',
+            uiPort: 0,
+            validBearerTokens: new Set(['test-token']),
+            channelRegistryFilePath: filePath,
+            ...omitAlertConfigField('telegramLeadershipChatId'),
+          }),
+        /DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID không hợp lệ/
+      );
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Code review (patch): entry sai định dạng email trong
+// DASHBOARD_EMAIL_CRITICAL_RECIPIENTS phải fail-fast NGAY lúc khởi động (qua
+// `parseEmailRecipients`, chỉ chạm được khi field `emailCriticalRecipients`
+// KHÔNG được bơm thẳng qua config - omit field đó để rơi về đọc/parse từ env
+// thật), không được âm thầm lọt qua rồi chỉ phát hiện lúc gửi email thật giữa
+// 1 sự cố critical (sẽ chỉ bị nuốt + log `email_alert_send_error`).
+test('startApp(): DASHBOARD_EMAIL_CRITICAL_RECIPIENTS có entry không phải định dạng email hợp lệ -> throw rõ ràng, KHÔNG âm thầm lọt qua', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  try {
+    await withEnvVar('DASHBOARD_EMAIL_CRITICAL_RECIPIENTS', 'team@example.com,khong-phai-email', async () => {
+      await assert.rejects(
+        () =>
+          startApp({
+            port: 0,
+            host: '127.0.0.1',
+            uiPort: 0,
+            validBearerTokens: new Set(['test-token']),
+            channelRegistryFilePath: filePath,
+            ...omitAlertConfigField('emailCriticalRecipients'),
+          }),
+        /DASHBOARD_EMAIL_CRITICAL_RECIPIENTS không hợp lệ/
+      );
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Code review [patch #4]: 2 nhánh cleanup MỚI của Story 2.3 (nếu bind cổng UI
 // thất bại -> registryPort.stop() trước khi rethrow; nếu bind cổng telemetry
 // thất bại SAU KHI ui đã bind thành công -> registryPort.stop() VÀ
@@ -290,7 +449,7 @@ test('startApp(): uiPort bị chiếm trước (EADDRINUSE) -> reject, VÀ regis
         uiHost: '127.0.0.1',
         validBearerTokens: new Set(['test-token']),
         channelRegistryFilePath: filePath,
-        ...FAKE_TELEGRAM_CONFIG,
+        ...FAKE_ALERT_CONFIG,
       })
     );
 
@@ -326,7 +485,7 @@ test('startApp(): port telemetry bị chiếm trước SAU KHI uiPort đã bind 
         uiHost: '127.0.0.1',
         validBearerTokens: new Set(['test-token']),
         channelRegistryFilePath: filePath,
-        ...FAKE_TELEGRAM_CONFIG,
+        ...FAKE_ALERT_CONFIG,
       })
     );
 
@@ -368,7 +527,7 @@ test('startApp(): DASHBOARD_UI_WS_PORT đọc từ env khi config không set uiP
         // ('0' = OS tự cấp port trống) qua đúng parsePort(), không phải default 8081.
         validBearerTokens: new Set(['test-token']),
         channelRegistryFilePath: filePath,
-        ...FAKE_TELEGRAM_CONFIG,
+        ...FAKE_ALERT_CONFIG,
       });
       try {
         assert.equal(typeof app.ui.port, 'number');
@@ -517,7 +676,7 @@ test('startApp(): wiring thật composite alertPort -> backend chốt trạng th
     channelRegistryFilePath: filePath,
     debounceMs: 10,
     logger,
-    ...FAKE_TELEGRAM_CONFIG,
+    ...FAKE_ALERT_CONFIG,
   });
 
   try {
@@ -591,7 +750,7 @@ test('startApp(): wiring thật composite alertPort -> backend chốt trạng th
 // hiện được. Lấp gap: đẩy bitrate telemetry THẬT xuống mức cho ra
 // `display_state: 'warning'` (bitrate_pct=50%<70%, mirror mapping
 // `bitrateThreshold.ts`), bơm `telegramSendMessage` spy qua config (KHÔNG
-// no-op như `FAKE_TELEGRAM_CONFIG`), assert spy được gọi đúng `chatId` cấu
+// no-op như `FAKE_ALERT_CONFIG`), assert spy được gọi đúng `chatId` cấu
 // hình + text chứa đúng channel_id.
 test('startApp(): wiring thật composite alertPort -> kênh chuyển warning -> TelegramAlertAdapter thật gọi telegramSendMessage đúng chatId + text chứa channel_id', async () => {
   const { dir, filePath } = writeValidRegistryFile(); // chan-1, baseline_kbps=4000, grid_position=0
@@ -606,8 +765,7 @@ test('startApp(): wiring thật composite alertPort -> kênh chuyển warning ->
     channelRegistryFilePath: filePath,
     debounceMs: 10,
     logger,
-    telegramBotToken: 'test-telegram-bot-token',
-    telegramChatId: 'test-telegram-chat-id',
+    ...FAKE_ALERT_CONFIG,
     telegramSendMessage: async (botToken, chatId, text) => {
       telegramCalls.push({ botToken, chatId, text });
     },
@@ -667,6 +825,112 @@ test('startApp(): wiring thật composite alertPort -> kênh chuyển warning ->
   }
 });
 
+// Story 4.3: mirror test warning phía trên + pattern `FakeClock`/heartbeat của
+// test "wiring thật heartbeatPort" bên dưới - lấp gap: nếu ai đó lỡ xoá/đảo
+// thứ tự 1 trong 2 `TelegramAlertAdapter` critical MỚI hoặc `EmailAlertAdapter`
+// khỏi mảng `createCompositeAlertPort([...])` ở `main.ts`, không test nào phát
+// hiện được (test warning phía trên KHÔNG chạm nhánh critical). Đẩy 1 kênh vào
+// `critical` qua machine-offline (im lặng heartbeat >=15000ms, FakeClock) rồi
+// xác nhận CẢ 2 chat Telegram (đội trực + lãnh đạo, 2 chatId khác nhau) LẪN
+// email (đúng danh sách recipients gộp) đều nhận được (AC #1).
+test('startApp(): wiring thật composite alertPort -> kênh chuyển critical (machine-offline) -> CẢ 2 TelegramAlertAdapter critical (đội trực + lãnh đạo) LẪN EmailAlertAdapter thật đều gửi đúng', async () => {
+  const { dir, filePath } = writeValidRegistryFile(); // chan-1, grid_position=0
+  const clock = new FakeClock();
+  const telegramCalls: { botToken: string; chatId: string; text: string }[] = [];
+  const emailCalls: { to: string[]; subject: string; text: string }[] = [];
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+    clock,
+    ...FAKE_ALERT_CONFIG,
+    telegramSendMessage: async (botToken, chatId, text) => {
+      telegramCalls.push({ botToken, chatId, text });
+    },
+    emailSendMail: async (_smtpConfig, to, subject, text) => {
+      emailCalls.push({ to, subject, text });
+    },
+  });
+
+  try {
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string; channel_id?: string; display_state?: string; sub_type?: string }[] = [];
+    uiWs.on('message', (data) => {
+      uiMessages.push(JSON.parse(data.toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+    await waitUntil(() => uiMessages.some((m) => m.type === 'registry-snapshot'));
+
+    const telemetryWs = new WebSocket(`ws://127.0.0.1:${app.ws.port}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      telemetryWs.once('open', resolve);
+      telemetryWs.once('error', reject);
+    });
+
+    telemetryWs.send(
+      JSON.stringify({
+        schema_version: 1,
+        channel_id: 'chan-1',
+        timestamp: new Date().toISOString(),
+        event_type: 'heartbeat',
+        payload: {},
+      })
+    );
+    // Đợi ngắn để chắc chắn heartbeat đã được xử lý (lastHeartbeatAt ghi nhận)
+    // TRƯỚC KHI advance() clock - mirror test heartbeatPort bên dưới.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    clock.advance(16000); // > HEARTBEAT_TIMEOUT_MS (15000)
+
+    await waitUntil(
+      () => uiMessages.some((m) => m.type === 'channel-state-change' && m.sub_type === 'machine-offline'),
+      5000
+    );
+
+    // `TelegramAlertAdapter`/`EmailAlertAdapter.publishStateChange` fire-and-
+    // forget (Promise chain nội bộ) - poll thay vì assert ngay.
+    await waitUntil(() => telegramCalls.length >= 2 && emailCalls.length >= 1);
+
+    const teamCall = telegramCalls.find((c) => c.chatId === 'test-telegram-chat-id');
+    const leadershipCall = telegramCalls.find((c) => c.chatId === 'test-telegram-leadership-chat-id');
+    assert.ok(teamCall, 'phải gửi Telegram critical tới chat đội trực (dùng lại chatId Story 4.2)');
+    assert.ok(leadershipCall, 'phải gửi Telegram critical tới chat lãnh đạo (chatId MỚI)');
+    assert.match(teamCall?.text ?? '', /chan-1/);
+    assert.match(teamCall?.text ?? '', /CRITICAL/);
+    // machine-offline (subType thật của critical này, phát ra bởi
+    // checkHeartbeatTimeouts()) phải xuất hiện NGAY trong text gửi đi, để đội
+    // trực/lãnh đạo phân biệt được với config-or-security-suspected chỉ từ
+    // tin nhắn, không cần tra log riêng.
+    assert.match(teamCall?.text ?? '', /machine-offline/);
+    assert.match(leadershipCall?.text ?? '', /chan-1/);
+    assert.match(leadershipCall?.text ?? '', /machine-offline/);
+    // Instance warning Story 4.2 (cùng chatId đội trực) không được kích hoạt ở
+    // đây (state là critical, không phải warning) - đúng 2 lệnh gọi, không có
+    // lệnh thứ 3 nào lẫn vào.
+    assert.equal(telegramCalls.length, 2, 'chỉ đúng 2 Telegram (đội trực-critical + lãnh đạo-critical), không lẫn instance warning');
+
+    assert.equal(emailCalls.length, 1, '1 email chung, không tách riêng theo audience (Design Notes)');
+    assert.deepEqual(emailCalls[0]?.to, ['team@example.com', 'leadership@example.com']);
+    assert.match(emailCalls[0]?.text ?? '', /chan-1/);
+    assert.match(emailCalls[0]?.text ?? '', /CRITICAL/);
+    assert.match(emailCalls[0]?.text ?? '', /machine-offline/);
+
+    telemetryWs.close();
+    uiWs.close();
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Code review [patch #10]: `debounceMs`/`clock` (override test-only, patch #5)
 // chỉ có comment khẳng định "KHÔNG đổi behavior mặc định production" khi
 // omit, không có test nào bảo vệ khẳng định đó - nếu 1 refactor tương lai vô
@@ -685,7 +949,7 @@ test('startApp(): omit debounceMs/clock trong config -> vẫn dùng default debo
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
     // debounceMs/clock KHÔNG truyền - đúng kịch bản production thật.
-    ...FAKE_TELEGRAM_CONFIG,
+    ...FAKE_ALERT_CONFIG,
   });
 
   try {
@@ -754,7 +1018,7 @@ test('startApp(): uiHost mặc định fallback về host khi config không set 
       // uiHost KHÔNG set - phải fallback đúng về host ('127.0.0.2').
       validBearerTokens: new Set(['test-token']),
       channelRegistryFilePath: filePath,
-      ...FAKE_TELEGRAM_CONFIG,
+      ...FAKE_ALERT_CONFIG,
     });
     try {
       await new Promise<void>((resolve, reject) => {
@@ -791,7 +1055,7 @@ test('startApp(): wiring thật heartbeatPort + timer 1000ms -> heartbeat WS th�
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
     clock,
-    ...FAKE_TELEGRAM_CONFIG,
+    ...FAKE_ALERT_CONFIG,
   });
 
   try {
@@ -866,7 +1130,7 @@ test('startApp(): wiring thật bitrateHistoryService -> telemetry WS thật ghi
     uiHost: '127.0.0.1',
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
-    ...FAKE_TELEGRAM_CONFIG,
+    ...FAKE_ALERT_CONFIG,
   });
 
   try {
@@ -938,7 +1202,7 @@ test('startApp(): wiring thật historyPort vào startWsUiAdapter -> WS UI clien
     uiHost: '127.0.0.1',
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
-    ...FAKE_TELEGRAM_CONFIG,
+    ...FAKE_ALERT_CONFIG,
   });
 
   try {
@@ -1005,7 +1269,7 @@ test('startApp(): forwarder AckCommandPort wiring thật - client WS UI gửi ac
     uiHost: '127.0.0.1',
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
-    ...FAKE_TELEGRAM_CONFIG,
+    ...FAKE_ALERT_CONFIG,
   });
 
   try {

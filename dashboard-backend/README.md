@@ -11,6 +11,10 @@ matrix (spec là nguồn sự thật, tài liệu này chỉ tóm tắt phần v
 4.2 (đẩy cảnh báo Telegram khi kênh chuyển `warning`, thêm 2 biến môi trường
 Telegram + hành vi fail-fast mới bên dưới): xem
 `_bmad-output/implementation-artifacts/spec-4-2-đẩy-telegram-cho-mức-chú-ý-abr-warning-tới-đội-trực.md`.
+Story 4.3 (đẩy Telegram + Email cho mức `critical` tới CẢ đội trực lẫn lãnh
+đạo VTCDigital, thêm 6 biến môi trường mới + hành vi fail-fast mới bên dưới):
+xem
+`_bmad-output/implementation-artifacts/spec-4-3-đẩy-telegram-email-cho-mức-cảnh-báo-chủ-động-critical-tới-đội-trực-lãnh-đạo.md`.
 
 ## Cài đặt
 
@@ -33,11 +37,25 @@ npm test
 | `DASHBOARD_CHANNEL_REGISTRY_FILE` | không | `config/channel-registry.json` | Đường dẫn tới file JSON channel-registry `{channel_id: {station_name, contact_name, contact_phone, grid_position, baseline_kbps}}` - nguồn liệt kê `channel_id` hợp lệ DUY NHẤT + dữ liệu dùng để tính `bitrate_pct`/render lưới. **KHÔNG** mặc định vào `channel-registry.example.json` (dữ liệu demo) - xem mục dưới. |
 | `DASHBOARD_TELEGRAM_BOT_TOKEN` | **có** | *(không có)* | Bot token Telegram (Story 4.2) dùng để đẩy cảnh báo `warning` (ABR hạ bitrate) tới 1 chat chung của đội trực sóng. Thiếu/rỗng -> fail-fast lúc khởi động, không âm thầm start thiếu kênh cảnh báo này. |
 | `DASHBOARD_TELEGRAM_CHAT_ID` | **có** | *(không có)* | `chat_id` Telegram của đội trực sóng (Story 4.2, AD-17) - 1 chat chung DUY NHẤT (số nguyên, có thể âm nếu là group/supergroup, KHÔNG phải danh sách phân tách dấu phẩy như `DASHBOARD_BEARER_TOKENS` ở trên), không gửi lãnh đạo. Thiếu/rỗng -> fail-fast lúc khởi động cùng lý do với `DASHBOARD_TELEGRAM_BOT_TOKEN`. |
+| `DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID` | **có** | *(không có)* | `chat_id` Telegram MỚI của lãnh đạo VTCDigital (Story 4.3) - CHỈ nhận cảnh báo `critical` (mất tín hiệu hoàn toàn), dùng chung bot token với `DASHBOARD_TELEGRAM_CHAT_ID` (`DASHBOARD_TELEGRAM_BOT_TOKEN` ở trên). Thiếu/rỗng -> fail-fast lúc khởi động, không âm thầm start thiếu kênh cảnh báo lãnh đạo. |
+| `DASHBOARD_SMTP_HOST` | **có** | *(không có)* | Host SMTP dùng để gửi email cảnh báo `critical` (Story 4.3, qua `nodemailer`). Thiếu/rỗng -> fail-fast lúc khởi động. |
+| `DASHBOARD_SMTP_PORT` | **có** | *(không có)* | Port SMTP - số nguyên 1-65535 (port 465 tự dùng TLS ngay từ đầu, các port khác dùng STARTTLS). Thiếu/rỗng/không phải số nguyên hợp lệ -> fail-fast lúc khởi động với lỗi rõ ràng, không âm thầm dùng `NaN`. |
+| `DASHBOARD_SMTP_USER` | **có** | *(không có)* | Username xác thực SMTP. Thiếu/rỗng -> fail-fast lúc khởi động. |
+| `DASHBOARD_SMTP_PASSWORD` | **có** | *(không có)* | Password/app-password xác thực SMTP. Thiếu/rỗng -> fail-fast lúc khởi động. |
+| `DASHBOARD_SMTP_FROM` | **có** | *(không có)* | Địa chỉ email `From:` dùng để gửi cảnh báo `critical`. Thiếu/rỗng -> fail-fast lúc khởi động. |
+| `DASHBOARD_EMAIL_CRITICAL_RECIPIENTS` | **có** | *(rỗng)* | Danh sách email nhận cảnh báo `critical`, phân tách bởi dấu phẩy (mirror `DASHBOARD_BEARER_TOKENS`) - GỘP CHUNG đội trực + lãnh đạo trong 1 email duy nhất (không tách riêng theo audience như Telegram). Để trống/thiếu -> fail-fast lúc khởi động. |
 
 **Breaking change (Story 4.2):** deploy hiện có nâng cấp lên bản có Story 4.2
 phải set cả 2 biến `DASHBOARD_TELEGRAM_BOT_TOKEN`/`DASHBOARD_TELEGRAM_CHAT_ID`
 TRƯỚC khi restart - thiếu 1 trong 2 sẽ khiến `startApp()` fail-fast, service
 không khởi động được.
+
+**Breaking change (Story 4.3):** deploy hiện có nâng cấp lên bản có Story 4.3
+phải set ĐỦ CẢ 7 biến mới ở trên (`DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID` +
+`DASHBOARD_SMTP_HOST`/`PORT`/`USER`/`PASSWORD`/`FROM` +
+`DASHBOARD_EMAIL_CRITICAL_RECIPIENTS`) TRƯỚC khi restart - thiếu 1 trong 7 sẽ
+khiến `startApp()` fail-fast, service không khởi động được (kể cả khi 2 biến
+Telegram Story 4.2 đã set đủ từ trước).
 
 ## Tạo `config/channel-registry.json` (channel-registry THẬT)
 

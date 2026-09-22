@@ -19,6 +19,7 @@ import { SnapshotRelayService } from '../src/core/snapshotRelay.js';
 import { BitrateHistoryService } from '../src/core/bitrateHistory.js';
 import { LogAlertAdapter } from '../src/adapters/outbound/logAlertAdapter.js';
 import { TelegramAlertAdapter, type TelegramSendMessage } from '../src/adapters/outbound/telegramAlertAdapter.js';
+import { EmailAlertAdapter, type EmailSendMail } from '../src/adapters/outbound/emailAlertAdapter.js';
 import { FileChannelRegistryAdapter } from '../src/adapters/outbound/fileChannelRegistryAdapter.js';
 import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/adapters/inbound/wsTelemetryAdapter.js';
 import { startWsUiAdapter, type WsUiAdapterHandle } from '../src/adapters/outbound/wsUiAdapter.js';
@@ -61,6 +62,67 @@ export function parseBearerTokens(raw: string | undefined): Set<string> {
 // lỗi cấu hình sai `DASHBOARD_UI_WS_PORT` hiển thị nhầm tên biến, gây khó chẩn
 // đoán hơn cần thiết lúc khởi động. Mặc định giữ nguyên "DASHBOARD_WS_PORT" -
 // không đổi hành vi/test hiện có gọi `parsePort(raw)` không kèm tên biến.
+// Code review (Story 4.3 patch): mỗi entry PHẢI có hình dạng email hợp lệ
+// (kiểm tra nông - không cần RFC 5322 đầy đủ) - 1 entry sai định dạng lọt qua
+// đây trước đây chỉ tạo ra 1 lần gửi SMTP lỗi bị NUỐT + log
+// `email_alert_send_error` NGAY GIỮA 1 sự cố critical thật, thay vì bị chặn
+// fail-fast rõ ràng ngay lúc khởi động (mirror các biến Story 4.3 khác).
+const EMAIL_SHAPE_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Story 4.3: mirror `parseBearerTokens` - danh sách người nhận email critical
+// (đội trực + lãnh đạo GỘP, Design Notes spec-4-3), phân tách bởi dấu phẩy,
+// trim + bỏ phần tử rỗng + validate hình dạng email (throw fail-fast nếu sai).
+// Code review (patch): trả về mảng ĐÃ DEDUPE (giữ thứ tự xuất hiện ĐẦU TIÊN,
+// không phải `Set` trực tiếp - thứ tự người nhận trong `to:` không mang ý
+// nghĩa gì, nhưng 1 địa chỉ bị lặp do vận hành gõ nhầm/copy-paste 2 lần trong
+// biến môi trường KHÔNG được nhận 2 email critical giống hệt nhau trong 1 lần
+// gửi).
+export function parseEmailRecipients(raw: string | undefined, varName = 'DASHBOARD_EMAIL_CRITICAL_RECIPIENTS'): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const rawEntry of raw.split(',')) {
+    const entry = rawEntry.trim();
+    if (entry.length === 0) continue;
+    if (!EMAIL_SHAPE_REGEX.test(entry)) {
+      throw new Error(
+        `${varName} không hợp lệ: "${entry}" không phải định dạng email hợp lệ - phải là danh sách địa chỉ email ` +
+          'cách nhau bởi dấu phẩy.'
+      );
+    }
+    if (seen.has(entry)) continue;
+    seen.add(entry);
+    result.push(entry);
+  }
+  return result;
+}
+
+// Story 4.3: validate `DASHBOARD_SMTP_PORT` - KHÁC `parsePort` (port WS: 0 =
+// "để OS tự cấp", 0-65535 hợp lệ) - port SMTP không có ý nghĩa "0 = tự động",
+// phải là số nguyên 1-65535 thật.
+export function parseSmtpPort(raw: string, varName = 'DASHBOARD_SMTP_PORT'): number {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    throw new Error(`${varName} không hợp lệ: rỗng/chỉ có khoảng trắng - phải là số nguyên trong khoảng 1-65535.`);
+  }
+  // Code review (patch): `Number(trimmed)` trước đây chấp nhận CẢ chuỗi
+  // không phải số nguyên thập phân thuần (vd "0x1F" -> 31, "5e2" -> 500,
+  // "+587" -> 587) - `Number.isInteger` chỉ kiểm tra KẾT QUẢ sau khi
+  // `Number()` đã coerce xong, không phải HÌNH DẠNG chuỗi gốc. Chặn tường
+  // minh: chỉ chấp nhận chuỗi toàn chữ số thập phân (0-9), TRƯỚC khi coerce.
+  if (!/^[0-9]+$/.test(trimmed)) {
+    throw new Error(
+      `${varName} không hợp lệ: "${raw}" - phải là số nguyên thập phân thuần (chỉ chữ số 0-9, không hex/khoa học ` +
+        'học/dấu +/-) trong khoảng 1-65535.'
+    );
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    throw new Error(`${varName} không hợp lệ: "${raw}" - phải là số nguyên trong khoảng 1-65535.`);
+  }
+  return parsed;
+}
+
 export function parsePort(raw: string, varName = 'DASHBOARD_WS_PORT'): number {
   if (raw.trim() === '') {
     throw new Error(
@@ -170,6 +232,19 @@ export async function startApp(config?: {
   telegramBotToken?: string;
   telegramChatId?: string;
   telegramSendMessage?: TelegramSendMessage;
+  // Story 4.3: override cho test - mirror `telegramBotToken`/`telegramChatId`
+  // ở trên. `telegramLeadershipChatId` là chat_id Telegram MỚI của lãnh đạo
+  // (dùng chung `telegramBotToken` với đội trực); SMTP/email fields cấu hình
+  // `EmailAlertAdapter`; `emailSendMail` cho phép test/CLI khác bơm hàm gửi
+  // giả (KHÔNG gọi SMTP thật), mirror `telegramSendMessage`.
+  telegramLeadershipChatId?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUser?: string;
+  smtpPassword?: string;
+  smtpFrom?: string;
+  emailCriticalRecipients?: string[];
+  emailSendMail?: EmailSendMail;
   // Code review [patch]: override cho test - `startApp()` trước đây LUÔN dùng
   // `defaultLogger()` singleton nội bộ, không có seam nào để 1 test integration
   // thật (start cả `startApp()`, không phải fake) quan sát được `LogAlertAdapter`
@@ -325,9 +400,126 @@ export async function startApp(config?: {
   const telegramAlertPort = new TelegramAlertAdapter({
     botToken: telegramBotToken,
     chatId: telegramChatId,
+    displayState: 'warning',
     logger,
     clock: config?.clock,
     sendMessage: config?.telegramSendMessage,
+  });
+
+  // Story 4.3 (Boundaries): "Thiếu bất kỳ biến môi trường bắt buộc nào
+  // (leadership chat id, SMTP host/port/user/password/from, danh sách người
+  // nhận email) lúc khởi động -> fail-fast rõ ràng tại app/main.ts, gọi
+  // registryPort.stop() trước khi throw (mirror Story 4.2 patch)." Đặt SAU
+  // khối Telegram Story 4.2 phía trên (mirror thứ tự Code Map: registry ->
+  // Telegram 4.2 -> Telegram/SMTP 4.3) - lỗi cấu hình thiếu CẢ 2 story vẫn báo
+  // đúng lỗi 4.2 trước, không bị che bởi lỗi 4.3.
+  const telegramLeadershipChatId = (
+    config?.telegramLeadershipChatId ?? process.env.DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID
+  )?.trim();
+  const smtpHost = (config?.smtpHost ?? process.env.DASHBOARD_SMTP_HOST)?.trim();
+  const smtpPortRaw = (config?.smtpPort !== undefined ? String(config.smtpPort) : process.env.DASHBOARD_SMTP_PORT)?.trim();
+  const smtpUser = (config?.smtpUser ?? process.env.DASHBOARD_SMTP_USER)?.trim();
+  const smtpPassword = (config?.smtpPassword ?? process.env.DASHBOARD_SMTP_PASSWORD)?.trim();
+  const smtpFrom = (config?.smtpFrom ?? process.env.DASHBOARD_SMTP_FROM)?.trim();
+  // Code review (patch): `parseEmailRecipients` giờ có thể throw (entry sai
+  // định dạng email) - registryPort đã start() thành công ở trên, throw ở
+  // đây mà không dọn sẽ rò rỉ watcher/debounce timer (mirror try/catch của
+  // `parseSmtpPort` bên dưới).
+  let emailCriticalRecipients: string[];
+  try {
+    emailCriticalRecipients =
+      config?.emailCriticalRecipients ?? parseEmailRecipients(process.env.DASHBOARD_EMAIL_CRITICAL_RECIPIENTS);
+  } catch (err) {
+    registryPort.stop();
+    throw err;
+  }
+
+  // Mirror khối Telegram 4.2 phía trên: gộp validate TẤT CẢ biến 4.3 mới
+  // trong 1 điều kiện `||` - TS narrows từng biến xuống `string` non-empty
+  // SAU khối throw (giống hệt cơ chế narrow của khối Telegram 4.2), và
+  // operator thấy ĐỦ danh sách biến còn thiếu trong 1 lần chạy/restart, không
+  // phải sửa-restart nhiều vòng.
+  if (
+    telegramLeadershipChatId === undefined ||
+    telegramLeadershipChatId === '' ||
+    smtpHost === undefined ||
+    smtpHost === '' ||
+    smtpPortRaw === undefined ||
+    smtpPortRaw === '' ||
+    smtpUser === undefined ||
+    smtpUser === '' ||
+    smtpPassword === undefined ||
+    smtpPassword === '' ||
+    smtpFrom === undefined ||
+    smtpFrom === '' ||
+    emailCriticalRecipients.length === 0
+  ) {
+    const missingStory43Vars: string[] = [];
+    if (telegramLeadershipChatId === undefined || telegramLeadershipChatId === '') {
+      missingStory43Vars.push('DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID');
+    }
+    if (smtpHost === undefined || smtpHost === '') missingStory43Vars.push('DASHBOARD_SMTP_HOST');
+    if (smtpPortRaw === undefined || smtpPortRaw === '') missingStory43Vars.push('DASHBOARD_SMTP_PORT');
+    if (smtpUser === undefined || smtpUser === '') missingStory43Vars.push('DASHBOARD_SMTP_USER');
+    if (smtpPassword === undefined || smtpPassword === '') missingStory43Vars.push('DASHBOARD_SMTP_PASSWORD');
+    if (smtpFrom === undefined || smtpFrom === '') missingStory43Vars.push('DASHBOARD_SMTP_FROM');
+    if (emailCriticalRecipients.length === 0) missingStory43Vars.push('DASHBOARD_EMAIL_CRITICAL_RECIPIENTS');
+    // mirror khối Telegram 4.2: registryPort đã start() thành công ở trên,
+    // throw ở đây mà không dọn sẽ rò rỉ watcher/debounce timer nếu startApp()
+    // được gọi lại trong-process (test/CLI).
+    registryPort.stop();
+    throw new Error(
+      `${missingStory43Vars.join(', ')} không hợp lệ: thiếu/rỗng - phải cấu hình đủ chat_id Telegram lãnh đạo + ` +
+        'SMTP (host/port/user/password/from) + danh sách người nhận email để đẩy cảnh báo critical (Story 4.3) ' +
+        'tới CẢ đội trực lẫn lãnh đạo VTCDigital. Không được âm thầm start thiếu kênh cảnh báo này.'
+    );
+  }
+  // TS narrows các biến string phía trên xuống `string` non-empty (mirror
+  // khối Telegram 4.2) - riêng `smtpPortRaw` cần parse thêm thành `number`
+  // (fail-fast RIÊNG nếu không phải số nguyên hợp lệ, khác lỗi "thiếu/rỗng" ở
+  // trên).
+  let smtpPort: number;
+  try {
+    smtpPort = parseSmtpPort(smtpPortRaw);
+  } catch (err) {
+    registryPort.stop();
+    throw err;
+  }
+
+  // Story 4.3: 2 instance `TelegramAlertAdapter` MỚI, cả 2 phản ứng
+  // `displayState==='critical'` - "đội trực-critical" TÁI SỬ DỤNG `chatId`
+  // hiện có của Story 4.2 (cùng chat, nhưng cooldown/Map RIÊNG - instance
+  // khác), "lãnh đạo-critical" dùng `telegramLeadershipChatId` mới. Dùng
+  // chung `telegramSendMessage` override (test injection) với instance
+  // warning phía trên - không cần seam riêng cho từng instance.
+  const telegramTeamCriticalAlertPort = new TelegramAlertAdapter({
+    botToken: telegramBotToken,
+    chatId: telegramChatId,
+    displayState: 'critical',
+    logger,
+    clock: config?.clock,
+    sendMessage: config?.telegramSendMessage,
+  });
+  const telegramLeadershipCriticalAlertPort = new TelegramAlertAdapter({
+    botToken: telegramBotToken,
+    chatId: telegramLeadershipChatId,
+    displayState: 'critical',
+    logger,
+    clock: config?.clock,
+    sendMessage: config?.telegramSendMessage,
+  });
+  // Story 4.3: `EmailAlertAdapter` MỚI - 1 email chung tới danh sách
+  // recipients GỘP (đội trực + lãnh đạo, Design Notes) khi critical.
+  const emailAlertPort = new EmailAlertAdapter({
+    host: smtpHost,
+    port: smtpPort,
+    user: smtpUser,
+    password: smtpPassword,
+    from: smtpFrom,
+    recipients: emailCriticalRecipients,
+    logger,
+    clock: config?.clock,
+    sendMail: config?.emailSendMail,
   });
 
   // Story 3.1: ring buffer in-memory lịch sử bitrate/kênh (Never/AD-14: KHÔNG
@@ -400,7 +592,19 @@ export async function startApp(config?: {
   // Story 4.2: thêm `telegramAlertPort` vào composite - THÊM, không thay thế
   // `logAlertPort`/`ui` hiện có (mirror comment Story 2.6 phía trên: thứ tự
   // phần tử không mang ý nghĩa ordering/invariant nào).
-  const alertPort = createCompositeAlertPort([logAlertPort, telegramAlertPort, ui], logger);
+  // Story 4.3: thêm 2 `TelegramAlertAdapter` critical (đội trực + lãnh đạo)
+  // và `EmailAlertAdapter` - THÊM, không thay thế bất kỳ port nào hiện có.
+  const alertPort = createCompositeAlertPort(
+    [
+      logAlertPort,
+      telegramAlertPort,
+      telegramTeamCriticalAlertPort,
+      telegramLeadershipCriticalAlertPort,
+      emailAlertPort,
+      ui,
+    ],
+    logger
+  );
 
   // Bổ sung video-preview thật (AD-22): `ui` implement THÊM `SnapshotOutboundPort`
   // (cùng object, mirror cách `ui` đã implement UiOutboundPort/AlertOutboundPort

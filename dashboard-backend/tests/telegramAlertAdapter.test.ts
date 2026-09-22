@@ -80,7 +80,14 @@ test('publishStateChange: warning mới, không trong cooldown -> gửi Telegram
   const logger = new FakeLogger();
   const clock = new FakeClock();
   const { fn: sendMessage, calls } = makeFakeSendMessage();
-  const adapter = new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', logger, clock, sendMessage });
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
 
   adapter.publishStateChange(makeChange());
   // `sendMessage` là fire-and-forget (Promise) bên trong `publishStateChange`
@@ -103,7 +110,14 @@ test('publishStateChange: warning lặp lại cùng kênh trong <60s -> lần 2 
   const logger = new FakeLogger();
   const clock = new FakeClock();
   const { fn: sendMessage, calls } = makeFakeSendMessage();
-  const adapter = new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', logger, clock, sendMessage });
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
 
   adapter.publishStateChange(makeChange());
   clock.advance(TELEGRAM_COOLDOWN_MS - 1); // vẫn còn trong cooldown (59999ms < 60000ms)
@@ -121,7 +135,14 @@ test('publishStateChange: warning kênh khác trong lúc kênh A đang cooldown 
   const logger = new FakeLogger();
   const clock = new FakeClock();
   const { fn: sendMessage, calls } = makeFakeSendMessage();
-  const adapter = new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', logger, clock, sendMessage });
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
 
   adapter.publishStateChange(makeChange({ channelId: 'chan-A' }));
   clock.advance(1000); // chan-A còn cách xa cooldown hết hạn (59000ms còn lại)
@@ -137,7 +158,14 @@ test('publishStateChange: displayState critical -> bỏ qua hoàn toàn, không 
   const logger = new FakeLogger();
   const clock = new FakeClock();
   const { fn: sendMessage, calls } = makeFakeSendMessage();
-  const adapter = new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', logger, clock, sendMessage });
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
 
   adapter.publishStateChange(makeChange({ displayState: 'critical' }));
   await Promise.resolve();
@@ -150,7 +178,14 @@ test('publishStateChange: displayState ok -> bỏ qua hoàn toàn, không gọi 
   const logger = new FakeLogger();
   const clock = new FakeClock();
   const { fn: sendMessage, calls } = makeFakeSendMessage();
-  const adapter = new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', logger, clock, sendMessage });
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
 
   adapter.publishStateChange(makeChange({ displayState: 'ok' }));
   await Promise.resolve();
@@ -163,7 +198,14 @@ test('publishStateChange: displayState critical/ok xen giữa 2 lần warning ->
   const logger = new FakeLogger();
   const clock = new FakeClock();
   const { fn: sendMessage, calls } = makeFakeSendMessage();
-  const adapter = new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', logger, clock, sendMessage });
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
 
   adapter.publishStateChange(makeChange({ displayState: 'warning' }));
   clock.advance(10);
@@ -184,6 +226,7 @@ test('publishStateChange: sendMessage reject (network throw) -> nuốt lỗi, lo
   const adapter = new TelegramAlertAdapter({
     botToken: 'bot-token',
     chatId: 'chat-id',
+    displayState: 'warning',
     logger,
     clock,
     sendMessage: failingSendMessage,
@@ -210,6 +253,7 @@ test('publishStateChange: sendMessage reject với giá trị không phải Erro
   const adapter = new TelegramAlertAdapter({
     botToken: 'bot-token',
     chatId: 'chat-id',
+    displayState: 'warning',
     logger,
     clock,
     sendMessage: failingSendMessage,
@@ -233,6 +277,7 @@ test('publishStateChange: lỗi gọi Telegram API vẫn KHÔNG ngăn lastSentAt
   const adapter = new TelegramAlertAdapter({
     botToken: 'bot-token',
     chatId: 'chat-id',
+    displayState: 'warning',
     logger,
     clock,
     sendMessage: failingSendMessage,
@@ -256,7 +301,14 @@ test('publishStateChange: warning cùng kênh sau khi cooldown đã hết (>=600
   const logger = new FakeLogger();
   const clock = new FakeClock();
   const { fn: sendMessage, calls } = makeFakeSendMessage();
-  const adapter = new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', logger, clock, sendMessage });
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
 
   adapter.publishStateChange(makeChange());
   clock.advance(TELEGRAM_COOLDOWN_MS); // đúng bằng ngưỡng - "now - lastSentAt >= 60000ms"
@@ -277,7 +329,9 @@ test('constructor: dùng systemClock/defaultTelegramSendMessage mặc định kh
   const logger = new FakeLogger();
   // Không truyền clock/sendMessage - chỉ xác nhận constructor không throw,
   // KHÔNG gọi publishStateChange() (tránh gọi fetch() thật ra mạng trong test).
-  assert.doesNotThrow(() => new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', logger }));
+  assert.doesNotThrow(
+    () => new TelegramAlertAdapter({ botToken: 'bot-token', chatId: 'chat-id', displayState: 'warning', logger })
+  );
 });
 
 // Code review [patch]: test trên chỉ xác nhận constructor không throw, KHÔNG
@@ -311,6 +365,142 @@ test('defaultTelegramSendMessage: res.ok=false -> throw Error chứa status + bo
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+// Story 4.3: `displayState` giờ là tham số BẮT BUỘC (tổng quát hoá) - mirror
+// TOÀN BỘ pattern I/O matrix của instance warning phía trên cho instance
+// `displayState: 'critical'` (2 instance mới ở `app/main.ts`: đội trực +
+// lãnh đạo dùng chung class này, khác chatId).
+
+test('publishStateChange (displayState=critical): critical mới, không trong cooldown -> gửi Telegram đúng 1 lần, text chứa CRITICAL', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'leadership-chat-id',
+    displayState: 'critical',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  adapter.publishStateChange(makeChange({ displayState: 'critical' }));
+  await waitUntil((): boolean =>
+    logger.events.some((e) => e.event_type === 'telegram_alert_sent' && e.channel_id === 'chan-1')
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.chatId, 'leadership-chat-id');
+  assert.match(calls[0]?.text ?? '', /chan-1/);
+  assert.match(calls[0]?.text ?? '', /CRITICAL/);
+});
+
+// Code review (patch): `formatAlertMessage` gắn kèm `change.subType` (vd
+// 'machine-offline') vào text critical - đây chính là điểm mấu chốt để đội
+// trực/lãnh đạo phân biệt được machine-offline (máy trung tâm chết) vs
+// config-or-security-suspected (nghi vấn cấu hình/bảo mật) NGAY từ tin nhắn,
+// không cần tra log riêng - nhưng chưa có test nào assert nó thực sự xuất
+// hiện trong text gửi đi.
+test('publishStateChange (displayState=critical): change kèm subType -> text gửi đi CHỨA subType (vd machine-offline)', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'leadership-chat-id',
+    displayState: 'critical',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  adapter.publishStateChange(makeChange({ displayState: 'critical', subType: 'machine-offline' }));
+  await waitUntil((): boolean => calls.length > 0);
+
+  assert.match(calls[0]?.text ?? '', /machine-offline/);
+});
+
+test('publishStateChange (displayState=critical): warning/ok -> bỏ qua hoàn toàn, không gọi Telegram, không tính cooldown', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'leadership-chat-id',
+    displayState: 'critical',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  adapter.publishStateChange(makeChange({ displayState: 'warning' }));
+  adapter.publishStateChange(makeChange({ displayState: 'ok' }));
+  await Promise.resolve();
+
+  assert.equal(calls.length, 0);
+  assert.equal(logger.events.length, 0);
+});
+
+test('publishStateChange (displayState=critical): critical lặp lại cùng kênh trong <60s -> lần 2 KHÔNG gửi, log cooldown skip', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'leadership-chat-id',
+    displayState: 'critical',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  adapter.publishStateChange(makeChange({ displayState: 'critical' }));
+  clock.advance(TELEGRAM_COOLDOWN_MS - 1);
+  adapter.publishStateChange(makeChange({ displayState: 'critical' }));
+  await Promise.resolve();
+
+  assert.equal(calls.length, 1, 'lần 2 không được thực sự gọi Telegram');
+  assert.ok(logger.events.some((e) => e.event_type === 'telegram_alert_cooldown_skipped'));
+});
+
+// Boundaries spec-4-3: "instance critical không dùng chung bộ đếm với
+// instance warning hiện có, dù dùng chung chatId đội trực" - 2 instance khác
+// nhau (1 warning, 1 critical) CÙNG chatId/cùng channelId: warning đã gửi
+// (đang trong cooldown của NÓ) không được chặn instance critical gửi, và
+// ngược lại.
+test('2 instance khác displayState (warning vs critical) cùng chatId/channelId -> cooldown ĐỘC LẬP, không share Map', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: warningSendMessage, calls: warningCalls } = makeFakeSendMessage();
+  const { fn: criticalSendMessage, calls: criticalCalls } = makeFakeSendMessage();
+  const warningAdapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'team-chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage: warningSendMessage,
+  });
+  const criticalAdapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'team-chat-id',
+    displayState: 'critical',
+    logger,
+    clock,
+    sendMessage: criticalSendMessage,
+  });
+
+  warningAdapter.publishStateChange(makeChange({ displayState: 'warning' }));
+  await Promise.resolve();
+  // warningAdapter giờ đang trong cooldown (vừa gửi) - criticalAdapter vẫn
+  // phải gửi bình thường cho ĐÚNG channelId này ngay lập tức, không bị ảnh
+  // hưởng bởi cooldown của warningAdapter.
+  criticalAdapter.publishStateChange(makeChange({ displayState: 'critical' }));
+  await Promise.resolve();
+
+  assert.equal(warningCalls.length, 1);
+  assert.equal(criticalCalls.length, 1, 'critical adapter phải gửi được dù warning adapter (cùng chatId/channelId) đang trong cooldown của NÓ');
 });
 
 // Code review [patch #6]: nếu `fetch()` tự nó throw (network/TLS/proxy/timeout,
