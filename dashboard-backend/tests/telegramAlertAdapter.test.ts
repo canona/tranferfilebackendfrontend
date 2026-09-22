@@ -52,17 +52,28 @@ function makeFakeSendMessage(): { fn: TelegramSendMessage; calls: { botToken: st
   return { fn, calls };
 }
 
-// Code review [patch]: `publishStateChange` giờ bọc `sendMessage(...)` qua
+// Code review [patch round 2]: `publishStateChange` bọc `sendMessage(...)` qua
 // `Promise.resolve().then(() => this.sendMessage(...)).then(logSuccess).catch(logError)`
-// (patch bắt throw đồng bộ + chỉ log `telegram_alert_sent` SAU KHI resolve
-// thật) - chuỗi `then/then/catch` này cần NHIỀU HƠN 1 microtask tick để chạy
-// xong hoàn toàn. Đợi dư vài tick (an toàn, không phụ thuộc đếm chính xác số
-// hop nội bộ - dễ giòn nếu implementation đổi shape Promise chain trong tương
-// lai) trước khi assert log `telegram_alert_sent`/`telegram_alert_send_error`.
-async function flushMicrotasks(times = 6): Promise<void> {
-  for (let i = 0; i < times; i++) {
-    await Promise.resolve();
-  }
+// - đếm tick cố định (`flushMicrotasks`) để đợi chuỗi này chạy xong là brittle
+// (giòn nếu implementation đổi shape Promise chain). Mirror `main.test.ts`'s
+// `waitUntil()`: poll điều kiện thật (log event đã xuất hiện) thay vì đếm hop
+// nội bộ - không phụ thuộc số lượng `.then()` bên trong adapter.
+function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const tick = () => {
+      if (predicate()) {
+        resolve();
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error('waitUntil: timeout chờ điều kiện'));
+        return;
+      }
+      setTimeout(tick, 20);
+    };
+    tick();
+  });
 }
 
 test('publishStateChange: warning mới, không trong cooldown -> gửi Telegram đúng 1 lần, ghi lastSentAt=now', async () => {
@@ -73,9 +84,11 @@ test('publishStateChange: warning mới, không trong cooldown -> gửi Telegram
 
   adapter.publishStateChange(makeChange());
   // `sendMessage` là fire-and-forget (Promise) bên trong `publishStateChange`
-  // đồng bộ - đợi vài microtask tick để chuỗi Promise.then/then/catch nội bộ
-  // chạy xong trước khi assert (xem comment `flushMicrotasks`).
-  await flushMicrotasks();
+  // đồng bộ - poll tới khi log "đã gửi" xuất hiện thay vì đếm tick cố định
+  // (xem comment `waitUntil`).
+  await waitUntil((): boolean =>
+    logger.events.some((e) => e.event_type === 'telegram_alert_sent' && e.channel_id === 'chan-1')
+  );
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.botToken, 'bot-token');
@@ -177,10 +190,10 @@ test('publishStateChange: sendMessage reject (network throw) -> nuốt lỗi, lo
   });
 
   assert.doesNotThrow(() => adapter.publishStateChange(makeChange()));
-  // Đợi vài microtask để `.catch` của chuỗi Promise nội bộ chạy xong trước khi
-  // assert log - `publishStateChange` trả về ngay (đồng bộ), reject xảy ra sau
-  // đó bất đồng bộ (xem comment `flushMicrotasks`).
-  await flushMicrotasks();
+  // Poll tới khi `.catch` của chuỗi Promise nội bộ chạy xong (log lỗi xuất
+  // hiện) - `publishStateChange` trả về ngay (đồng bộ), reject xảy ra sau đó
+  // bất đồng bộ (xem comment `waitUntil`).
+  await waitUntil((): boolean => logger.events.some((e) => e.event_type === 'telegram_alert_send_error'));
 
   const errorEvent = logger.events.find((e) => e.event_type === 'telegram_alert_send_error');
   assert.ok(errorEvent, 'phải log 1 event riêng cho lỗi gọi Telegram API');
@@ -203,7 +216,7 @@ test('publishStateChange: sendMessage reject với giá trị không phải Erro
   });
 
   assert.doesNotThrow(() => adapter.publishStateChange(makeChange()));
-  await flushMicrotasks();
+  await waitUntil((): boolean => logger.events.some((e) => e.event_type === 'telegram_alert_send_error'));
 
   const errorEvent = logger.events.find((e) => e.event_type === 'telegram_alert_send_error');
   assert.ok(errorEvent);

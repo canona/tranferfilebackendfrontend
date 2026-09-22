@@ -32,7 +32,12 @@ npm test
 | `DASHBOARD_BEARER_TOKENS` | **có** (thực tế) | *(rỗng)* | Danh sách bearer-token hợp lệ, phân tách bởi dấu phẩy - 1 token/máy trung tâm (AD-13). Để trống thì mọi kết nối WS đều bị reject 401 (an toàn theo mặc định, nhưng vô dụng cho production - luôn phải set). |
 | `DASHBOARD_CHANNEL_REGISTRY_FILE` | không | `config/channel-registry.json` | Đường dẫn tới file JSON channel-registry `{channel_id: {station_name, contact_name, contact_phone, grid_position, baseline_kbps}}` - nguồn liệt kê `channel_id` hợp lệ DUY NHẤT + dữ liệu dùng để tính `bitrate_pct`/render lưới. **KHÔNG** mặc định vào `channel-registry.example.json` (dữ liệu demo) - xem mục dưới. |
 | `DASHBOARD_TELEGRAM_BOT_TOKEN` | **có** | *(không có)* | Bot token Telegram (Story 4.2) dùng để đẩy cảnh báo `warning` (ABR hạ bitrate) tới 1 chat chung của đội trực sóng. Thiếu/rỗng -> fail-fast lúc khởi động, không âm thầm start thiếu kênh cảnh báo này. |
-| `DASHBOARD_TELEGRAM_CHAT_ID` | **có** | *(không có)* | `chat_id` Telegram của đội trực sóng (Story 4.2, AD-17) - 1 chat chung DUY NHẤT, không gửi lãnh đạo. Thiếu/rỗng -> fail-fast lúc khởi động cùng lý do với `DASHBOARD_TELEGRAM_BOT_TOKEN`. |
+| `DASHBOARD_TELEGRAM_CHAT_ID` | **có** | *(không có)* | `chat_id` Telegram của đội trực sóng (Story 4.2, AD-17) - 1 chat chung DUY NHẤT (số nguyên, có thể âm nếu là group/supergroup, KHÔNG phải danh sách phân tách dấu phẩy như `DASHBOARD_BEARER_TOKENS` ở trên), không gửi lãnh đạo. Thiếu/rỗng -> fail-fast lúc khởi động cùng lý do với `DASHBOARD_TELEGRAM_BOT_TOKEN`. |
+
+**Breaking change (Story 4.2):** deploy hiện có nâng cấp lên bản có Story 4.2
+phải set cả 2 biến `DASHBOARD_TELEGRAM_BOT_TOKEN`/`DASHBOARD_TELEGRAM_CHAT_ID`
+TRƯỚC khi restart - thiếu 1 trong 2 sẽ khiến `startApp()` fail-fast, service
+không khởi động được.
 
 ## Tạo `config/channel-registry.json` (channel-registry THẬT)
 

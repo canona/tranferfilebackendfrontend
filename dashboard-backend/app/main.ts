@@ -308,6 +308,11 @@ export async function startApp(config?: {
     if (telegramChatId === undefined || telegramChatId === '') {
       missingTelegramVars.push('DASHBOARD_TELEGRAM_CHAT_ID');
     }
+    // Code review [patch round 3]: mirror 2 nhánh throw khác cùng hàm (bind UI
+    // thất bại / bind telemetry thất bại) - registryPort đã start() thành công
+    // ở trên, throw ở đây mà không dọn sẽ rò rỉ watcher/debounce timer nếu
+    // startApp() được gọi lại trong-process (test/CLI).
+    registryPort.stop();
     throw new Error(
       `${missingTelegramVars.join(', ')} không hợp lệ: thiếu/rỗng - phải set bot token + chat_id Telegram thật ` +
         'để đẩy cảnh báo warning (ABR hạ bitrate) tới đội trực sóng (Story 4.2, AD-17 - 1 chat chung duy nhất, ' +
