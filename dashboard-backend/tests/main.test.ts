@@ -23,6 +23,18 @@ import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOu
 import type { Logger, LogEvent } from '../src/logging/logger.js';
 import type { Clock } from '../src/core/channelState.js';
 
+// Story 4.2: `startApp()` giờ fail-fast nếu thiếu Telegram bot token/chat_id
+// (mirror `validBearerTokens`) - mọi test integration thật gọi `startApp()`
+// bên dưới (trừ 2 test fail TRƯỚC khi chạm tới điểm đọc config này) phải bơm
+// bộ giá trị giả + `telegramSendMessage` no-op qua config, để không cần set
+// biến môi trường thật/gọi mạng Telegram thật (mirror cách `validBearerTokens`/
+// `channelRegistryFilePath` đã override qua config ở các test có sẵn).
+const FAKE_TELEGRAM_CONFIG = {
+  telegramBotToken: 'test-telegram-bot-token',
+  telegramChatId: 'test-telegram-chat-id',
+  telegramSendMessage: async () => {},
+};
+
 // Story 2.7: mirror `channelState.test.ts`'s `FakeClock` - dùng để verify
 // timer heartbeat THẬT của `main.ts` (setInterval 1000ms wall-clock) gọi
 // đúng `checkHeartbeatTimeouts()` mà không phải chờ đủ 15000ms thật.
@@ -154,6 +166,7 @@ test('startApp(): channelRegistryFilePath hợp lệ -> khởi động thành c�
       uiPort: 0,
       validBearerTokens: new Set(['test-token']),
       channelRegistryFilePath: filePath,
+      ...FAKE_TELEGRAM_CONFIG,
     });
     try {
       // Wiring đúng: chưa có telemetry nào -> chưa có display state đã chốt,
@@ -183,6 +196,82 @@ test('startApp(): channelRegistryFilePath trỏ file không tồn tại -> throw
   );
 });
 
+// Story 4.2 (Boundaries/AC): "Thiếu DASHBOARD_TELEGRAM_BOT_TOKEN/
+// DASHBOARD_TELEGRAM_CHAT_ID lúc khởi động -> fail-fast, throw Error rõ ràng
+// (mirror pattern DASHBOARD_BEARER_TOKENS) - không âm thầm start thiếu kênh
+// cảnh báo." Registry hợp lệ + bearer token hợp lệ (nhánh KHÔNG phải nguồn
+// lỗi ở đây) - chỉ omit config Telegram VÀ đảm bảo env thật cũng không set
+// (`withEnvVar(..., undefined, ...)`) để cô lập đúng nhánh đang test, tránh
+// máy chạy test vô tình có sẵn 2 biến môi trường này gây false negative.
+test('startApp(): thiếu DASHBOARD_TELEGRAM_BOT_TOKEN (config lẫn env) -> throw rõ ràng, KHÔNG âm thầm start thiếu kênh cảnh báo', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  try {
+    await withEnvVar('DASHBOARD_TELEGRAM_BOT_TOKEN', undefined, () =>
+      withEnvVar('DASHBOARD_TELEGRAM_CHAT_ID', 'chat-thật', async () => {
+        await assert.rejects(
+          () =>
+            startApp({
+              port: 0,
+              host: '127.0.0.1',
+              uiPort: 0,
+              validBearerTokens: new Set(['test-token']),
+              channelRegistryFilePath: filePath,
+            }),
+          /DASHBOARD_TELEGRAM_BOT_TOKEN không hợp lệ/
+        );
+      })
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('startApp(): thiếu DASHBOARD_TELEGRAM_CHAT_ID (config lẫn env) -> throw rõ ràng, KHÔNG âm thầm start thiếu kênh cảnh báo', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  try {
+    await withEnvVar('DASHBOARD_TELEGRAM_BOT_TOKEN', 'token-thật', () =>
+      withEnvVar('DASHBOARD_TELEGRAM_CHAT_ID', undefined, async () => {
+        await assert.rejects(
+          () =>
+            startApp({
+              port: 0,
+              host: '127.0.0.1',
+              uiPort: 0,
+              validBearerTokens: new Set(['test-token']),
+              channelRegistryFilePath: filePath,
+            }),
+          /DASHBOARD_TELEGRAM_CHAT_ID không hợp lệ/
+        );
+      })
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('startApp(): DASHBOARD_TELEGRAM_BOT_TOKEN/CHAT_ID toàn khoảng trắng -> throw rõ ràng (không âm thầm coi như đã set)', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  try {
+    await withEnvVar('DASHBOARD_TELEGRAM_BOT_TOKEN', '   ', () =>
+      withEnvVar('DASHBOARD_TELEGRAM_CHAT_ID', 'chat-thật', async () => {
+        await assert.rejects(
+          () =>
+            startApp({
+              port: 0,
+              host: '127.0.0.1',
+              uiPort: 0,
+              validBearerTokens: new Set(['test-token']),
+              channelRegistryFilePath: filePath,
+            }),
+          /DASHBOARD_TELEGRAM_BOT_TOKEN không hợp lệ/
+        );
+      })
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Code review [patch #4]: 2 nhánh cleanup MỚI của Story 2.3 (nếu bind cổng UI
 // thất bại -> registryPort.stop() trước khi rethrow; nếu bind cổng telemetry
 // thất bại SAU KHI ui đã bind thành công -> registryPort.stop() VÀ
@@ -201,6 +290,7 @@ test('startApp(): uiPort bị chiếm trước (EADDRINUSE) -> reject, VÀ regis
         uiHost: '127.0.0.1',
         validBearerTokens: new Set(['test-token']),
         channelRegistryFilePath: filePath,
+        ...FAKE_TELEGRAM_CONFIG,
       })
     );
 
@@ -236,6 +326,7 @@ test('startApp(): port telemetry bị chiếm trước SAU KHI uiPort đã bind 
         uiHost: '127.0.0.1',
         validBearerTokens: new Set(['test-token']),
         channelRegistryFilePath: filePath,
+        ...FAKE_TELEGRAM_CONFIG,
       })
     );
 
@@ -277,6 +368,7 @@ test('startApp(): DASHBOARD_UI_WS_PORT đọc từ env khi config không set uiP
         // ('0' = OS tự cấp port trống) qua đúng parsePort(), không phải default 8081.
         validBearerTokens: new Set(['test-token']),
         channelRegistryFilePath: filePath,
+        ...FAKE_TELEGRAM_CONFIG,
       });
       try {
         assert.equal(typeof app.ui.port, 'number');
@@ -425,6 +517,7 @@ test('startApp(): wiring thật composite alertPort -> backend chốt trạng th
     channelRegistryFilePath: filePath,
     debounceMs: 10,
     logger,
+    ...FAKE_TELEGRAM_CONFIG,
   });
 
   try {
@@ -491,6 +584,89 @@ test('startApp(): wiring thật composite alertPort -> backend chốt trạng th
   }
 });
 
+// Code review [patch #3]: test tích hợp composite wiring thật phía trên chưa
+// từng đưa 1 kênh vào trạng thái `warning` và chưa inject spy `telegramSendMessage`
+// để quan sát nhánh Telegram - nếu ai đó lỡ xoá/đảo thứ tự `telegramAlertPort`
+// khỏi mảng `createCompositeAlertPort([...])` ở `main.ts`, không test nào phát
+// hiện được. Lấp gap: đẩy bitrate telemetry THẬT xuống mức cho ra
+// `display_state: 'warning'` (bitrate_pct=50%<70%, mirror mapping
+// `bitrateThreshold.ts`), bơm `telegramSendMessage` spy qua config (KHÔNG
+// no-op như `FAKE_TELEGRAM_CONFIG`), assert spy được gọi đúng `chatId` cấu
+// hình + text chứa đúng channel_id.
+test('startApp(): wiring thật composite alertPort -> kênh chuyển warning -> TelegramAlertAdapter thật gọi telegramSendMessage đúng chatId + text chứa channel_id', async () => {
+  const { dir, filePath } = writeValidRegistryFile(); // chan-1, baseline_kbps=4000, grid_position=0
+  const logger = new FakeLogger();
+  const telegramCalls: { botToken: string; chatId: string; text: string }[] = [];
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+    debounceMs: 10,
+    logger,
+    telegramBotToken: 'test-telegram-bot-token',
+    telegramChatId: 'test-telegram-chat-id',
+    telegramSendMessage: async (botToken, chatId, text) => {
+      telegramCalls.push({ botToken, chatId, text });
+    },
+  });
+
+  try {
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string; channel_id?: string; display_state?: string }[] = [];
+    uiWs.on('message', (data) => {
+      uiMessages.push(JSON.parse(data.toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+    await waitUntil(() => uiMessages.some((m) => m.type === 'registry-snapshot'));
+
+    const telemetryWs = new WebSocket(`ws://127.0.0.1:${app.ws.port}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      telemetryWs.once('open', resolve);
+      telemetryWs.once('error', reject);
+    });
+
+    // bitrate_kbps=2000 / baseline_kbps=4000 = 50% < 70% -> CONNECTED + warning
+    // (mapToDisplayState, src/core/bitrateThreshold.ts).
+    const sendTelemetry = () =>
+      telemetryWs.send(
+        JSON.stringify({
+          schema_version: 1,
+          channel_id: 'chan-1',
+          timestamp: new Date().toISOString(),
+          event_type: 'telemetry',
+          payload: { bitrate_kbps: 2000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [-20, -18] },
+        })
+      );
+
+    sendTelemetry();
+    await new Promise((resolve) => setTimeout(resolve, 50)); // > debounceMs=10ms
+    sendTelemetry();
+
+    await waitUntil(() => uiMessages.some((m) => m.type === 'channel-state-change' && m.display_state === 'warning'));
+    // `TelegramAlertAdapter.publishStateChange` fire-and-forget (Promise chain
+    // nội bộ) - poll thay vì assert ngay, tránh giòn theo microtask timing.
+    await waitUntil(() => telegramCalls.length > 0);
+
+    assert.equal(telegramCalls[0]?.chatId, 'test-telegram-chat-id');
+    assert.equal(telegramCalls[0]?.botToken, 'test-telegram-bot-token');
+    assert.match(telegramCalls[0]?.text ?? '', /chan-1/);
+
+    telemetryWs.close();
+    uiWs.close();
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Code review [patch #10]: `debounceMs`/`clock` (override test-only, patch #5)
 // chỉ có comment khẳng định "KHÔNG đổi behavior mặc định production" khi
 // omit, không có test nào bảo vệ khẳng định đó - nếu 1 refactor tương lai vô
@@ -509,6 +685,7 @@ test('startApp(): omit debounceMs/clock trong config -> vẫn dùng default debo
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
     // debounceMs/clock KHÔNG truyền - đúng kịch bản production thật.
+    ...FAKE_TELEGRAM_CONFIG,
   });
 
   try {
@@ -577,6 +754,7 @@ test('startApp(): uiHost mặc định fallback về host khi config không set 
       // uiHost KHÔNG set - phải fallback đúng về host ('127.0.0.2').
       validBearerTokens: new Set(['test-token']),
       channelRegistryFilePath: filePath,
+      ...FAKE_TELEGRAM_CONFIG,
     });
     try {
       await new Promise<void>((resolve, reject) => {
@@ -613,6 +791,7 @@ test('startApp(): wiring thật heartbeatPort + timer 1000ms -> heartbeat WS th�
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
     clock,
+    ...FAKE_TELEGRAM_CONFIG,
   });
 
   try {
@@ -687,6 +866,7 @@ test('startApp(): wiring thật bitrateHistoryService -> telemetry WS thật ghi
     uiHost: '127.0.0.1',
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
+    ...FAKE_TELEGRAM_CONFIG,
   });
 
   try {
@@ -758,6 +938,7 @@ test('startApp(): wiring thật historyPort vào startWsUiAdapter -> WS UI clien
     uiHost: '127.0.0.1',
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
+    ...FAKE_TELEGRAM_CONFIG,
   });
 
   try {
@@ -824,6 +1005,7 @@ test('startApp(): forwarder AckCommandPort wiring thật - client WS UI gửi ac
     uiHost: '127.0.0.1',
     validBearerTokens: new Set(['test-token']),
     channelRegistryFilePath: filePath,
+    ...FAKE_TELEGRAM_CONFIG,
   });
 
   try {

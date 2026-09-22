@@ -18,6 +18,7 @@ import { ChannelStateService, type Clock } from '../src/core/channelState.js';
 import { SnapshotRelayService } from '../src/core/snapshotRelay.js';
 import { BitrateHistoryService } from '../src/core/bitrateHistory.js';
 import { LogAlertAdapter } from '../src/adapters/outbound/logAlertAdapter.js';
+import { TelegramAlertAdapter, type TelegramSendMessage } from '../src/adapters/outbound/telegramAlertAdapter.js';
 import { FileChannelRegistryAdapter } from '../src/adapters/outbound/fileChannelRegistryAdapter.js';
 import { startWsTelemetryAdapter, type WsTelemetryAdapterHandle } from '../src/adapters/inbound/wsTelemetryAdapter.js';
 import { startWsUiAdapter, type WsUiAdapterHandle } from '../src/adapters/outbound/wsUiAdapter.js';
@@ -162,6 +163,13 @@ export async function startApp(config?: {
   // behavior mặc định production).
   debounceMs?: number;
   clock?: Clock;
+  // Story 4.2: override cho test - mirror `validBearerTokens`/
+  // `channelRegistryFilePath` (config ?? env, fail-fast nếu rỗng bên dưới).
+  // Cho phép test/CLI khác bơm bot token/chat_id/sendMessage giả mà không cần
+  // set biến môi trường thật/gọi mạng Telegram thật.
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  telegramSendMessage?: TelegramSendMessage;
   // Code review [patch]: override cho test - `startApp()` trước đây LUÔN dùng
   // `defaultLogger()` singleton nội bộ, không có seam nào để 1 test integration
   // thật (start cả `startApp()`, không phải fake) quan sát được `LogAlertAdapter`
@@ -268,6 +276,55 @@ export async function startApp(config?: {
 
   const logAlertPort = new LogAlertAdapter(logger);
 
+  // Story 4.2 (Boundaries): "Thiếu DASHBOARD_TELEGRAM_BOT_TOKEN/
+  // DASHBOARD_TELEGRAM_CHAT_ID lúc khởi động -> fail-fast, throw Error rõ
+  // ràng (mirror pattern DASHBOARD_BEARER_TOKENS) - không âm thầm start
+  // thiếu kênh cảnh báo." Đặt SAU khi registryPort đã load/start thành công
+  // (mirror vị trí `logAlertPort` ở Code Map) - registryPort lỗi cấu hình
+  // (file thiếu/hỏng) vẫn phải báo ĐÚNG lỗi channel-registry của nó trước,
+  // không bị che bởi lỗi Telegram nếu cả 2 cùng thiếu.
+  // Code review [patch]: gán biến bằng giá trị ĐÃ `.trim()` (không phải giá
+  // trị thô) - trước đây chỉ VALIDATE bằng `.trim() === ''` nhưng giá trị thật
+  // lưu lại/dùng để build URL Telegram API vẫn là bản CHƯA trim. 1 giá trị có
+  // khoảng trắng/newline thừa (vd đọc từ file secret mount) qua được validate
+  // nhưng bị dùng nguyên trong URL, gây lỗi khó chẩn đoán hơn hẳn.
+  const telegramBotToken = (config?.telegramBotToken ?? process.env.DASHBOARD_TELEGRAM_BOT_TOKEN)?.trim();
+  const telegramChatId = (config?.telegramChatId ?? process.env.DASHBOARD_TELEGRAM_CHAT_ID)?.trim();
+  // Code review [patch]: gộp validate cả 2 biến - khi THIẾU CẢ 2 (kịch bản
+  // deploy lần đầu rất thường gặp), throw 1 Error liệt kê TÊN CẢ 2 biến còn
+  // thiếu trong cùng 1 message, thay vì throw riêng lẻ theo thứ tự (trước đây
+  // operator chỉ thấy lỗi bot-token, sửa, restart, rồi MỚI thấy lỗi chat-id -
+  // mất 1 vòng lặp sửa/restart không cần thiết).
+  if (
+    telegramBotToken === undefined ||
+    telegramBotToken === '' ||
+    telegramChatId === undefined ||
+    telegramChatId === ''
+  ) {
+    const missingTelegramVars: string[] = [];
+    if (telegramBotToken === undefined || telegramBotToken === '') {
+      missingTelegramVars.push('DASHBOARD_TELEGRAM_BOT_TOKEN');
+    }
+    if (telegramChatId === undefined || telegramChatId === '') {
+      missingTelegramVars.push('DASHBOARD_TELEGRAM_CHAT_ID');
+    }
+    throw new Error(
+      `${missingTelegramVars.join(', ')} không hợp lệ: thiếu/rỗng - phải set bot token + chat_id Telegram thật ` +
+        'để đẩy cảnh báo warning (ABR hạ bitrate) tới đội trực sóng (Story 4.2, AD-17 - 1 chat chung duy nhất, ' +
+        'không gửi lãnh đạo). Không được âm thầm start thiếu kênh cảnh báo này.'
+    );
+  }
+  // TS narrows `telegramBotToken`/`telegramChatId` xuống `string` (loại bỏ
+  // `undefined`/`''`) từ điều kiện throw phía trên - `telegramAlertPort` bên
+  // dưới nhận đúng giá trị ĐÃ trim.
+  const telegramAlertPort = new TelegramAlertAdapter({
+    botToken: telegramBotToken,
+    chatId: telegramChatId,
+    logger,
+    clock: config?.clock,
+    sendMessage: config?.telegramSendMessage,
+  });
+
   // Story 3.1: ring buffer in-memory lịch sử bitrate/kênh (Never/AD-14: KHÔNG
   // time-series DB). Tạo TRƯỚC `startWsUiAdapter` (Story 3.2: adapter cần
   // `historyPort` ngay trong constructor để gửi `channel-history-snapshot`
@@ -335,7 +392,10 @@ export async function startApp(config?: {
   // ordering/invariant nào - `logAlertPort`/`ui` độc lập hoàn toàn với nhau
   // (không có yêu cầu "log trước WS" hay ngược lại), chỉ tình cờ liệt kê theo
   // thứ tự khai báo phía trên.
-  const alertPort = createCompositeAlertPort([logAlertPort, ui], logger);
+  // Story 4.2: thêm `telegramAlertPort` vào composite - THÊM, không thay thế
+  // `logAlertPort`/`ui` hiện có (mirror comment Story 2.6 phía trên: thứ tự
+  // phần tử không mang ý nghĩa ordering/invariant nào).
+  const alertPort = createCompositeAlertPort([logAlertPort, telegramAlertPort, ui], logger);
 
   // Bổ sung video-preview thật (AD-22): `ui` implement THÊM `SnapshotOutboundPort`
   // (cùng object, mirror cách `ui` đã implement UiOutboundPort/AlertOutboundPort

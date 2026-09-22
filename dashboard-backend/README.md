@@ -7,7 +7,10 @@ thức - `ChannelRegistryPort` hot-reload từ 1 file JSON, không cần restart
 process. Xem
 `_bmad-output/implementation-artifacts/spec-2-1-dashboard-backend-...md` và
 `spec-2-2-channel-registry-hot-reload-...md` cho đầy đủ Intent/Boundaries/I-O
-matrix (spec là nguồn sự thật, tài liệu này chỉ tóm tắt phần vận hành).
+matrix (spec là nguồn sự thật, tài liệu này chỉ tóm tắt phần vận hành). Story
+4.2 (đẩy cảnh báo Telegram khi kênh chuyển `warning`, thêm 2 biến môi trường
+Telegram + hành vi fail-fast mới bên dưới): xem
+`_bmad-output/implementation-artifacts/spec-4-2-đẩy-telegram-cho-mức-chú-ý-abr-warning-tới-đội-trực.md`.
 
 ## Cài đặt
 
@@ -28,6 +31,8 @@ npm test
 | `DASHBOARD_WS_HOST` | không | `0.0.0.0` | Địa chỉ bind của WS server. |
 | `DASHBOARD_BEARER_TOKENS` | **có** (thực tế) | *(rỗng)* | Danh sách bearer-token hợp lệ, phân tách bởi dấu phẩy - 1 token/máy trung tâm (AD-13). Để trống thì mọi kết nối WS đều bị reject 401 (an toàn theo mặc định, nhưng vô dụng cho production - luôn phải set). |
 | `DASHBOARD_CHANNEL_REGISTRY_FILE` | không | `config/channel-registry.json` | Đường dẫn tới file JSON channel-registry `{channel_id: {station_name, contact_name, contact_phone, grid_position, baseline_kbps}}` - nguồn liệt kê `channel_id` hợp lệ DUY NHẤT + dữ liệu dùng để tính `bitrate_pct`/render lưới. **KHÔNG** mặc định vào `channel-registry.example.json` (dữ liệu demo) - xem mục dưới. |
+| `DASHBOARD_TELEGRAM_BOT_TOKEN` | **có** | *(không có)* | Bot token Telegram (Story 4.2) dùng để đẩy cảnh báo `warning` (ABR hạ bitrate) tới 1 chat chung của đội trực sóng. Thiếu/rỗng -> fail-fast lúc khởi động, không âm thầm start thiếu kênh cảnh báo này. |
+| `DASHBOARD_TELEGRAM_CHAT_ID` | **có** | *(không có)* | `chat_id` Telegram của đội trực sóng (Story 4.2, AD-17) - 1 chat chung DUY NHẤT, không gửi lãnh đạo. Thiếu/rỗng -> fail-fast lúc khởi động cùng lý do với `DASHBOARD_TELEGRAM_BOT_TOKEN`. |
 
 ## Tạo `config/channel-registry.json` (channel-registry THẬT)
 
