@@ -225,6 +225,57 @@ test('trạng thái dao động quanh ngưỡng 70% trong <5s -> giữ nguyên g
   assert.equal(alert.changes.length, changesAfterCommit, 'không được publish thêm khi chưa đủ 5s ổn định');
 });
 
+// Story 4.4: `previousDisplayState` = `previous?.state` (candidate ĐÃ CHỐT
+// trước lần commit này) trên `ChannelStateChange` phát qua `applyCandidate`.
+test('applyCandidate: lần chốt ĐẦU TIÊN/kênh -> previousDisplayState undefined (chưa từng có previous)', () => {
+  const { clock, alert, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+
+  assert.equal(alert.changes.length, 1);
+  assert.equal(alert.changes[0]?.displayState, 'ok');
+  assert.equal(alert.changes[0]?.previousDisplayState, undefined, 'chưa từng có committed trước đó');
+});
+
+test('applyCandidate: chốt sang state MỚI (đã có previous) -> previousDisplayState đúng giá trị committed cũ', () => {
+  const { clock, alert, service } = makeService({ 'chan-1': 4000 });
+
+  // Chốt "ok" trước.
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 4000 }));
+  assert.equal(alert.changes.at(-1)?.previousDisplayState, undefined);
+
+  // Chuyển sang "warning".
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ bitrateKbps: 2000 }));
+
+  assert.equal(alert.changes.at(-1)?.displayState, 'warning');
+  assert.equal(alert.changes.at(-1)?.previousDisplayState, 'ok', 'previousDisplayState phải là committed cũ (ok)');
+});
+
+test('applyCandidate: telemetry tự phục hồi về "ok" (đã từng critical) -> previousDisplayState="critical" trên change publish', () => {
+  const { clock, alert, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent({ connectionState: 'RECONNECTING', bitrateKbps: 0 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ connectionState: 'RECONNECTING', bitrateKbps: 0 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'critical' });
+
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent({ connectionState: 'CONNECTED', bitrateKbps: 4000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ connectionState: 'CONNECTED', bitrateKbps: 4000 }));
+
+  const lastChange = alert.changes.at(-1);
+  assert.equal(lastChange?.displayState, 'ok');
+  assert.equal(lastChange?.previousDisplayState, 'critical');
+});
+
 test('RECONNECTING ổn định >=5s -> chốt critical (không sub-type)', () => {
   const { clock, alert, service } = makeService({ 'chan-1': 4000 });
 
@@ -468,6 +519,36 @@ test('heartbeat resume sau machine-offline -> clear flag, re-publish record.comm
   const changesAfterResume = alert.changes.length;
   service.checkHeartbeatTimeouts();
   assert.equal(alert.changes.length, changesAfterResume);
+});
+
+// Story 4.4: khi resume trả `record.committed.state === 'ok'`, `handleHeartbeat`
+// phải gán `previousDisplayState: 'critical'` CỐ ĐỊNH trên `change` publish -
+// KHÔNG đọc giá trị telemetry nội bộ trước đó (`checkOneChannelHeartbeatTimeout`
+// luôn công bố machine-offline là `critical`, nên "trạng thái mà đội trực/lãnh
+// đạo đã thực sự nhận cảnh báo" luôn là `critical`, bất kể `record.committed`).
+test('heartbeat resume sau machine-offline, record.committed.state==="ok" -> change publish gắn previousDisplayState:"critical" CỐ ĐỊNH', () => {
+  const { clock, alert, service } = makeService({ 'chan-1': 4000 });
+
+  // Chốt "ok" qua telemetry TRƯỚC KHI machine-offline xảy ra (đúng kịch bản
+  // I/O matrix: telemetry đã hồi phục về ok trong lúc heartbeat vẫn im lặng).
+  service.handleTelemetry(makeEvent({ channelId: 'chan-1', bitrateKbps: 4000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ channelId: 'chan-1', bitrateKbps: 4000 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' });
+
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:00.000Z');
+  clock.advance(HEARTBEAT_TIMEOUT_MS);
+  service.checkHeartbeatTimeouts();
+  assert.equal(alert.changes.at(-1)?.subType, 'machine-offline');
+
+  // Heartbeat resume - `record.committed.state` đã là 'ok'.
+  clock.advance(1000);
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:16.000Z');
+
+  const lastChange = alert.changes.at(-1);
+  assert.equal(lastChange?.displayState, 'ok');
+  assert.equal(lastChange?.previousDisplayState, 'critical', 'CỐ ĐỊNH critical, không phải giá trị telemetry nội bộ nào khác');
+  assert.equal(lastChange?.subType, undefined, 'record.committed không mang subType machine-offline - guard subType ở adapter sẽ pass');
 });
 
 test('heartbeat resume sau machine-offline nhưng CHƯA từng có record.committed (chưa đủ 5s telemetry) -> clear flag, KHÔNG re-publish (không có gì để trả về)', () => {

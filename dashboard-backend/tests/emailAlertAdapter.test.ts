@@ -281,6 +281,74 @@ test('publishStateChange: critical cùng kênh sau khi cooldown đã hết (>=60
   assert.equal(calls.length, 2, 'lastSentAt phải đã cập nhật về lần 2 - lần 3 (10ms sau) vẫn phải bị cooldown chặn');
 });
 
+// Story 4.4: nhánh phục hồi - `displayState==='ok'` VÀ `previousDisplayState
+// ==='critical'` -> gửi NGAY, bỏ qua HOÀN TOÀN cooldown Map.
+
+test('publishStateChange (recovery): cooldown critical đang active -> email phục hồi vẫn gửi ngay, bỏ qua cooldown', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMail, calls } = makeFakeSendMail();
+  const adapter = new EmailAlertAdapter({
+    ...SMTP_CONFIG,
+    recipients: ['doi-truc@example.com', 'lanh-dao@example.com'],
+    logger,
+    clock,
+    sendMail,
+  });
+
+  adapter.publishStateChange(makeChange({ displayState: 'critical' }));
+  await waitUntil((): boolean => calls.length === 1);
+  clock.advance(1000); // còn cách xa cooldown hết hạn
+
+  adapter.publishStateChange(makeChange({ displayState: 'ok', previousDisplayState: 'critical' }));
+  await waitUntil((): boolean => calls.length === 2);
+
+  assert.equal(calls.length, 2, 'email phục hồi phải gửi ngay dù cooldown critical đang active');
+  assert.deepEqual(calls[1]?.to, ['doi-truc@example.com', 'lanh-dao@example.com']);
+  assert.match(calls[1]?.subject ?? '', /[Pp]hục hồi/);
+  assert.match(calls[1]?.text ?? '', /PHỤC HỒI/);
+  assert.ok(
+    logger.events.some((e) => e.event_type === 'email_recovery_sent'),
+    'phải log event riêng cho email phục hồi'
+  );
+
+  // Critical kế tiếp (không phải phục hồi) ngay sau đó vẫn phải bị cooldown
+  // chặn - nhánh phục hồi không đụng `lastSentAt` của nhánh cảnh báo.
+  adapter.publishStateChange(makeChange({ displayState: 'critical' }));
+  await Promise.resolve();
+  assert.equal(calls.length, 2, 'nhánh phục hồi không được set/reset lastSentAt của nhánh cảnh báo');
+  assert.ok(logger.events.some((e) => e.event_type === 'email_alert_cooldown_skipped'));
+});
+
+test('publishStateChange (recovery): previousDisplayState !== "critical" (vd "warning" hoặc undefined) -> KHÔNG kích hoạt nhánh phục hồi', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMail, calls } = makeFakeSendMail();
+  const adapter = new EmailAlertAdapter({ ...SMTP_CONFIG, recipients: ['a@example.com'], logger, clock, sendMail });
+
+  adapter.publishStateChange(makeChange({ displayState: 'ok', previousDisplayState: 'warning' }));
+  adapter.publishStateChange(makeChange({ displayState: 'ok' })); // previousDisplayState undefined
+  await Promise.resolve();
+
+  assert.equal(calls.length, 0);
+  assert.equal(logger.events.length, 0);
+});
+
+test('publishStateChange (recovery): subType==="machine-offline" dù previousDisplayState==="critical" -> KHÔNG kích hoạt nhánh phục hồi (guard chống báo phục hồi giả)', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMail, calls } = makeFakeSendMail();
+  const adapter = new EmailAlertAdapter({ ...SMTP_CONFIG, recipients: ['a@example.com'], logger, clock, sendMail });
+
+  adapter.publishStateChange(
+    makeChange({ displayState: 'ok', previousDisplayState: 'critical', subType: 'machine-offline' })
+  );
+  await Promise.resolve();
+
+  assert.equal(calls.length, 0, 'dashboard vẫn hiển thị critical/machine-offline - gửi phục hồi lúc này là báo giả');
+  assert.equal(logger.events.length, 0);
+});
+
 test('constructor: dùng systemClock/defaultEmailSendMail mặc định khi omit (không đổi behavior khi không override)', () => {
   const logger = new FakeLogger();
   // Không truyền clock/sendMail - chỉ xác nhận constructor không throw, KHÔNG

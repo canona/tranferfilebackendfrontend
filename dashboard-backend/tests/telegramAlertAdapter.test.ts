@@ -507,6 +507,135 @@ test('2 instance khác displayState (warning vs critical) cùng chatId/channelId
 // TRƯỚC KHI có response) - message rethrow phải CỐ ĐỊNH, KHÔNG chứa URL/token,
 // để không rò rỉ bot token thật (nằm ngay trong URL) vào log JSON qua
 // `telegram_alert_send_error`.
+// Story 4.4: nhánh phục hồi - `displayState==='ok'` VÀ `previousDisplayState`
+// khớp state instance phụ trách -> gửi NGAY, bỏ qua HOÀN TOÀN cooldown Map
+// (không đụng `lastSentAt`).
+
+test('publishStateChange (recovery, instance warning): cooldown warning đang active -> tin phục hồi vẫn gửi ngay, bỏ qua cooldown', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'team-chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  // Cảnh báo warning gửi trước, KHÔNG advance đủ 60s - cooldown vẫn active.
+  adapter.publishStateChange(makeChange({ displayState: 'warning' }));
+  await waitUntil((): boolean => calls.length === 1);
+  clock.advance(1000); // còn cách xa cooldown hết hạn (59000ms còn lại)
+
+  adapter.publishStateChange(makeChange({ displayState: 'ok', previousDisplayState: 'warning' }));
+  await waitUntil((): boolean => calls.length === 2);
+
+  assert.equal(calls.length, 2, 'tin phục hồi phải gửi ngay dù cooldown warning đang active');
+  assert.match(calls[1]?.text ?? '', /chan-1/);
+  assert.match(calls[1]?.text ?? '', /PHỤC HỒI/);
+  assert.ok(
+    logger.events.some((e) => e.event_type === 'telegram_recovery_sent'),
+    'phải log event riêng cho tin phục hồi'
+  );
+
+  // Cảnh báo warning kế tiếp (không phải phục hồi) NGAY sau đó vẫn phải bị
+  // cooldown chặn - nhánh phục hồi không đụng `lastSentAt` của nhánh cảnh báo.
+  adapter.publishStateChange(makeChange({ displayState: 'warning' }));
+  await Promise.resolve();
+  assert.equal(calls.length, 2, 'nhánh phục hồi không được set/reset lastSentAt của nhánh cảnh báo');
+  assert.ok(logger.events.some((e) => e.event_type === 'telegram_alert_cooldown_skipped'));
+});
+
+test('publishStateChange (recovery, instance critical): cooldown critical đang active -> tin phục hồi vẫn gửi ngay, bỏ qua cooldown', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'leadership-chat-id',
+    displayState: 'critical',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  adapter.publishStateChange(makeChange({ displayState: 'critical' }));
+  await waitUntil((): boolean => calls.length === 1);
+  clock.advance(1000);
+
+  adapter.publishStateChange(makeChange({ displayState: 'ok', previousDisplayState: 'critical' }));
+  await waitUntil((): boolean => calls.length === 2);
+
+  assert.equal(calls.length, 2, 'tin phục hồi phải gửi ngay dù cooldown critical đang active');
+  assert.match(calls[1]?.text ?? '', /PHỤC HỒI/);
+});
+
+test('publishStateChange (recovery): previousDisplayState KHÔNG khớp displayState instance (vd warning->critical) -> KHÔNG kích hoạt nhánh phục hồi', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const warningAdapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'team-chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  // warning -> critical: KHÔNG phải phục hồi (displayState !== 'ok') - pipeline
+  // cảnh báo mới hiện có xử lý, không đụng nhánh phục hồi.
+  warningAdapter.publishStateChange(makeChange({ displayState: 'critical', previousDisplayState: 'warning' }));
+  await Promise.resolve();
+
+  assert.equal(calls.length, 0, 'displayState critical -> instance warning bỏ qua hoàn toàn (cả nhánh phục hồi lẫn cảnh báo)');
+  assert.equal(logger.events.length, 0);
+});
+
+test('publishStateChange (recovery): previousDisplayState undefined (event thiếu field) -> KHÔNG kích hoạt nhánh phục hồi', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'team-chat-id',
+    displayState: 'warning',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  adapter.publishStateChange(makeChange({ displayState: 'ok' }));
+  await Promise.resolve();
+
+  assert.equal(calls.length, 0, 'previousDisplayState undefined không khớp this.displayState -> fallback filter hiện có bỏ qua');
+  assert.equal(logger.events.length, 0);
+});
+
+test('publishStateChange (recovery): subType==="machine-offline" dù previousDisplayState khớp -> KHÔNG kích hoạt nhánh phục hồi (guard chống báo phục hồi giả)', async () => {
+  const logger = new FakeLogger();
+  const clock = new FakeClock();
+  const { fn: sendMessage, calls } = makeFakeSendMessage();
+  const adapter = new TelegramAlertAdapter({
+    botToken: 'bot-token',
+    chatId: 'leadership-chat-id',
+    displayState: 'critical',
+    logger,
+    clock,
+    sendMessage,
+  });
+
+  adapter.publishStateChange(
+    makeChange({ displayState: 'ok', previousDisplayState: 'critical', subType: 'machine-offline' })
+  );
+  await Promise.resolve();
+
+  assert.equal(calls.length, 0, 'dashboard vẫn hiển thị critical/machine-offline - gửi phục hồi lúc này là báo giả');
+  assert.equal(logger.events.length, 0);
+});
+
 test('defaultTelegramSendMessage: fetch() tự throw (network error) -> throw Error message CỐ ĐỊNH, KHÔNG chứa URL/token', async () => {
   const originalFetch = global.fetch;
   const secretToken = 'super-secret-bot-token-should-not-leak';

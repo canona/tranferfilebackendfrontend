@@ -120,6 +120,21 @@ export class TelegramAlertAdapter implements AlertOutboundPort {
   }
 
   publishStateChange(change: ChannelStateChange): void {
+    // Story 4.4: nhánh PHỤC HỒI - kênh vừa chốt về `ok` sau khi trước đó ĐÚNG
+    // instance này đã báo cảnh báo (`previousDisplayState === this.displayState`).
+    // Gửi NGAY, bỏ qua HOÀN TOÀN cooldown Map (không set/check `lastSentAt`
+    // cho nhánh này - Boundaries: "tách biệt hoàn toàn khỏi cooldown của nhánh
+    // cảnh báo mới, không ảnh hưởng cooldown đang chạy cho lần cảnh báo tiếp
+    // theo"). Guard `subType !== 'machine-offline'`: nếu telemetry tự hồi phục
+    // qua `applyCandidate` trong lúc `machineOfflineActive` vẫn `true`
+    // (heartbeat CHƯA resume), dashboard vẫn hiển thị critical/machine-offline
+    // - báo phục hồi lúc này là báo giả. Check TRƯỚC filter cảnh báo thường
+    // bên dưới vì đây là 1 nhánh publish riêng, độc lập hoàn toàn.
+    if (change.displayState === 'ok' && change.previousDisplayState === this.displayState && change.subType !== 'machine-offline') {
+      this.sendRecoveryMessage(change);
+      return;
+    }
+
     // Boundaries (Story 4.2/4.3): "Chỉ gửi khi change.displayState ===
     // this.displayState" - 1 instance warning bỏ qua critical/ok, 1 instance
     // critical bỏ qua warning/ok. I/O matrix: bỏ qua hoàn toàn, không gọi
@@ -188,6 +203,33 @@ export class TelegramAlertAdapter implements AlertOutboundPort {
         });
       });
   }
+
+  // Story 4.4: nhánh phục hồi - mirror fire-and-forget + log pattern của nhánh
+  // cảnh báo ở `publishStateChange` phía trên, NHƯNG hoàn toàn KHÔNG đụng
+  // `this.lastSentAt` (không set, không check - bypass cooldown tuyệt đối).
+  // Lỗi gửi bị nuốt + log qua event riêng (`telegram_recovery_send_error`),
+  // KHÔNG throw - mirror Boundaries "lỗi gửi ... bị nuốt + log qua Logger,
+  // không throw - mirror pattern nhánh cảnh báo hiện có".
+  private sendRecoveryMessage(change: ChannelStateChange): void {
+    const text = formatRecoveryMessage(change, this.displayState);
+    Promise.resolve()
+      .then(() => this.sendMessage(this.botToken, this.chatId, text))
+      .then(() => {
+        this.logger.log({
+          channel_id: change.channelId,
+          event_type: 'telegram_recovery_sent',
+          reason: `Đã gửi tin phục hồi (từ ${this.displayState} về ok) tới Telegram (chat_id=${this.chatId}), bỏ qua cooldown`,
+        });
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.log({
+          channel_id: change.channelId,
+          event_type: 'telegram_recovery_send_error',
+          reason: `Gọi Telegram Bot API lỗi khi gửi tin phục hồi (từ ${this.displayState}, chat_id=${this.chatId}), đã nuốt (KHÔNG throw): ${message}`,
+        });
+      });
+  }
 }
 
 // Story 4.3: tổng quát hoá `formatWarningMessage` cũ thành 1 formatter theo
@@ -201,4 +243,10 @@ function formatAlertMessage(change: ChannelStateChange, displayState: TelegramAl
   }
   const subTypeNote = change.subType ? ` (${change.subType})` : '';
   return `🚨 Kênh ${change.channelId} chuyển sang CRITICAL (mất tín hiệu hoàn toàn)${subTypeNote} lúc ${change.timestamp}`;
+}
+
+// Story 4.4: format riêng cho tin phục hồi - Boundaries: "Nội dung message
+// phục hồi phải khác rõ nội dung cảnh báo ..., nêu rõ đây là tin phục hồi".
+function formatRecoveryMessage(change: ChannelStateChange, displayState: TelegramAlertDisplayState): string {
+  return `✅ Kênh ${change.channelId} ĐÃ PHỤC HỒI về OK (trước đó ${displayState.toUpperCase()}) lúc ${change.timestamp}`;
 }

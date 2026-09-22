@@ -270,9 +270,15 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
     // đụng `record.committed` - vẫn phải phản ánh đúng candidate telemetry thật,
     // như `getDisplayState()` đã test) để badge phía UI giữ đúng "máy trung tâm
     // lỗi" cho tới khi `handleHeartbeat` xác nhận resume thật sự.
+    // Story 4.4: `previousDisplayState` = `previous?.state` (candidate ĐÃ CHỐT
+    // trước đó, trước khi `record.committed` bị ghi đè ở trên) - cho phép
+    // `TelegramAlertAdapter`/`EmailAlertAdapter` nhận diện nhánh phục hồi
+    // (displayState 'ok' VÀ previousDisplayState khớp state instance phụ
+    // trách) mà không đụng vào logic debounce/threshold ở đây.
     const change: ChannelStateChange = {
       channelId,
       displayState: candidate.state,
+      previousDisplayState: previous?.state,
       timestamp: new Date(now).toISOString(),
       ...(record.machineOfflineActive
         ? { subType: 'machine-offline' as const }
@@ -331,10 +337,19 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
       reason: `heartbeat resume sau machine-offline (timestamp=${timestamp})`,
     });
     if (record.committed) {
+      // Story 4.4 (renegotiate review vòng 1): khi resume trả `record.committed.
+      // state === 'ok'`, gán `previousDisplayState: 'critical'` CỐ ĐỊNH - KHÔNG
+      // đọc giá trị telemetry nội bộ nào khác. `checkOneChannelHeartbeatTimeout`
+      // luôn công bố machine-offline là `critical` (Story 2.7) nên "trạng thái
+      // trước đó mà đội trực/lãnh đạo đã thực sự nhận cảnh báo" luôn là
+      // `critical`, bất kể `record.committed` nội bộ lúc đó là gì. Không gán gì
+      // khi resume KHÔNG về `ok` (vd vẫn warning/critical) - không phải nhánh
+      // phục hồi, giữ nguyên hành vi cũ (previousDisplayState undefined).
       const change: ChannelStateChange = {
         channelId,
         displayState: record.committed.state,
         timestamp: new Date(now).toISOString(),
+        ...(record.committed.state === 'ok' ? { previousDisplayState: 'critical' as const } : {}),
         ...(record.committed.subType ? { subType: record.committed.subType } : {}),
       };
       this.alertPort.publishStateChange(change);

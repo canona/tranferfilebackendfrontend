@@ -147,6 +147,17 @@ export class EmailAlertAdapter implements AlertOutboundPort {
   }
 
   publishStateChange(change: ChannelStateChange): void {
+    // Story 4.4: nhánh PHỤC HỒI - kênh vừa chốt về `ok` sau khi trước đó đã ở
+    // `critical` (audience Email chỉ phụ trách critical). Gửi NGAY, bỏ qua
+    // HOÀN TOÀN cooldown Map (không set/check `lastSentAt` cho nhánh này).
+    // Guard `subType !== 'machine-offline'` mirror `TelegramAlertAdapter`:
+    // dashboard vẫn hiển thị critical/machine-offline khi heartbeat chưa xác
+    // nhận resume - báo phục hồi lúc này là báo giả.
+    if (change.displayState === 'ok' && change.previousDisplayState === 'critical' && change.subType !== 'machine-offline') {
+      this.sendRecoveryMail(change);
+      return;
+    }
+
     // Boundaries: "Cả 2 Telegram instance mới và EmailAlertAdapter chỉ kích
     // hoạt khi change.displayState === 'critical'". I/O matrix: bỏ qua hoàn
     // toàn (warning/ok), không gọi SMTP, KHÔNG tính cooldown (early-return
@@ -201,6 +212,33 @@ export class EmailAlertAdapter implements AlertOutboundPort {
         });
       });
   }
+
+  // Story 4.4: nhánh phục hồi - mirror fire-and-forget + log pattern của
+  // `publishStateChange` phía trên, NHƯNG hoàn toàn KHÔNG đụng `this.lastSentAt`
+  // (bypass cooldown tuyệt đối). Lỗi gửi bị nuốt + log qua event riêng
+  // (`email_recovery_send_error`), KHÔNG throw.
+  private sendRecoveryMail(change: ChannelStateChange): void {
+    const subject = `[VTCDigital] Phục hồi - kênh ${change.channelId} đã trở lại OK`;
+    const text = formatRecoveryEmailBody(change);
+
+    Promise.resolve()
+      .then(() => this.sendMail(this.smtpConfig, this.recipients, subject, text))
+      .then(() => {
+        this.logger.log({
+          channel_id: change.channelId,
+          event_type: 'email_recovery_sent',
+          reason: `Đã gửi email phục hồi (từ critical về ok) tới ${this.recipients.length} người nhận, bỏ qua cooldown`,
+        });
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.log({
+          channel_id: change.channelId,
+          event_type: 'email_recovery_send_error',
+          reason: `Gửi email phục hồi qua SMTP lỗi, đã nuốt (KHÔNG throw): ${message}`,
+        });
+      });
+  }
 }
 
 function formatCriticalEmailBody(change: ChannelStateChange): string {
@@ -208,5 +246,14 @@ function formatCriticalEmailBody(change: ChannelStateChange): string {
   return (
     `Kênh ${change.channelId} chuyển sang CRITICAL (mất tín hiệu hoàn toàn)${subTypeNote} lúc ${change.timestamp}.\n\n` +
     'Đây là email tự động từ dashboard-backend VTCDigital - vui lòng kiểm tra kênh ngay.'
+  );
+}
+
+// Story 4.4: format riêng cho email phục hồi - Boundaries: "Nội dung email
+// phục hồi phải khác rõ nội dung cảnh báo ..., nêu rõ đây là tin phục hồi".
+function formatRecoveryEmailBody(change: ChannelStateChange): string {
+  return (
+    `Kênh ${change.channelId} ĐÃ PHỤC HỒI về OK (trước đó CRITICAL) lúc ${change.timestamp}.\n\n` +
+    'Đây là email tự động từ dashboard-backend VTCDigital - sự cố trước đó đã tự hết, không cần xử lý thêm.'
   );
 }
