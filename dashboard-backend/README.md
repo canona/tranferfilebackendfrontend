@@ -15,6 +15,16 @@ Story 4.3 (đẩy Telegram + Email cho mức `critical` tới CẢ đội trực
 đạo VTCDigital, thêm 7 biến môi trường mới + hành vi fail-fast mới bên dưới):
 xem
 `_bmad-output/implementation-artifacts/spec-4-3-đẩy-telegram-email-cho-mức-cảnh-báo-chủ-động-critical-tới-đội-trực-lãnh-đạo.md`.
+Story 4.4 (thông báo PHỤC HỒI khi 1 kênh vừa đang `warning`/`critical` chốt về
+lại `ok`): cả `TelegramAlertAdapter` (3 instance: warning, critical đội trực,
+critical lãnh đạo) lẫn `EmailAlertAdapter` đều gửi thêm 1 tin/email "đã phục
+hồi" riêng biệt, nội dung khác rõ tin cảnh báo. Nhánh phục hồi gửi NGAY LẬP
+TỨC, bỏ qua HOÀN TOÀN cooldown 60s (không đụng `lastSentAt` của nhánh cảnh
+báo) - không có biến môi trường mới, dùng chung credential/audience Telegram
++ Email đã cấu hình ở Story 4.2/4.3. Không kích hoạt khi kênh vẫn đang hiển
+thị `machine-offline` (heartbeat chưa xác nhận resume) - tránh báo phục hồi
+giả. Xem
+`_bmad-output/implementation-artifacts/spec-4-4-thông-báo-phục-hồi-gửi-ngay-lập-tức-bỏ-qua-cooldown.md`.
 
 ## Cài đặt
 

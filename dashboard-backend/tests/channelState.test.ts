@@ -513,6 +513,11 @@ test('heartbeat resume sau machine-offline -> clear flag, re-publish record.comm
   assert.equal(lastChange?.displayState, 'warning', 're-publish đúng trạng thái telemetry thật (record.committed)');
   assert.equal(lastChange?.subType, undefined);
   assert.equal(lastChange?.timestamp, new Date(clock.now()).toISOString());
+  assert.equal(
+    lastChange?.previousDisplayState,
+    undefined,
+    'Story 4.4: resume KHÔNG về "ok" -> không gán previousDisplayState (không phải nhánh phục hồi)'
+  );
 
   // checkHeartbeatTimeouts() sau khi resume -> không còn machineOfflineActive,
   // không publish thêm (chưa lại quá hạn).
@@ -843,6 +848,49 @@ test('kênh đang machine-offline, telemetry commit trạng thái mới -> publi
   // `record.committed` (getDisplayState) KHÔNG bị machine-offline ghi đè - vẫn
   // đúng candidate telemetry thật (mirror test "ĐỘC LẬP hoàn toàn" ở trên).
   assert.deepEqual(service.getDisplayState('chan-1'), { state: 'warning' });
+});
+
+// Story 4.4 (verification-gap review): mirror test trên nhưng candidate MỚI
+// là 'ok' (không phải 'warning') - đúng tổ hợp mà nhánh phục hồi ở
+// TelegramAlertAdapter/EmailAlertAdapter dựa vào guard `subType!=='machine-offline'`
+// để KHÔNG kích hoạt (báo phục hồi giả trong lúc dashboard vẫn hiển thị
+// critical/machine-offline). Khoá lại hành vi `applyCandidate` ép subType
+// machine-offline NGAY CẢ KHI candidate.state === 'ok', để 1 refactor tương
+// lai thu hẹp điều kiện ép subType (vd loại trừ khi candidate 'ok') sẽ làm
+// fail test này thay vì lọt qua im lặng.
+test('kênh đang machine-offline (từng critical), telemetry tự hồi phục "ok" TRƯỚC KHI heartbeat resume -> publish VẪN kèm subType machine-offline (previousDisplayState="critical")', () => {
+  const { clock, alert, service } = makeService({ 'chan-1': 4000 });
+
+  // Chốt "critical" trước qua telemetry (RECONNECTING).
+  service.handleTelemetry(makeEvent({ channelId: 'chan-1', connectionState: 'RECONNECTING', bitrateKbps: 0 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ channelId: 'chan-1', connectionState: 'RECONNECTING', bitrateKbps: 0 }));
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'critical' });
+
+  // Heartbeat im lặng -> machine-offline (KHÔNG có heartbeat resume nào sau đây).
+  service.handleHeartbeat('chan-1', '2026-09-06T00:00:00.000Z');
+  clock.advance(HEARTBEAT_TIMEOUT_MS);
+  service.checkHeartbeatTimeouts();
+  assert.equal(alert.changes.at(-1)?.subType, 'machine-offline');
+
+  // Telemetry tự hồi phục "ok" trong lúc machineOfflineActive vẫn true (heartbeat
+  // CHƯA resume) - đúng kịch bản I/O matrix "telemetry tự hồi phục về ok qua
+  // applyCandidate trong lúc machineOfflineActive vẫn true".
+  clock.advance(1000);
+  service.handleTelemetry(makeEvent({ channelId: 'chan-1', connectionState: 'CONNECTED', bitrateKbps: 4000 }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ channelId: 'chan-1', connectionState: 'CONNECTED', bitrateKbps: 4000 }));
+
+  const lastChange = alert.changes.at(-1);
+  assert.equal(lastChange?.displayState, 'ok', 'displayState phản ánh đúng candidate telemetry mới (ok)');
+  assert.equal(
+    lastChange?.subType,
+    'machine-offline',
+    'applyCandidate PHẢI vẫn ép subType machine-offline dù candidate mới là "ok" - guard subType!=="machine-offline" ở adapter dựa vào đúng bất biến này để chặn báo phục hồi giả'
+  );
+  assert.equal(lastChange?.previousDisplayState, 'critical', 'previousDisplayState = committed cũ (critical) trước lần chốt này');
+  // `record.committed` (getDisplayState) KHÔNG bị machine-offline ghi đè.
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' });
 });
 
 // --- Code review [patch] round 1: checkOneChannelHeartbeatTimeout phải bỏ
