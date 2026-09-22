@@ -16,7 +16,7 @@ import { computeAudioLevelFixture } from '../src/fixtures/channelAudioLevels';
 // import này) - Page sẽ dùng đúng bản mock `connectUiWsClient` khai báo dưới.
 import Page from '../app/page';
 import { connectUiWsClient } from '../src/services/uiWsClient';
-import { playAlertBeep, primeAlertAudioContext } from '../src/services/alertSound';
+import { playAlertBeep, primeAlertAudioContext, BEEP_DURATION_SEC } from '../src/services/alertSound';
 
 vi.mock('../src/services/uiWsClient', () => ({
   connectUiWsClient: vi.fn((_url: string, store: ChannelStore) => {
@@ -41,6 +41,10 @@ vi.mock('../src/services/uiWsClient', () => ({
 vi.mock('../src/services/alertSound', () => ({
   playAlertBeep: vi.fn(),
   primeAlertAudioContext: vi.fn(),
+  // Code review round 2 [patch]: module mock đầy đủ (không passthrough) -
+  // phải khai báo lại const này để page.tsx's `import { BEEP_DURATION_SEC }`
+  // không undefined khi test import cùng module thật để so sánh giá trị.
+  BEEP_DURATION_SEC: 0.3,
 }));
 
 afterEach(() => {
@@ -556,6 +560,13 @@ describe('Page - alertSoundToken wiring (Story 4.1)', () => {
     });
 
     expect(playAlertBeep).toHaveBeenCalledTimes(2);
+    // Code review round 2 [patch]: xác nhận wiring truyền ĐÚNG offset stagger
+    // (i * BEEP_DURATION_SEC) cho từng lệnh gọi trong batch - trước đây test
+    // chỉ kiểm tra SỐ LẦN gọi, không kiểm tra tham số, nên không phát hiện
+    // được nếu quay lại gọi playAlertBeep() không offset (Review Findings
+    // round 1: "batched beeps chồng lấp thành 1 tiếng").
+    expect(playAlertBeep).toHaveBeenNthCalledWith(1, 0);
+    expect(playAlertBeep).toHaveBeenNthCalledWith(2, BEEP_DURATION_SEC);
     cleanup();
   });
 });

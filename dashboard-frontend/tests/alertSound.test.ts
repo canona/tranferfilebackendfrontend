@@ -28,10 +28,17 @@ describe('alertSound (Story 4.1)', () => {
   let resume: ReturnType<typeof vi.fn>;
   let createOscillator: ReturnType<typeof vi.fn>;
   let createGain: ReturnType<typeof vi.fn>;
+  // Code review round 2 [patch]: đếm số lần constructor `AudioContext` THẬT
+  // SỰ được `new` - `createOscillator`/`createGain` là field gán = biến
+  // ngoài dùng chung cho MỌI instance, nên assert qua chúng KHÔNG phát hiện
+  // được regression bỏ cache singleton ở `getSharedAudioContext()` (Review
+  // Findings round 1: "test không thực sự kiểm chứng singleton").
+  let constructorCallCount = 0;
   const originalAudioContext = window.AudioContext;
 
   beforeEach(() => {
     vi.resetModules();
+    constructorCallCount = 0;
 
     oscillator = {
       type: '',
@@ -58,6 +65,10 @@ describe('alertSound (Story 4.1)', () => {
       createOscillator = createOscillator;
       createGain = createGain;
       resume = resume;
+
+      constructor() {
+        constructorCallCount += 1;
+      }
     }
 
     // @ts-expect-error -- stub Web Audio API cho jsdom (không có sẵn)
@@ -89,16 +100,52 @@ describe('alertSound (Story 4.1)', () => {
     expect(resume).toHaveBeenCalledTimes(1);
   });
 
+  // Code review round 2 [patch]: nhánh happy-path phổ biến nhất
+  // (`ctx.state === 'running'`, mock mặc định ở beforeEach) chưa từng được
+  // assert là KHÔNG gọi resume() - trước đây chỉ nhánh 'suspended' có test.
+  it('ctx.state="running" (mặc định) -> playAlertBeep() KHÔNG gọi resume()', async () => {
+    const { playAlertBeep } = await import('../src/services/alertSound');
+    playAlertBeep();
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  // Code review round 2 [patch]: nhánh "thiếu Web Audio API" đã test cho
+  // playAlertBeep() nhưng chưa test cho primeAlertAudioContext() - entry
+  // point thứ 2 cũng phải nuốt lỗi câm lặng tương tự.
+  it('window.AudioContext không tồn tại -> primeAlertAudioContext() nuốt lỗi, không throw, không gọi resume', async () => {
+    // @ts-expect-error -- xoá stub để mô phỏng thiếu Web Audio API
+    window.AudioContext = undefined;
+    const { primeAlertAudioContext } = await import('../src/services/alertSound');
+    expect(() => primeAlertAudioContext()).not.toThrow();
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  // Code review round 2 [patch]: `playAlertBeep(startOffsetSec)` lệch thời
+  // điểm bắt đầu theo offset truyền vào - nền tảng cho stagger nhiều beep
+  // trong CÙNG 1 batch React (page.tsx). `ctx.currentTime` mock = 0 nên
+  // `start`/`stop` phải được gọi với đúng giá trị offset (Review Findings
+  // round 1: "batched beeps chồng lấp").
+  it('playAlertBeep(startOffsetSec): start/stop lệch đúng theo offset truyền vào', async () => {
+    const { playAlertBeep } = await import('../src/services/alertSound');
+    playAlertBeep(0.6);
+
+    expect(oscillator.start).toHaveBeenCalledWith(0.6);
+    expect(oscillator.stop).toHaveBeenCalledWith(0.6 + 0.3);
+    expect(gainNode.gain.setValueAtTime).toHaveBeenCalledWith(0.0001, 0.6);
+  });
+
   it('playAlertBeep() gọi nhiều lần -> dùng lại CÙNG 1 AudioContext (lazy-singleton, Design Notes)', async () => {
     const { playAlertBeep } = await import('../src/services/alertSound');
     playAlertBeep();
     playAlertBeep();
     playAlertBeep();
-    // createOscillator gọi 3 lần (3 tiếng bíp) nhưng chỉ 1 instance
-    // MockAudioContext được new (không có assertion trực tiếp trên
-    // constructor call count trong setup này, verify gián tiếp qua việc
-    // resume() sau đó vẫn tác động lên CÙNG context).
+    // createOscillator gọi 3 lần (3 tiếng bíp)...
     expect(createOscillator).toHaveBeenCalledTimes(3);
+    // ...nhưng constructor AudioContext chỉ được `new` ĐÚNG 1 lần (Code
+    // review round 2 [patch]: assertion trực tiếp trên constructor call
+    // count - trước đây chỉ verify gián tiếp qua createOscillator, vốn KHÔNG
+    // phát hiện được nếu getSharedAudioContext() mất cache singleton).
+    expect(constructorCallCount).toBe(1);
   });
 
   it('window.AudioContext không tồn tại (trình duyệt/jsdom thiếu Web Audio API) -> playAlertBeep() nuốt lỗi, không throw, không gọi createOscillator', async () => {

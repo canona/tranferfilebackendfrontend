@@ -11,7 +11,7 @@ import { ConnectionBanner } from '../src/components/ConnectionBanner';
 import { DetailPanel } from '../src/components/DetailPanel';
 import { createChannelStore, useChannelStore } from '../src/state/channelStore';
 import { connectUiWsClient } from '../src/services/uiWsClient';
-import { playAlertBeep, primeAlertAudioContext } from '../src/services/alertSound';
+import { playAlertBeep, primeAlertAudioContext, BEEP_DURATION_SEC } from '../src/services/alertSound';
 import { computeAudioLevelFixture } from '../src/fixtures/channelAudioLevels';
 import styles from './page.module.css';
 
@@ -101,8 +101,14 @@ export default function Page() {
     const delta = state.alertSoundToken - lastAlertTokenRef.current;
     if (delta <= 0) return;
     lastAlertTokenRef.current = state.alertSoundToken;
+    // Code review round 2 [patch]: lệch thời điểm bắt đầu mỗi beep theo
+    // `i * BEEP_DURATION_SEC` - khi >=2 transition rơi vào CÙNG 1 commit
+    // (delta>1), gọi `playAlertBeep()` không offset sẽ khiến các oscillator
+    // cùng tần số/pha khởi động cùng lúc (ctx.currentTime không đổi giữa các
+    // lệnh gọi đồng bộ) và chồng lấp thành 1 tiếng to hơn thay vì N tiếng
+    // phân biệt được (Review Findings round 1).
     for (let i = 0; i < delta; i += 1) {
-      playAlertBeep();
+      playAlertBeep(i * BEEP_DURATION_SEC);
     }
   }, [state.alertSoundToken]);
 

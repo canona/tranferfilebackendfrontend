@@ -6,7 +6,11 @@
 // (Code Map).
 
 const BEEP_FREQUENCY_HZ = 880;
-const BEEP_DURATION_SEC = 0.3;
+// Code review round 2 [patch]: export để page.tsx dùng làm khoảng lệch
+// (stagger) giữa các beep khi nhiều transition rơi vào CÙNG 1 commit React -
+// tránh N oscillator cùng tần số/pha khởi động cùng lúc chồng lấp thành 1
+// tiếng (to hơn) thay vì N tiếng phân biệt được (Review Findings).
+export const BEEP_DURATION_SEC = 0.3;
 const BEEP_PEAK_GAIN = 0.2;
 
 // AudioContext 1 lần dùng chung cho toàn phiên (Design Notes:
@@ -16,12 +20,16 @@ const BEEP_PEAK_GAIN = 0.2;
 let sharedAudioContext: AudioContext | null = null;
 
 // I/O matrix: "AudioContext bị trình duyệt chặn -> nuốt lỗi, console.warn 1
-// lần" - tránh spam console nếu nhiều transition liên tiếp đều bị chặn.
-let hasWarnedOnce = false;
+// lần" - tránh spam console nếu nhiều transition liên tiếp đều bị chặn CÙNG
+// một lý do. Code review round 2 [patch]: khoá theo `context` (không phải 1
+// cờ boolean chung) - 1 cờ chung sẽ khiến LOẠI lỗi MỚI/KHÁC xảy ra sau lần
+// warn đầu tiên (bất kỳ context nào) bị nuốt câm lặng vĩnh viễn cho hết phiên
+// (Review Findings). Mỗi context vẫn chỉ warn đúng 1 lần, độc lập với nhau.
+const warnedContexts = new Set<string>();
 
 function warnOnce(context: string, err: unknown): void {
-  if (hasWarnedOnce) return;
-  hasWarnedOnce = true;
+  if (warnedContexts.has(context)) return;
+  warnedContexts.add(context);
   console.warn(`alertSound: ${context} thất bại - bỏ qua âm báo`, err);
 }
 
@@ -81,7 +89,13 @@ function tryResumeIfSuspended(ctx: AudioContext): void {
 // page.tsx mỗi lần `channelStore`'s `alertSoundToken` tăng (Boundaries: "đúng
 // 1 lần/transition - không lặp, không cooldown"). Nuốt lỗi triệt để - KHÔNG
 // được làm crash UI dù AudioContext bị trình duyệt chặn/không hỗ trợ.
-export function playAlertBeep(): void {
+//
+// Code review round 2 [patch]: `startOffsetSec` (mặc định 0) - khi nhiều
+// transition rơi vào CÙNG 1 commit React (`page.tsx`'s `delta > 1`), lệch
+// từng lệnh gọi theo `i * BEEP_DURATION_SEC` để N tiếng bíp phát TUẦN TỰ,
+// nghe phân biệt được thay vì N oscillator cùng tần số/pha khởi động cùng
+// lúc chồng lấp thành 1 tiếng to hơn (Review Findings round 1).
+export function playAlertBeep(startOffsetSec = 0): void {
   try {
     const ctx = getSharedAudioContext();
     if (!ctx) return;
@@ -92,18 +106,18 @@ export function playAlertBeep(): void {
     oscillator.type = 'sine';
     oscillator.frequency.value = BEEP_FREQUENCY_HZ;
 
-    const now = ctx.currentTime;
+    const startAt = ctx.currentTime + startOffsetSec;
     // Envelope ngắn: attack gần như tức thời (tránh click nghe được ở 0),
     // decay theo hàm mũ về gần 0 trước khi oscillator dừng.
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(BEEP_PEAK_GAIN, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + BEEP_DURATION_SEC);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(BEEP_PEAK_GAIN, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + BEEP_DURATION_SEC);
 
     oscillator.connect(gain);
     gain.connect(ctx.destination);
 
-    oscillator.start(now);
-    oscillator.stop(now + BEEP_DURATION_SEC);
+    oscillator.start(startAt);
+    oscillator.stop(startAt + BEEP_DURATION_SEC);
   } catch (err) {
     warnOnce('playAlertBeep', err);
   }
