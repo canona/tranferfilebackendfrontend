@@ -18,7 +18,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import WebSocket from 'ws';
-import { parsePort, parseBearerTokens, parseEmailRecipients, startApp, createCompositeAlertPort } from '../app/main.js';
+import {
+  parsePort,
+  parseBearerTokens,
+  parseEmailRecipients,
+  parseSmtpPort,
+  startApp,
+  createCompositeAlertPort,
+} from '../app/main.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
 import type { Clock } from '../src/core/channelState.js';
@@ -181,6 +188,42 @@ test('parseEmailRecipients: entry không phải định dạng email hợp lệ 
     () => parseEmailRecipients('a@example.com,khong-phai-email,b@example.com'),
     /DASHBOARD_EMAIL_CRITICAL_RECIPIENTS không hợp lệ.*khong-phai-email/
   );
+});
+
+// Code review (patch, vòng 2): dedupe trước đây phân biệt hoa/thường -
+// `Foo@x.com`/`foo@x.com` bị coi là 2 entry khác nhau (2 email trùng lặp gửi
+// tới CÙNG 1 hộp thư khi operator gõ nhầm hoa/thường lúc copy-paste). Dedupe
+// giờ so khớp KHÔNG phân biệt hoa/thường, nhưng vẫn giữ CASING GỐC của lần
+// xuất hiện ĐẦU TIÊN trong kết quả trả về.
+test('parseEmailRecipients: entry trùng lặp CHỈ khác hoa/thường -> vẫn dedupe (không phân biệt hoa/thường), giữ casing gốc của lần xuất hiện đầu tiên', () => {
+  const recipients = parseEmailRecipients('Foo@Example.com,bar@example.com,foo@example.com,FOO@EXAMPLE.COM');
+  assert.deepEqual(recipients, ['Foo@Example.com', 'bar@example.com']);
+});
+
+// Code review (patch, vòng 2): `parseSmtpPort` chưa từng có test trực tiếp -
+// test `startApp()` gián tiếp duy nhất dùng input `"NaN"` (throw kể cả với
+// implementation CŨ, trước khi có regex chặn hex/khoa học/dấu +), nên không
+// thực sự phủ đúng 3 case mà comment của hàm khẳng định đã chặn.
+test('parseSmtpPort: chuỗi số nguyên thập phân thuần hợp lệ -> trả về number đúng', () => {
+  assert.equal(parseSmtpPort('587'), 587);
+  assert.equal(parseSmtpPort('1'), 1);
+  assert.equal(parseSmtpPort('65535'), 65535);
+});
+
+test('parseSmtpPort: rỗng/chỉ khoảng trắng -> throw rõ ràng', () => {
+  assert.throws(() => parseSmtpPort(''), /DASHBOARD_SMTP_PORT không hợp lệ/);
+  assert.throws(() => parseSmtpPort('   '), /DASHBOARD_SMTP_PORT không hợp lệ/);
+});
+
+test('parseSmtpPort: hex/khoa học/dấu + -> throw rõ ràng, KHÔNG âm thầm coerce (0x1F/5e2/+587)', () => {
+  assert.throws(() => parseSmtpPort('0x1F'), /DASHBOARD_SMTP_PORT không hợp lệ/);
+  assert.throws(() => parseSmtpPort('5e2'), /DASHBOARD_SMTP_PORT không hợp lệ/);
+  assert.throws(() => parseSmtpPort('+587'), /DASHBOARD_SMTP_PORT không hợp lệ/);
+});
+
+test('parseSmtpPort: ngoài khoảng 1-65535 -> throw rõ ràng', () => {
+  assert.throws(() => parseSmtpPort('0'), /DASHBOARD_SMTP_PORT không hợp lệ/);
+  assert.throws(() => parseSmtpPort('65536'), /DASHBOARD_SMTP_PORT không hợp lệ/);
 });
 
 test('startApp(): channelRegistryFilePath hợp lệ -> khởi động thành công, wiring registryPort vào ChannelStateService, stop() không throw', async () => {
@@ -355,7 +398,15 @@ for (const [envVarName, configField] of Object.entries(STORY_4_3_CONFIG_FIELD_BY
         );
       });
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      // Code review (patch, vòng 2): mirror 2 test EADDRINUSE liền kề bên
+      // dưới - `assert.doesNotThrow` là BẰNG CHỨNG TRỰC TIẾP `registryPort.stop()`
+      // đã thực sự chạy (Windows: watcher rò rỉ giữ file handle mở, khiến
+      // `rmSync` throw EBUSY/EPERM ngay), không chỉ "gọi rmSync mà không kiểm
+      // tra kết quả".
+      assert.doesNotThrow(
+        () => rmSync(dir, { recursive: true, force: true }),
+        'registryPort.stop() phải đã chạy - thư mục tmp phải xoá được ngay, không bị khoá'
+      );
     }
   });
 }
@@ -377,7 +428,10 @@ test('startApp(): DASHBOARD_SMTP_PORT không phải số nguyên hợp lệ -> t
       /DASHBOARD_SMTP_PORT không hợp lệ/
     );
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    assert.doesNotThrow(
+      () => rmSync(dir, { recursive: true, force: true }),
+      'registryPort.stop() phải đã chạy - thư mục tmp phải xoá được ngay, không bị khoá'
+    );
   }
 });
 
@@ -399,7 +453,10 @@ test('startApp(): DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID toàn khoảng trắng -
       );
     });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    assert.doesNotThrow(
+      () => rmSync(dir, { recursive: true, force: true }),
+      'registryPort.stop() phải đã chạy - thư mục tmp phải xoá được ngay, không bị khoá'
+    );
   }
 });
 
@@ -427,7 +484,66 @@ test('startApp(): DASHBOARD_EMAIL_CRITICAL_RECIPIENTS có entry không phải đ
       );
     });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    assert.doesNotThrow(
+      () => rmSync(dir, { recursive: true, force: true }),
+      'registryPort.stop() phải đã chạy - thư mục tmp phải xoá được ngay, không bị khoá'
+    );
+  }
+});
+
+// Code review (patch, vòng 2): `DASHBOARD_SMTP_FROM` trước đây chỉ được kiểm
+// tra thiếu/rỗng, KHÔNG được validate hình dạng email như
+// `DASHBOARD_EMAIL_CRITICAL_RECIPIENTS` - phải fail-fast NGAY lúc khởi động,
+// không lộ ra thành lỗi SMTP mơ hồ bị nuốt+log giữa 1 sự cố critical thật.
+test('startApp(): DASHBOARD_SMTP_FROM không phải định dạng email hợp lệ -> throw rõ ràng (không âm thầm lọt qua tới lúc gửi SMTP thật)', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  try {
+    await assert.rejects(
+      () =>
+        startApp({
+          port: 0,
+          host: '127.0.0.1',
+          uiPort: 0,
+          validBearerTokens: new Set(['test-token']),
+          channelRegistryFilePath: filePath,
+          ...omitAlertConfigField('smtpFrom'),
+          smtpFrom: 'khong-phai-email',
+        }),
+      /DASHBOARD_SMTP_FROM không hợp lệ/
+    );
+  } finally {
+    assert.doesNotThrow(
+      () => rmSync(dir, { recursive: true, force: true }),
+      'registryPort.stop() phải đã chạy - thư mục tmp phải xoá được ngay, không bị khoá'
+    );
+  }
+});
+
+// Code review (patch, vòng 2): trùng `DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID`
+// với `DASHBOARD_TELEGRAM_CHAT_ID` khiến đội trực nhận 2 tin Telegram critical
+// giống hệt nhau mỗi sự cố (2 instance, 2 cooldown độc lập) - gần như chắc
+// chắn là nhầm lẫn cấu hình, phải fail-fast rõ ràng thay vì âm thầm chạy.
+test('startApp(): DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID trùng DASHBOARD_TELEGRAM_CHAT_ID -> throw rõ ràng (tránh gửi trùng lặp Telegram critical)', async () => {
+  const { dir, filePath } = writeValidRegistryFile();
+  try {
+    await assert.rejects(
+      () =>
+        startApp({
+          port: 0,
+          host: '127.0.0.1',
+          uiPort: 0,
+          validBearerTokens: new Set(['test-token']),
+          channelRegistryFilePath: filePath,
+          ...omitAlertConfigField('telegramLeadershipChatId'),
+          telegramLeadershipChatId: FAKE_ALERT_CONFIG.telegramChatId,
+        }),
+      /DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID không hợp lệ.*trùng với DASHBOARD_TELEGRAM_CHAT_ID/
+    );
+  } finally {
+    assert.doesNotThrow(
+      () => rmSync(dir, { recursive: true, force: true }),
+      'registryPort.stop() phải đã chạy - thư mục tmp phải xoá được ngay, không bị khoá'
+    );
   }
 });
 
@@ -752,10 +868,19 @@ test('startApp(): wiring thật composite alertPort -> backend chốt trạng th
 // `bitrateThreshold.ts`), bơm `telegramSendMessage` spy qua config (KHÔNG
 // no-op như `FAKE_ALERT_CONFIG`), assert spy được gọi đúng `chatId` cấu
 // hình + text chứa đúng channel_id.
-test('startApp(): wiring thật composite alertPort -> kênh chuyển warning -> TelegramAlertAdapter thật gọi telegramSendMessage đúng chatId + text chứa channel_id', async () => {
+// Code review (patch, vòng 2): trước đây test này chỉ assert `telegramCalls[0]`
+// (không assert `length === 1`) và KHÔNG spy `emailSendMail` (vẫn dùng
+// `FAKE_ALERT_CONFIG.emailSendMail` no-op) - 1 lỗi wiring ở `main.ts` (vd gán
+// nhầm `displayState: 'warning'` cho 1 trong 2 `TelegramAlertAdapter` critical
+// mới, hoặc cho `EmailAlertAdapter`, khiến chúng phản ứng SAI với `warning`)
+// sẽ không bị bắt ở mức tích hợp/composition-root - chỉ được che bởi test
+// unit riêng từng adapter (vốn test đúng class đó, không test wiring sai
+// trong `main.ts`). Giờ đếm CẢ 2 kênh gửi để bắt đúng loại lỗi này.
+test('startApp(): wiring thật composite alertPort -> kênh chuyển warning -> TelegramAlertAdapter thật gọi telegramSendMessage đúng chatId + text chứa channel_id, KHÔNG chạm Telegram/Email critical', async () => {
   const { dir, filePath } = writeValidRegistryFile(); // chan-1, baseline_kbps=4000, grid_position=0
   const logger = new FakeLogger();
   const telegramCalls: { botToken: string; chatId: string; text: string }[] = [];
+  const emailCalls: { to: string[] }[] = [];
   const app = await startApp({
     port: 0,
     host: '127.0.0.1',
@@ -768,6 +893,9 @@ test('startApp(): wiring thật composite alertPort -> kênh chuyển warning ->
     ...FAKE_ALERT_CONFIG,
     telegramSendMessage: async (botToken, chatId, text) => {
       telegramCalls.push({ botToken, chatId, text });
+    },
+    emailSendMail: async (_smtpConfig, to) => {
+      emailCalls.push({ to });
     },
   });
 
@@ -812,10 +940,21 @@ test('startApp(): wiring thật composite alertPort -> kênh chuyển warning ->
     // `TelegramAlertAdapter.publishStateChange` fire-and-forget (Promise chain
     // nội bộ) - poll thay vì assert ngay, tránh giòn theo microtask timing.
     await waitUntil(() => telegramCalls.length > 0);
+    // Chờ thêm 1 khoảng ngắn: nếu wiring bị sai (vd 1 trong 2 TelegramAlertAdapter
+    // critical hoặc EmailAlertAdapter phản ứng nhầm với warning), cả 3 fire
+    // trong cùng 1 tick event nên cũng đã kịp gọi xong sendMessage/sendMail
+    // giả trong khoảng này.
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     assert.equal(telegramCalls[0]?.chatId, 'test-telegram-chat-id');
     assert.equal(telegramCalls[0]?.botToken, 'test-telegram-bot-token');
     assert.match(telegramCalls[0]?.text ?? '', /chan-1/);
+    assert.equal(
+      telegramCalls.length,
+      1,
+      'CHỈ instance Telegram warning (đội trực) được gọi - 2 instance critical mới KHÔNG được phản ứng với warning'
+    );
+    assert.equal(emailCalls.length, 0, 'EmailAlertAdapter KHÔNG được gọi khi displayState=warning (chỉ phản ứng critical)');
 
     telemetryWs.close();
     uiWs.close();

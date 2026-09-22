@@ -6,9 +6,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import nodemailer from 'nodemailer';
 import {
   EmailAlertAdapter,
   EMAIL_COOLDOWN_MS,
+  defaultEmailSendMail,
   type EmailSendMail,
   type EmailSmtpConfig,
 } from '../src/adapters/outbound/emailAlertAdapter.js';
@@ -284,4 +286,150 @@ test('constructor: dùng systemClock/defaultEmailSendMail mặc định khi omit
   // Không truyền clock/sendMail - chỉ xác nhận constructor không throw, KHÔNG
   // gọi publishStateChange() (tránh gọi SMTP thật ra mạng trong test).
   assert.doesNotThrow(() => new EmailAlertAdapter({ ...SMTP_CONFIG, recipients: ['a@example.com'], logger }));
+});
+
+// Code review (patch, vòng 2): `defaultEmailSendMail` (wiring nodemailer
+// thật) chưa từng có test nào trước đây, khác `defaultTelegramSendMessage`
+// vốn có test riêng - stub `nodemailer.createTransport` (KHÔNG phải
+// `sendMail` injected qua `EmailAlertAdapter`) để chạy tới đúng logic thật
+// bên trong, mirror cách `telegramAlertAdapter.test.ts` stub `global.fetch`.
+test('defaultEmailSendMail: port=465 -> secure:true (implicit TLS) + timeout 10000ms được truyền vào createTransport; sendMail dùng đúng from/to/subject/text', async () => {
+  const originalCreateTransport = nodemailer.createTransport;
+  let capturedOptions: Record<string, unknown> | undefined;
+  let capturedMail: Record<string, unknown> | undefined;
+  (nodemailer as unknown as { createTransport: unknown }).createTransport = (options: Record<string, unknown>) => {
+    capturedOptions = options;
+    return {
+      sendMail: async (mailOptions: Record<string, unknown>) => {
+        capturedMail = mailOptions;
+        return { rejected: [] };
+      },
+    };
+  };
+
+  try {
+    await defaultEmailSendMail(
+      { host: 'smtp.example.com', port: 465, user: 'smtp-user', password: 'smtp-password', from: 'from@example.com' },
+      ['a@example.com', 'b@example.com'],
+      '[VTCDigital] Cảnh báo CRITICAL - kênh chan-1',
+      'nội dung email'
+    );
+
+    assert.equal(capturedOptions?.host, 'smtp.example.com');
+    assert.equal(capturedOptions?.port, 465);
+    assert.equal(capturedOptions?.secure, true, 'port 465 -> secure:true (implicit TLS)');
+    assert.equal(capturedOptions?.connectionTimeout, 10000);
+    assert.equal(capturedOptions?.greetingTimeout, 10000);
+    assert.equal(capturedOptions?.socketTimeout, 10000);
+    assert.deepEqual((capturedOptions?.auth as { user: string; pass: string })?.user, 'smtp-user');
+    assert.deepEqual((capturedOptions?.auth as { user: string; pass: string })?.pass, 'smtp-password');
+
+    assert.equal(capturedMail?.from, 'from@example.com');
+    assert.deepEqual(capturedMail?.to, ['a@example.com', 'b@example.com']);
+    assert.equal(capturedMail?.subject, '[VTCDigital] Cảnh báo CRITICAL - kênh chan-1');
+    assert.equal(capturedMail?.text, 'nội dung email');
+  } finally {
+    nodemailer.createTransport = originalCreateTransport;
+  }
+});
+
+test('defaultEmailSendMail: port khác 465 (587/25...) -> secure:false (STARTTLS)', async () => {
+  const originalCreateTransport = nodemailer.createTransport;
+  let capturedSecure: unknown;
+  (nodemailer as unknown as { createTransport: unknown }).createTransport = (options: Record<string, unknown>) => {
+    capturedSecure = options.secure;
+    return { sendMail: async () => ({ rejected: [] }) };
+  };
+
+  try {
+    await defaultEmailSendMail(
+      { host: 'smtp.example.com', port: 587, user: 'smtp-user', password: 'smtp-password', from: 'from@example.com' },
+      ['a@example.com'],
+      'subject',
+      'text'
+    );
+    assert.equal(capturedSecure, false, 'port khác 465 -> secure:false (STARTTLS)');
+  } finally {
+    nodemailer.createTransport = originalCreateTransport;
+  }
+});
+
+// Code review (patch, vòng 2): lỗi connect/auth từ nodemailer không được
+// chắc chắn KHÔNG chứa `smtpConfig.user`/`password` - `defaultEmailSendMail`
+// phải thay bằng 1 message cố định, KHÔNG nhúng thông tin xác thực gốc,
+// mirror biện pháp chống rò rỉ bot token của `defaultTelegramSendMessage`.
+test('defaultEmailSendMail: transporter.sendMail() throw -> throw lại message CỐ ĐỊNH, KHÔNG chứa user/password gốc', async () => {
+  const originalCreateTransport = nodemailer.createTransport;
+  const secretPassword = 'super-secret-app-password';
+  (nodemailer as unknown as { createTransport: unknown }).createTransport = () => ({
+    sendMail: async () => {
+      throw new Error(`535 Authentication failed for user smtp-user with password ${secretPassword}`);
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        defaultEmailSendMail(
+          { host: 'smtp.example.com', port: 587, user: 'smtp-user', password: secretPassword, from: 'from@example.com' },
+          ['a@example.com'],
+          'subject',
+          'text'
+        ),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.doesNotMatch(err.message, new RegExp(secretPassword));
+        assert.match(err.message, /smtp\.example\.com/);
+        return true;
+      }
+    );
+  } finally {
+    nodemailer.createTransport = originalCreateTransport;
+  }
+});
+
+// Code review (patch, vòng 2): `transporter.sendMail()` có thể resolve
+// THÀNH CÔNG dù 1 phần recipient bị SMTP server từ chối (`info.rejected`) -
+// trước đây bị bỏ qua hoàn toàn, event `email_alert_sent` sẽ báo "đã gửi đủ"
+// dù thực tế thiếu người nhận.
+test('defaultEmailSendMail: transporter.sendMail() resolve với info.rejected không rỗng -> throw (KHÔNG âm thầm coi là gửi đủ)', async () => {
+  const originalCreateTransport = nodemailer.createTransport;
+  (nodemailer as unknown as { createTransport: unknown }).createTransport = () => ({
+    sendMail: async () => ({ rejected: ['b@example.com'] }),
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        defaultEmailSendMail(
+          { host: 'smtp.example.com', port: 587, user: 'smtp-user', password: 'smtp-password', from: 'from@example.com' },
+          ['a@example.com', 'b@example.com'],
+          'subject',
+          'text'
+        ),
+      /từ chối/
+    );
+  } finally {
+    nodemailer.createTransport = originalCreateTransport;
+  }
+});
+
+test('defaultEmailSendMail: transporter.sendMail() resolve với info.rejected rỗng -> không throw', async () => {
+  const originalCreateTransport = nodemailer.createTransport;
+  (nodemailer as unknown as { createTransport: unknown }).createTransport = () => ({
+    sendMail: async () => ({ rejected: [] }),
+  });
+
+  try {
+    await assert.doesNotReject(() =>
+      defaultEmailSendMail(
+        { host: 'smtp.example.com', port: 587, user: 'smtp-user', password: 'smtp-password', from: 'from@example.com' },
+        ['a@example.com'],
+        'subject',
+        'text'
+      )
+    );
+  } finally {
+    nodemailer.createTransport = originalCreateTransport;
+  }
 });

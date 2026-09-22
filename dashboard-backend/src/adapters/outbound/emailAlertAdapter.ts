@@ -72,7 +72,33 @@ export const defaultEmailSendMail: EmailSendMail = async (smtpConfig, to, subjec
     greetingTimeout: 10000,
     socketTimeout: 10000,
   });
-  await transporter.sendMail({ from: smtpConfig.from, to, subject, text });
+
+  let info: { rejected?: unknown[] };
+  try {
+    info = await transporter.sendMail({ from: smtpConfig.from, to, subject, text });
+  } catch (err) {
+    // Code review (patch, vòng 2): mirror `defaultTelegramSendMessage` - lỗi
+    // connect/auth nodemailer trả về (vd response SMTP server) không có gì
+    // đảm bảo KHÔNG BAO GIỜ chứa `smtpConfig.user`/`password`, trong khi
+    // `EmailAlertAdapter.publishStateChange()` log THẲNG `err.message` vào
+    // event `email_alert_send_error`. Thay bằng 1 message cố định, không
+    // nhúng `smtpConfig`, để nhất quán với biện pháp chống rò rỉ bot token
+    // của Telegram - `host`/`port` không phải thông tin nhạy cảm, giữ lại để
+    // vẫn chẩn đoán được đang gửi qua SMTP server nào.
+    throw new Error(
+      `Gửi email qua SMTP (${smtpConfig.host}:${smtpConfig.port}) lỗi (chi tiết lược bỏ để tránh rò rỉ SMTP user/password qua log).`
+    );
+  }
+
+  // Code review (patch, vòng 2): `transporter.sendMail()` có thể resolve
+  // THÀNH CÔNG dù 1 phần recipient bị SMTP server từ chối (`info.rejected`
+  // không rỗng) - trước đây bị bỏ qua hoàn toàn, khiến event `email_alert_sent`
+  // báo "đã gửi đủ N người nhận" dù thực tế thiếu 1 người. Throw để đi qua
+  // đúng pipeline nuốt lỗi + log `email_alert_send_error` đã có sẵn của
+  // `EmailAlertAdapter`, thay vì âm thầm coi là thành công.
+  if (info.rejected && info.rejected.length > 0) {
+    throw new Error(`SMTP server từ chối ${info.rejected.length}/${to.length} người nhận, không gửi được đủ.`);
+  }
 };
 
 export interface EmailAlertAdapterOptions {
