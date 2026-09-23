@@ -31,6 +31,19 @@
   cursor: pointer;
 }
 
+/*
+ * Story 5.1 (Boundaries): ".cell phải có outline focus-visible dùng
+ * var(--color-focus-ring), cùng pattern với ackInput/ackButton hiện có"
+ * (mirror DetailPanel.module.css's .ackButton:focus-visible). `overflow:
+ * hidden` ở `.cell` không cắt outline (CSS Basic UI: outline được vẽ ngoài
+ * border-edge và KHÔNG bị `overflow` clip, kể cả overflow:hidden) nên an
+ * toàn dùng outline-offset dương.
+ */
+.cell:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 .loaded {
   /* Fallback loaded-neutral (Story 2.3) khi thiếu displayState dù đã loaded
      (I/O matrix) - khớp DESIGN.md's channel-grid-cell.states.ok, không phải

@@ -6,6 +6,7 @@
 // trong `channels`/DOM KHÔNG ảnh hưởng vị trí hiển thị (Boundaries: "không
 // phụ thuộc thứ tự event").
 
+import { useMemo } from 'react';
 import type { ChannelRegistryEntry } from '../state/channelStore';
 import { ChannelGridCell, type DisplayState } from './ChannelGridCell';
 import styles from './ChannelGrid.module.css';
@@ -75,7 +76,27 @@ export function ChannelGrid({
   // 0 kênh ngay lúc load, xem `loadAndValidate`) - an toàn để coi length===0
   // là tín hiệu duy nhất "chưa có dữ liệu thật", không lẫn với 1 registry hợp
   // lệ nhưng nhỏ hơn 20 kênh (vẫn render đúng số ô hiện có, không độn thêm).
-  const displayChannels = channels.length > 0 ? channels : placeholderChannels();
+  //
+  // Story 5.1 (Boundaries): "DOM order của 20 channel-grid-cell phải khớp
+  // gridPosition tăng dần (0->19), bất kể thứ tự phần tử trong mảng channels
+  // nhận từ registry-snapshot" - `channelStore.ts`'s `applyRegistrySnapshot`
+  // lưu `channels` nguyên trạng từ backend, KHÔNG đảm bảo thứ tự. DOM order
+  // = thứ tự Tab thực tế (native tabIndex=0, không roving-tabindex - Never)
+  // nên phải sort 1 bản SAO (không mutate `channels` gốc/prop) trước `.map()`,
+  // độc lập hoàn toàn việc CSS Grid đặt vị trí thị giác qua gridRow/gridColumn
+  // (ChannelGridCell.tsx) - 2 cơ chế tách biệt, sort ở đây chỉ đổi thứ tự Tab.
+  //
+  // Code review [patch]: bọc `useMemo` - component re-render trên MỌI đổi
+  // prop khác (channelAudioLevels/channelDisplayStates/channelSnapshots... từ
+  // WebSocket, tick liên tục) không liên quan gì tới `channels`/thứ tự Tab;
+  // không nhớ lại thì spread+sort 20 phần tử chạy lại vô ích mỗi render đó.
+  // Dependency đúng là `channels` (không phải channels.length hay biến trung
+  // gian nào khác) - `placeholderChannels()` chỉ dùng khi `channels.length===0`,
+  // tức bản thân là hàm thuần không phụ thuộc gì ngoài `channels`.
+  const displayChannels = useMemo(
+    () => [...(channels.length > 0 ? channels : placeholderChannels())].sort((a, b) => a.gridPosition - b.gridPosition),
+    [channels],
+  );
 
   return (
     <div className={styles.grid} role="grid" aria-label="Lưới tổng quan 20 kênh">

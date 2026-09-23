@@ -231,6 +231,77 @@ describe('DetailPanel', () => {
   });
 });
 
+// Story 5.1 (Boundaries): "khi detail-panel chuyển từ đóng->mở, focus phải
+// chuyển vào bên trong panel (chính phần tử dialog); khi đóng, focus trả về
+// phần tử đã có focus ngay trước lúc mở (nếu phần tử đó còn trong DOM)".
+describe('DetailPanel - Focus management (Story 5.1)', () => {
+  it('mở panel (qua store.selectChannel) -> document.activeElement là phần tử panel (dialog)', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+
+    // Mô phỏng 1 channel-grid-cell đang focus TRƯỚC khi mở panel (Enter/Space).
+    const sourceCell = document.createElement('button');
+    document.body.appendChild(sourceCell);
+    sourceCell.focus();
+    expect(document.activeElement).toBe(sourceCell);
+
+    render(<DetailPanel store={store} />);
+    act(() => store.selectChannel('chan-1'));
+
+    expect(document.activeElement).toBe(screen.getByTestId('detail-panel'));
+
+    document.body.removeChild(sourceCell);
+  });
+
+  it('đóng bằng Esc -> focus trả về đúng phần tử đã focus trước khi mở (còn trong DOM)', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+
+    const sourceCell = document.createElement('button');
+    document.body.appendChild(sourceCell);
+    sourceCell.focus();
+
+    render(<DetailPanel store={store} />);
+    act(() => store.selectChannel('chan-1'));
+    expect(document.activeElement).toBe(screen.getByTestId('detail-panel'));
+
+    act(() => {
+      fireEvent.keyDown(window, { key: 'Escape' });
+    });
+
+    expect(document.activeElement).toBe(sourceCell);
+
+    document.body.removeChild(sourceCell);
+  });
+
+  it('cell nguồn đã rời DOM lúc đóng panel (hiếm) -> đóng bình thường, không throw', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+
+    const sourceCell = document.createElement('button');
+    document.body.appendChild(sourceCell);
+    sourceCell.focus();
+
+    render(<DetailPanel store={store} />);
+    act(() => store.selectChannel('chan-1'));
+
+    // Cell nguồn rời DOM trong lúc panel đang mở (hiếm - vd re-render layout).
+    document.body.removeChild(sourceCell);
+
+    expect(() => {
+      act(() => {
+        fireEvent.keyDown(window, { key: 'Escape' });
+      });
+    }).not.toThrow();
+    expect(screen.queryByTestId('detail-panel')).toBeNull();
+    // I/O matrix: "focus rơi về mặc định của trình duyệt (document.body)" -
+    // phần tử đã lưu (sourceCell) không còn isConnected nên component KHÔNG
+    // tự gọi .focus() nào cả; browser đã tự đưa focus về document.body ngay
+    // khi phần tử đang focus bị gỡ khỏi DOM.
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
 // Story 3.3: nút "Xác nhận đã tiếp nhận" + input tên tắt - CHỈ hiện khi kênh
 // đang warning/critical (Boundaries: đọc channelDisplayStates, KHÔNG phải
 // historyState).

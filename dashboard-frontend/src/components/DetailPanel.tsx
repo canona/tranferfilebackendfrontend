@@ -87,6 +87,10 @@ export function DetailPanel({ store, onAck }: DetailPanelProps) {
   const { selectedChannelId } = state;
   const isOpen = selectedChannelId !== null;
   const panelRef = useRef<HTMLDivElement>(null);
+  // Story 5.1: phần tử đã có focus NGAY TRƯỚC lúc panel mở (thường là
+  // channel-grid-cell vừa Enter/Space) - lưu lại để trả focus về đúng chỗ khi
+  // đóng (Boundaries: "focus trả về phần tử đã có focus ngay trước lúc mở").
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
 
   // Story 3.3: input tên tắt operator - state RIÊNG của panel (không thuộc
   // channelStore, chỉ là draft UI trước khi bấm nút). Reset về rỗng mỗi khi
@@ -143,6 +147,32 @@ export function DetailPanel({ store, onAck }: DetailPanelProps) {
     return () => window.removeEventListener('click', handlePointerDownCapture, true);
   }, [isOpen, store]);
 
+  // Story 5.1 (Boundaries): "khi detail-panel chuyển từ đóng->mở, focus phải
+  // chuyển vào bên trong panel (chính phần tử dialog); khi đóng, focus trả về
+  // phần tử đã có focus ngay trước lúc mở (nếu phần tử đó còn trong DOM)".
+  // Track theo `isOpen` (boolean đóng/mở), KHÔNG theo `selectedChannelId` -
+  // chuyển sang xem 1 kênh KHÁC trong lúc panel đang mở (Code review round 3
+  // - click channel-grid-cell khác) KHÔNG phải sự kiện "mở" mới, `isOpen` vẫn
+  // `true` suốt quá trình đó nên effect này không chạy lại/không cướp lại
+  // focus không cần thiết.
+  useEffect(() => {
+    if (isOpen) {
+      previouslyFocusedElementRef.current = document.activeElement as HTMLElement | null;
+      panelRef.current?.focus();
+      return;
+    }
+    // Đóng panel: trả focus về phần tử đã lưu NẾU còn trong DOM (`isConnected`)
+    // - I/O matrix: "cell nguồn đã rời DOM lúc đóng (hiếm) -> Panel đóng bình
+    // thường, không throw, focus rơi về mặc định của trình duyệt
+    // (document.body), không bắt buộc phải re-focus". Không gọi `.focus()`
+    // nếu phần tử đã rời DOM - browser đã tự đưa focus về `document.body`.
+    const previouslyFocused = previouslyFocusedElementRef.current;
+    if (previouslyFocused?.isConnected) {
+      previouslyFocused.focus();
+    }
+    previouslyFocusedElementRef.current = null;
+  }, [isOpen]);
+
   if (selectedChannelId === null) return null;
 
   const channel = state.channels.find((c) => c.channelId === selectedChannelId);
@@ -172,6 +202,13 @@ export function DetailPanel({ store, onAck }: DetailPanelProps) {
         role="dialog"
         aria-modal="true"
         aria-label={channel?.stationName || 'Chi tiết kênh'}
+        // Story 5.1: div không tự nhận focus (không phải phần tử focusable
+        // mặc định) - tabIndex={-1} cho phép `.focus()` chương trình (mở panel
+        // bằng bàn phím) mà KHÔNG đưa `.panel` vào thứ tự Tab tự nhiên (Never:
+        // "không thêm Tab-trap" - Tab vẫn đi tiếp vào các phần tử con
+        // (input/button) như bình thường, `tabIndex=-1` chỉ ảnh hưởng
+        // click/focus() trực tiếp trên chính div này).
+        tabIndex={-1}
         data-testid="detail-panel"
         data-state={historyState.state}
         data-channel-id={selectedChannelId}

@@ -314,6 +314,33 @@ describe('ChannelGrid', () => {
     expect(screen.getByTestId('channel-grid-cell-chan-1')).not.toHaveAttribute('data-sub-type');
   });
 
+  // Story 5.1 (Boundaries): "DOM order của 20 channel-grid-cell phải khớp
+  // gridPosition tăng dần (0->19), bất kể thứ tự phần tử trong mảng channels
+  // nhận từ registry-snapshot" - test này khác test "vị trí ô KHÔNG phụ thuộc
+  // thứ tự mảng channels" ở trên: test cũ chỉ verify style.gridRow/gridColumn
+  // (vị trí THỊ GIÁC qua CSS Grid), test này verify thứ tự PHẦN TỬ TRONG DOM
+  // (= thứ tự Tab thực tế, không mô phỏng phím Tab thật - Never).
+  it('DOM order (thứ tự Tab) khớp data-grid-position tăng dần liên tục 0-19 dù channels truyền vào đảo ngược', () => {
+    const channels = makeChannels(20);
+    const shuffled = [...channels].reverse();
+
+    render(
+      <ChannelGrid
+        channels={shuffled}
+        seenChannelIds={new Set()}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
+        channelAck={new Map()}
+      />,
+    );
+
+    const cells = screen.getAllByRole('gridcell');
+    const positions = cells.map((cell) => Number(cell.getAttribute('data-grid-position')));
+    expect(positions).toEqual(Array.from({ length: 20 }, (_, i) => i));
+  });
+
   // Story 3.3: `channelAck` truyền đúng xuống từng cell theo channelId -
   // mirror test channelSnapshots/channelAudioLevels ở trên.
   it('truyền đúng ackLabel xuống từng cell theo channelId (channelAck)', () => {
