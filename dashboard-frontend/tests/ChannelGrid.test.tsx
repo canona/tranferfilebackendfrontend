@@ -341,6 +341,52 @@ describe('ChannelGrid', () => {
     expect(positions).toEqual(Array.from({ length: 20 }, (_, i) => i));
   });
 
+  // Code review [patch, vòng 2]: `displayChannels` giờ qua `useMemo(..., [channels])`
+  // - mọi test trên chỉ render 1 LẦN rồi assert ngay, không bắt được regression
+  // nếu dependency array bị làm sai (vd đổi thành `[]`/`[channels.length]`,
+  // đúng cái mà comment tại chỗ của `useMemo` cảnh báo là lựa chọn sai dễ mắc).
+  // Test này `rerender` với 1 mảng `channels` THỨ 2 khác thứ tự - xác nhận
+  // DOM order thực sự cập nhật theo, không bị "đứng hình" ở lần render đầu.
+  it('rerender với channels thứ 2 khác thứ tự (vd sau reconnect) -> DOM order cập nhật đúng theo gridPosition mới', () => {
+    const first = makeChannels(20);
+
+    const { rerender } = render(
+      <ChannelGrid
+        channels={first}
+        seenChannelIds={new Set()}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
+        channelAck={new Map()}
+      />,
+    );
+
+    let cells = screen.getAllByRole('gridcell');
+    let positions = cells.map((cell) => Number(cell.getAttribute('data-grid-position')));
+    expect(positions).toEqual(Array.from({ length: 20 }, (_, i) => i));
+
+    // Registry-snapshot thứ 2 (vd reconnect) - thứ tự mảng đảo ngược, KHÁC
+    // reference với `first`.
+    const second = [...first].reverse();
+
+    rerender(
+      <ChannelGrid
+        channels={second}
+        seenChannelIds={new Set()}
+        channelDisplayStates={new Map()}
+        channelAudioLevels={new Map()}
+        channelMachineOffline={new Set()}
+        channelSnapshots={new Map()}
+        channelAck={new Map()}
+      />,
+    );
+
+    cells = screen.getAllByRole('gridcell');
+    positions = cells.map((cell) => Number(cell.getAttribute('data-grid-position')));
+    expect(positions).toEqual(Array.from({ length: 20 }, (_, i) => i));
+  });
+
   // Story 3.3: `channelAck` truyền đúng xuống từng cell theo channelId -
   // mirror test channelSnapshots/channelAudioLevels ở trên.
   it('truyền đúng ackLabel xuống từng cell theo channelId (channelAck)', () => {

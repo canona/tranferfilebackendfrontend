@@ -300,6 +300,82 @@ describe('DetailPanel - Focus management (Story 5.1)', () => {
     // khi phần tử đang focus bị gỡ khỏi DOM.
     expect(document.activeElement).toBe(document.body);
   });
+
+  // Code review [patch, vòng 2]: effect focus-restore áp dụng chung cho MỌI
+  // cách đóng panel (Esc, click-outside, chuyển kênh khác rồi đóng...) - trước
+  // patch này chỉ đường Esc có test, đường click-outside (`handlePointerDownCapture`,
+  // có sẵn từ Story 3.2) chưa được cover riêng.
+  it('đóng bằng click-outside (backdrop) -> focus trả về đúng phần tử đã focus trước khi mở', () => {
+    const store = createChannelStore();
+    setupChannel(store);
+
+    const sourceCell = document.createElement('button');
+    document.body.appendChild(sourceCell);
+    sourceCell.focus();
+
+    render(<DetailPanel store={store} />);
+    act(() => store.selectChannel('chan-1'));
+    expect(document.activeElement).toBe(screen.getByTestId('detail-panel'));
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('detail-panel-backdrop'));
+    });
+
+    expect(screen.queryByTestId('detail-panel')).toBeNull();
+    expect(document.activeElement).toBe(sourceCell);
+
+    document.body.removeChild(sourceCell);
+  });
+
+  // Code review [patch, vòng 2]: effect mở/đóng chỉ phụ thuộc `isOpen`
+  // (KHÔNG phụ thuộc `selectedChannelId`) - quyết định tường minh từ code
+  // review round 3 để chuyển kênh khác trong lúc panel mở không cướp lại
+  // focus/ghi đè `previouslyFocusedElementRef`. Test này khoá lại hành vi đó:
+  // nếu ai vô tình đổi dependency sang `selectedChannelId`, focus lúc đóng sẽ
+  // KHÔNG còn trả về đúng cell đã mở panel lần đầu.
+  it('chuyển sang kênh khác trong lúc panel vẫn mở -> không re-trigger effect mở (đóng vẫn trả focus đúng cell đã mở ban đầu)', () => {
+    const store = createChannelStore();
+    act(() => {
+      store.applyRegistrySnapshot([
+        {
+          channelId: 'chan-1',
+          stationName: 'Đài Huế',
+          contactName: 'Trần Văn Hùng',
+          contactPhone: '0905123456',
+          gridPosition: 8,
+        },
+        {
+          channelId: 'chan-2',
+          stationName: 'Đài Đà Nẵng',
+          contactName: 'Lê Thị Mai',
+          contactPhone: '0905123457',
+          gridPosition: 9,
+        },
+      ]);
+    });
+
+    const sourceCell = document.createElement('button');
+    document.body.appendChild(sourceCell);
+    sourceCell.focus();
+
+    render(<DetailPanel store={store} />);
+    act(() => store.selectChannel('chan-1'));
+    const panel = screen.getByTestId('detail-panel');
+    expect(document.activeElement).toBe(panel);
+
+    act(() => store.selectChannel('chan-2'));
+    expect(screen.getByTestId('detail-panel-channel-id').textContent).toBe('chan-2');
+    expect(document.activeElement).toBe(panel);
+
+    act(() => {
+      fireEvent.keyDown(window, { key: 'Escape' });
+    });
+
+    expect(screen.queryByTestId('detail-panel')).toBeNull();
+    expect(document.activeElement).toBe(sourceCell);
+
+    document.body.removeChild(sourceCell);
+  });
 });
 
 // Story 3.3: nút "Xác nhận đã tiếp nhận" + input tên tắt - CHỈ hiện khi kênh
