@@ -357,7 +357,12 @@ export function ChannelGridCell({
                     hiện tại (khác 2 vạch ngưỡng cố định ở trên). */}
                 {zone !== 'normal' ? (
                   <span
-                    className={`${styles.vuMeterZoneMarker ?? ''} ${zone === 'critical' ? (styles.vuMeterZoneMarkerCritical ?? '') : ''}`}
+                    // Code review [patch]: nền/màu riêng theo zone (thay
+                    // `color: text-primary` cố định) - mirror cách
+                    // `BADGE_CLASS`/`CELL_STATE_CLASS` tra theo trạng thái ở
+                    // trên, đảm bảo contrast bất kể marker đang đè lên dải
+                    // màu nào của `.vuMeterFill` (xem module.css).
+                    className={`${styles.vuMeterZoneMarker ?? ''} ${zone === 'critical' ? (styles.vuMeterZoneMarkerCritical ?? '') : (styles.vuMeterZoneMarkerWarning ?? '')}`}
                     data-testid={`vu-meter-${side}-zone-marker-${channelId}`}
                     data-zone={zone}
                     // Code review [patch #4]: CHỈ clamp vị trí HIỂN THỊ của

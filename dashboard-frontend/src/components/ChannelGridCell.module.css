@@ -204,6 +204,11 @@
      Định nghĩa 1 lần tại đây, cascade xuống `.vuMeter`/`.vuMeterFill` (con
      trong DOM) qua `var(--vu-meter-height)`. */
   --vu-meter-height: 44px;
+  /* Code review [patch]: `6px` (bề rộng cột vu-meter) trước đây lặp lại độc
+     lập ở 3 nơi (`.vuMeterWrapper`/`.vuMeter`/`.vuMeterZoneMarker`) - đúng
+     loại lặp mà `--vu-meter-height` ở trên đã tự sửa. Định nghĩa 1 lần tại
+     đây, cascade xuống các class con qua `var(--vu-meter-width)`. */
+  --vu-meter-width: 6px;
   position: relative;
   z-index: 1;
   display: flex;
@@ -221,13 +226,13 @@
  */
 .vuMeterWrapper {
   position: relative;
-  width: 6px;
+  width: var(--vu-meter-width);
   height: var(--vu-meter-height);
 }
 
 .vuMeter {
   position: relative;
-  width: 6px;
+  width: var(--vu-meter-width);
   height: var(--vu-meter-height);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -267,8 +272,12 @@
  */
 .thresholdMark {
   position: absolute;
+  /* Code review [patch]: co hẹp còn nửa TRÁI cột (thay vì trọn bề rộng
+     `--vu-meter-width`) để nhường nửa PHẢI cho `.vuMeterZoneMarker` (Story
+     5.2) - tránh 2 tín hiệu đè trực tiếp lên nhau khi `percent` đúng bằng vị
+     trí vạch (giá trị dBFS ngưỡng -12/-3 KHÔNG đổi, chỉ đổi bề rộng vẽ vạch). */
   left: 0;
-  right: 0;
+  width: calc(var(--vu-meter-width) / 2);
   height: 1px;
   background: var(--color-text-primary);
   z-index: 1;
@@ -285,35 +294,49 @@
  * vượt ngưỡng, vị trí bám theo `percent` hiện tại). Design Notes: mirror cách
  * `alert-badge` dùng glyph Unicode (⚠/✕) thay vì numeric readout - giữ mật độ
  * thị giác thấp trên lưới 20 ô.
- * Code review [patch #5]: `left:0; right:0; width:6px; text-align:center`
- * NEO NGANG glyph trong đúng bề rộng cố định 6px của `.vuMeter` (thay vì
- * `left:50%` + `translateX(-50%)` tràn tự do ra ngoài cột) - tránh 2 marker
- * L/R (cách nhau chỉ `--spacing-1`=4px qua `.vuMeterRow`'s gap) đè lên nhau
- * khi cả 2 kênh cùng lúc ở zone warning/critical (audio 2 kênh tương quan).
- * `transform: translateY(50%)` CHỈ còn dịch theo chiều DỌC - dịch glyph
- * xuống đúng 50% chiều cao chính nó để tâm glyph (không phải mép dưới) rơi
- * đúng vào vị trí `percent` hiện tại (đặt qua `bottom` inline style ở JSX).
+ * Code review round 2 [patch]: `left:0; right:0; width:6px; text-align:center`
+ * (round-1 fix) neo glyph trùng đúng bề rộng/vị trí của `.thresholdMark` phía
+ * trên - khi `percent` đúng bằng vị trí vạch (80%/95%, đúng 2 giá trị dBFS đã
+ * chốt -12/-3), marker paint SAU trong DOM nên đè mất vạch. Sửa: marker giờ
+ * chiếm nửa PHẢI cột (`.thresholdMark` đã co lại nửa TRÁI) - 2 tín hiệu không
+ * còn cùng chiếm 1 điểm. `transform: translateY(50%)` CHỈ dịch theo chiều
+ * DỌC - dịch glyph xuống đúng 50% chiều cao chính nó để tâm glyph (không
+ * phải mép dưới) rơi đúng vào vị trí `percent` hiện tại (đặt qua `bottom`
+ * inline style ở JSX). Marker vẫn được phép tràn tự do ra ngoài nửa cột này
+ * (`.vuMeterWrapper` không `overflow:hidden`) vì glyph (9-11px) rộng hơn
+ * `calc(var(--vu-meter-width) / 2)` = 3px.
+ * Code review [patch]: nền/màu riêng theo zone (mirror
+ * `.thumbnailWarningIcon`/`.badgeWarning`/`.badgeCritical`'s cặp
+ * on-state-*/state-* đã đo AA) thay vì `color: var(--color-text-primary)` cố
+ * định - marker luôn đè lên đúng dải màu warning/critical của
+ * `.vuMeterFill` tại vị trí nó render (đo được ~1.55:1 với text-primary trên
+ * nền warning, dưới AA rất xa) - nền riêng đảm bảo contrast bất kể đang đè
+ * lên dải màu nào.
  */
 .vuMeterZoneMarker {
   position: absolute;
-  left: 0;
   right: 0;
-  width: 6px;
+  width: calc(var(--vu-meter-width) / 2);
   text-align: center;
   transform: translateY(50%);
   font-size: 9px;
   line-height: 1;
-  color: var(--color-text-primary);
+  border-radius: 2px;
+  padding: 0 1px;
   pointer-events: none;
 }
 
-/* Glyph ⚠ (warning) dùng nguyên style `.vuMeterZoneMarker` - đã khác hình
-   dạng rõ rệt so với ✕ (critical) qua chính ký tự, không cần class riêng. */
+.vuMeterZoneMarkerWarning {
+  color: var(--color-on-state-warning);
+  background: var(--color-state-warning);
+}
 
 .vuMeterZoneMarkerCritical {
   /* Mirror `.thresholdMarkPeak` (đậm/lớn hơn `.thresholdMark`) - zone
      nghiêm trọng hơn dùng glyph to/đậm hơn để phân biệt bằng HÌNH DẠNG, không
      chỉ bằng ký tự. */
+  color: var(--color-on-state-critical);
+  background: var(--color-state-critical);
   font-size: 11px;
   font-weight: 700;
 }

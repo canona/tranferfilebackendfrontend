@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, afterEach } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ChannelGridCell, gridPositionToRowCol } from '../src/components/ChannelGridCell';
@@ -756,6 +758,33 @@ describe('ChannelGridCell - cell border token (Story 5.2)', () => {
       <ChannelGridCell channelId="chan-border-3" stationName="Đài Border 03" gridPosition={2} loaded={false} />,
     );
     expect(screen.getByTestId('channel-grid-cell-chan-border-3').className).toMatch(/skeleton/);
+  });
+});
+
+// Code review [patch, Story 5.2]: 3 test ở trên chỉ khoá `className` có sẵn từ
+// trước (ok/loaded/skeleton, không đổi trong diff), KHÔNG khoá giá trị token/
+// tỉ lệ color-mix thực tế đã đổi - revert `--color-cell-border` hoặc tỉ lệ mix
+// `.skeleton` (65%->55%) về giá trị cũ (mất AA) vẫn để 3 test đó pass 100%.
+// jsdom/Vitest (css:false) không load stylesheet thật nên không đo được màu
+// qua getComputedStyle (xem describe trên) - test ở đây đọc thẳng SOURCE TEXT
+// của 2 file CSS để khoá đúng property/token/tỉ lệ, phát hiện được đúng loại
+// revert mà 3 test className không phát hiện được.
+describe('ChannelGridCell - cell border token wiring khoá qua CSS source (Story 5.2)', () => {
+  const tokensCss = readFileSync(join(__dirname, '../src/styles/tokens.css'), 'utf-8');
+  const cellCss = readFileSync(join(__dirname, '../src/components/ChannelGridCell.module.css'), 'utf-8');
+
+  it('--color-cell-border alias var(--color-text-secondary) (đã đo AA 7.264:1/6.509:1)', () => {
+    expect(tokensCss).toMatch(/--color-cell-border:\s*var\(--color-text-secondary\)/);
+  });
+
+  it('.cell/.loaded/.ok dùng var(--color-cell-border), KHÔNG còn var(--color-border) gốc cho border', () => {
+    expect(cellCss).toMatch(/\.cell\s*\{[^}]*border:\s*1\.5px solid var\(--color-cell-border\)/);
+    expect(cellCss).toMatch(/\.loaded\s*\{[^}]*border-color:\s*var\(--color-cell-border\)/);
+    expect(cellCss).toMatch(/\n\.ok\s*\{[^}]*border-color:\s*var\(--color-cell-border\)/);
+  });
+
+  it('.skeleton dùng tỉ lệ color-mix 65% (không phải 55%, đo dưới AA) từ var(--color-cell-border)', () => {
+    expect(cellCss).toMatch(/\.skeleton\s*\{[^}]*color-mix\(in srgb, var\(--color-cell-border\) 65%, transparent\)/);
   });
 });
 
