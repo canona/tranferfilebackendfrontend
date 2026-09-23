@@ -10,7 +10,10 @@
 .cell {
   box-sizing: border-box;
   border-radius: var(--radius-md);
-  border: 1.5px solid var(--color-border);
+  /* Story 5.2 (spec-5-2): `--color-cell-border` thay `--color-border` gốc -
+     đây là ranh giới UI component DUY NHẤT phân tách ô khỏi nền xung quanh,
+     cần đạt AA >=3:1 (--color-border gốc chỉ ~1.33-1.49:1). */
+  border: 1.5px solid var(--color-cell-border);
   background: var(--color-surface-raised);
   min-height: 0;
   min-width: 0;
@@ -48,16 +51,24 @@
   /* Fallback loaded-neutral (Story 2.3) khi thiếu displayState dù đã loaded
      (I/O matrix) - khớp DESIGN.md's channel-grid-cell.states.ok, không phải
      màu ngữ nghĩa "ok" (đó là .ok bên dưới, dùng khi CÓ displayState='ok'). */
-  border-color: var(--color-border);
+  border-color: var(--color-cell-border);
   background: var(--color-surface-raised);
 }
 
 .skeleton {
   /* Chưa có dữ liệu thật - phân biệt trực quan khỏi ô đã loaded bằng viền
      nét đứt mờ hơn, KHÔNG dùng bất kỳ token màu trạng thái nào (state-ok/
-     warning/critical) và KHÔNG animation. */
+     warning/critical) và KHÔNG animation. Story 5.2: nguồn border-mix đổi
+     sang `--color-cell-border` (AA) - KHÁC với `.skeletonLine`/`.skeletonChart`
+     của DetailPanel.module.css, nơi vẫn cố ý giữ `--color-border` gốc (ngoài
+     scope, xem deferred-work.md). Code review [patch #7]: tỉ lệ mix 65% (đo
+     ≈3.7:1 với `--color-surface-base`) thay vì 55% (chỉ ≈2.95:1, dưới AA
+     >=3:1) - nền `.skeleton` là `surface-base` (tối hơn `surface-raised` các
+     state khác), nên cùng tỉ lệ 55% pha loãng dùng cho `.cell`/`.ok`/`.loaded`
+     (vốn KHÔNG pha loãng, dùng thẳng 100% `--color-cell-border`) không đủ
+     tương phản khi bị mờ đi qua color-mix trên nền tối hơn này. */
   border-style: dashed;
-  border-color: color-mix(in srgb, var(--color-border) 55%, transparent);
+  border-color: color-mix(in srgb, var(--color-cell-border) 65%, transparent);
   background: var(--color-surface-base);
 }
 
@@ -66,7 +77,7 @@
  * (Boundaries: giá trị COPY nguyên văn, không tự đặt token/tỉ lệ mới).
  */
 .ok {
-  border-color: var(--color-border);
+  border-color: var(--color-cell-border);
   background: var(--color-surface-raised);
 }
 
@@ -202,6 +213,18 @@
   height: var(--vu-meter-height);
 }
 
+/*
+ * Story 5.2 (spec-5-2): wrapper KHÔNG overflow:hidden (khác `.vuMeter` bên
+ * dưới) - chỉ để `.vuMeterZoneMarker` được phép tràn ra ngoài bề rộng 6px của
+ * `.vuMeter` mà không bị chính `.vuMeter` cắt mất (marker là sibling, không
+ * phải con của `.vuMeter`).
+ */
+.vuMeterWrapper {
+  position: relative;
+  width: 6px;
+  height: var(--vu-meter-height);
+}
+
 .vuMeter {
   position: relative;
   width: 6px;
@@ -253,6 +276,46 @@
 
 .thresholdMarkPeak {
   height: 2px;
+}
+
+/*
+ * Story 5.2 (spec-5-2): marker glyph phi-màu báo zone HIỆN TẠI của mức âm
+ * (khác `.thresholdMark`/`.thresholdMarkPeak` ở trên - 2 vạch đó đánh dấu VỊ
+ * TRÍ ngưỡng cố định, luôn hiện; marker này chỉ hiện khi mức âm hiện tại đã
+ * vượt ngưỡng, vị trí bám theo `percent` hiện tại). Design Notes: mirror cách
+ * `alert-badge` dùng glyph Unicode (⚠/✕) thay vì numeric readout - giữ mật độ
+ * thị giác thấp trên lưới 20 ô.
+ * Code review [patch #5]: `left:0; right:0; width:6px; text-align:center`
+ * NEO NGANG glyph trong đúng bề rộng cố định 6px của `.vuMeter` (thay vì
+ * `left:50%` + `translateX(-50%)` tràn tự do ra ngoài cột) - tránh 2 marker
+ * L/R (cách nhau chỉ `--spacing-1`=4px qua `.vuMeterRow`'s gap) đè lên nhau
+ * khi cả 2 kênh cùng lúc ở zone warning/critical (audio 2 kênh tương quan).
+ * `transform: translateY(50%)` CHỈ còn dịch theo chiều DỌC - dịch glyph
+ * xuống đúng 50% chiều cao chính nó để tâm glyph (không phải mép dưới) rơi
+ * đúng vào vị trí `percent` hiện tại (đặt qua `bottom` inline style ở JSX).
+ */
+.vuMeterZoneMarker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 6px;
+  text-align: center;
+  transform: translateY(50%);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--color-text-primary);
+  pointer-events: none;
+}
+
+/* Glyph ⚠ (warning) dùng nguyên style `.vuMeterZoneMarker` - đã khác hình
+   dạng rõ rệt so với ✕ (critical) qua chính ký tự, không cần class riêng. */
+
+.vuMeterZoneMarkerCritical {
+  /* Mirror `.thresholdMarkPeak` (đậm/lớn hơn `.thresholdMark`) - zone
+     nghiêm trọng hơn dùng glyph to/đậm hơn để phân biệt bằng HÌNH DẠNG, không
+     chỉ bằng ký tự. */
+  font-size: 11px;
+  font-weight: 700;
 }
 
 /*

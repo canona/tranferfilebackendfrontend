@@ -102,6 +102,35 @@ const AUDIO_LEVEL_PEAK_MARK_PERCENT = dbfsToPercent(AUDIO_LEVEL_PEAK_MARK_DBFS);
 const VU_METER_SIDES = ['left', 'right'] as const;
 type VuMeterSide = (typeof VU_METER_SIDES)[number];
 
+// Story 5.2 (spec-5-2): vu-meter fill hiện chỉ báo mức âm bằng gradient màu
+// (audio-normal->state-warning->state-critical) - KHÔNG có tín hiệu phi-màu
+// nào phân biệt zone hiện tại (AA gap, epic-5-context's UX gap). 3 zone tính
+// từ `percent` so với đúng 2 ngưỡng cố định đã có (`AUDIO_LEVEL_WARNING_MARK_
+// PERCENT`/`AUDIO_LEVEL_PEAK_MARK_PERCENT`, dòng ~99-100) - I/O matrix: "percent
+// trong [warning, peak) -> warning; percent >= peak -> critical", check
+// critical TRƯỚC (>= peak) để không rơi nhầm vào nhánh warning.
+type VuMeterZone = 'normal' | 'warning' | 'critical';
+
+function vuMeterZone(percent: number): VuMeterZone {
+  if (percent >= AUDIO_LEVEL_PEAK_MARK_PERCENT) {
+    return 'critical';
+  }
+  if (percent >= AUDIO_LEVEL_WARNING_MARK_PERCENT) {
+    return 'warning';
+  }
+  return 'normal';
+}
+
+// Design Notes: "glyph Unicode nhỏ (mirror alert-badge's ⚠/✕)" thay vì numeric
+// readout dBFS/% - giữ mật độ thị giác thấp trên lưới 20 ô. Glyph giống hệt
+// ký tự dùng trong `BADGE_LABEL` (⚠/✕) nhưng khai báo hằng riêng ở đây vì
+// `BADGE_LABEL`'s giá trị là cả cụm text ('⚠ ABR', '✕ MẤT TÍN HIỆU'), không
+// phải chỉ glyph - không thể tái dùng trực tiếp literal đó cho marker nhỏ này.
+const VU_METER_ZONE_MARKER_LABEL: Record<'warning' | 'critical', string> = {
+  warning: '⚠',
+  critical: '✕',
+};
+
 // Design Notes: "dùng lại kiểu hash chuỗi thuần (mirror `channelDisplayStates.ts`
 // cũ của Story 2.4, đã xoá ở Story 2.6) để chọn 1 màu/gradient cố định theo
 // channelId - chỉ mục đích phân biệt trực quan các ô, KHÔNG mô phỏng ảnh
@@ -295,25 +324,55 @@ export function ChannelGridCell({
             const rawLevel = audioLevel[index];
             const safeLevel = typeof rawLevel === 'number' ? rawLevel : NaN;
             const percent = dbfsToPercent(safeLevel);
+            const zone = vuMeterZone(percent);
             return (
-              <div
-                key={side}
-                className={styles.vuMeter}
-                data-testid={`vu-meter-${side}-${channelId}`}
-                data-level-dbfs={safeLevel}
-                data-percent={percent}
-              >
-                <div className={styles.vuMeterFill} style={{ height: `${percent}%` }} />
-                <span
-                  className={styles.thresholdMark}
-                  data-testid={`vu-meter-${side}-warning-mark-${channelId}`}
-                  style={{ bottom: `${AUDIO_LEVEL_WARNING_MARK_PERCENT}%` }}
-                />
-                <span
-                  className={`${styles.thresholdMark} ${styles.thresholdMarkPeak ?? ''}`}
-                  data-testid={`vu-meter-${side}-peak-mark-${channelId}`}
-                  style={{ bottom: `${AUDIO_LEVEL_PEAK_MARK_PERCENT}%` }}
-                />
+              // Story 5.2: wrapper mới (`.vuMeterWrapper`, KHÔNG overflow:
+              // hidden) bọc ngoài `.vuMeter` - marker zone là SIBLING của
+              // `.vuMeter` (không phải con) để không bị chính overflow:hidden
+              // của `.vuMeter` cắt mất khi tràn ra ngoài bề rộng 6px cố định.
+              // `.vuMeter` giữ NGUYÊN testid/data-* hiện có (không đổi hành vi
+              // test cũ).
+              <div key={side} className={styles.vuMeterWrapper}>
+                <div
+                  className={styles.vuMeter}
+                  data-testid={`vu-meter-${side}-${channelId}`}
+                  data-level-dbfs={safeLevel}
+                  data-percent={percent}
+                >
+                  <div className={styles.vuMeterFill} style={{ height: `${percent}%` }} />
+                  <span
+                    className={styles.thresholdMark}
+                    data-testid={`vu-meter-${side}-warning-mark-${channelId}`}
+                    style={{ bottom: `${AUDIO_LEVEL_WARNING_MARK_PERCENT}%` }}
+                  />
+                  <span
+                    className={`${styles.thresholdMark} ${styles.thresholdMarkPeak ?? ''}`}
+                    data-testid={`vu-meter-${side}-peak-mark-${channelId}`}
+                    style={{ bottom: `${AUDIO_LEVEL_PEAK_MARK_PERCENT}%` }}
+                  />
+                </div>
+                {/* I/O matrix: zone='normal' -> KHÔNG hiện marker (chỉ fill +
+                    2 vạch ngưỡng cố định như hiện tại). zone='warning'/
+                    'critical' -> hiện glyph phi-màu, vị trí bám theo `percent`
+                    hiện tại (khác 2 vạch ngưỡng cố định ở trên). */}
+                {zone !== 'normal' ? (
+                  <span
+                    className={`${styles.vuMeterZoneMarker ?? ''} ${zone === 'critical' ? (styles.vuMeterZoneMarkerCritical ?? '') : ''}`}
+                    data-testid={`vu-meter-${side}-zone-marker-${channelId}`}
+                    data-zone={zone}
+                    // Code review [patch #4]: CHỈ clamp vị trí HIỂN THỊ của
+                    // marker (bottom style), KHÔNG đụng `percent`/`zone` dùng
+                    // để tính `.vuMeterFill`'s height hay `data-zone` - ở mức
+                    // gần/đúng 100% (vd audioLevel Infinity/clipping),
+                    // `bottom:100%` cộng `translateY(50%)` vẫn đẩy glyph
+                    // chồm lên trên mép `.vuMeterWrapper`, có thể bị `.cell`'s
+                    // `overflow:hidden` cắt mất. Trần 97% chừa đủ chỗ cho nửa
+                    // trên glyph (font-size 9-11px) nằm trong wrapper.
+                    style={{ bottom: `${Math.min(percent, 97)}%` }}
+                  >
+                    {VU_METER_ZONE_MARKER_LABEL[zone]}
+                  </span>
+                ) : null}
               </div>
             );
           })}

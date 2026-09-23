@@ -14,6 +14,16 @@
   --color-border: #223247;
   --color-text-primary: #eaf1fb;
   --color-text-secondary: #8ca0be;
+  /* Story 5.2 (spec-5-2): border ranh giới UI component (channel-grid-cell
+     .cell/.loaded/.ok/.skeleton) - `--color-border` gốc chỉ đạt ~1.33-1.49:1
+     với 2 nền (dưới AA >=3:1). Token riêng này ALIAS trực tiếp
+     `--color-text-secondary` (7.26:1/6.51:1, cùng tông xanh-xám nhất quán,
+     đã đo AA) thay vì bịa hex mới HAY copy lại literal hex - dùng var()
+     tham chiếu để 2 token không thể lệch nhau âm thầm nếu
+     `--color-text-secondary` được retune sau này. Boundaries: không đổi
+     --color-border gốc (vẫn dùng ở ackLabel/detail-panel's .panel/skeleton,
+     xem deferred-work.md). */
+  --color-cell-border: var(--color-text-secondary);
   --color-accent: #2f8fff;
   --color-state-ok: #2f8fff;
   --color-state-warning: #f5b915;

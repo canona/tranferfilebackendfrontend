@@ -722,3 +722,212 @@ describe('ChannelGridCell - ackLabel (Story 3.3)', () => {
     expect(screen.getByTestId('alert-badge-chan-ack-5')).toHaveTextContent('✕ MẤT TÍN HIỆU');
   });
 });
+
+// Story 5.2 (spec-5-2): `--color-cell-border` mới thay `--color-border` gốc
+// cho border của `.cell`/`.loaded`/`.ok`/`.skeleton` (AA >=3:1, xem
+// tokens.css). jsdom/Vitest (css:false mặc định) không load stylesheet thật
+// nên không thể đo giá trị màu render qua getComputedStyle - test ở đây chỉ
+// khoá lại đúng CLASS trạng thái vẫn được áp dụng như trước (regression guard
+// cho việc đổi nguồn token, không đổi logic chọn class). Đo contrast thực tế
+// bằng công thức WCAG relative luminance được ghi ở Completion Notes.
+describe('ChannelGridCell - cell border token (Story 5.2)', () => {
+  it('loaded=true, displayState="ok" -> className vẫn kèm class "ok" (border dùng --color-cell-border qua .ok)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-border-1"
+        stationName="Đài Border 01"
+        gridPosition={0}
+        loaded={true}
+        displayState="ok"
+      />,
+    );
+    expect(screen.getByTestId('channel-grid-cell-chan-border-1').className).toMatch(/ok/);
+  });
+
+  it('loaded=true, displayState=undefined -> className vẫn kèm class "loaded" (border dùng --color-cell-border qua .loaded)', () => {
+    render(
+      <ChannelGridCell channelId="chan-border-2" stationName="Đài Border 02" gridPosition={1} loaded={true} />,
+    );
+    expect(screen.getByTestId('channel-grid-cell-chan-border-2').className).toMatch(/loaded/);
+  });
+
+  it('loaded=false -> className vẫn kèm class "skeleton" (border-mix nguồn đổi sang --color-cell-border qua .skeleton)', () => {
+    render(
+      <ChannelGridCell channelId="chan-border-3" stationName="Đài Border 03" gridPosition={2} loaded={false} />,
+    );
+    expect(screen.getByTestId('channel-grid-cell-chan-border-3').className).toMatch(/skeleton/);
+  });
+});
+
+// Story 5.2 (spec-5-2): vu-meter marker phi-màu báo zone hiện tại (bổ sung
+// cho gradient màu đã có) - I/O matrix: normal -> ẩn; [warning-mark,
+// peak-mark) -> "⚠"; >= peak-mark -> "✕". Vị trí bám theo `percent` HIỆN TẠI
+// (khác 2 vạch ngưỡng cố định warning-mark/peak-mark luôn hiện, không đổi).
+describe('ChannelGridCell - vu-meter zone marker (Story 5.2)', () => {
+  it('percent ở zone normal (< warning-mark 80%) -> KHÔNG render marker glyph', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-1"
+        stationName="Đài Zone 01"
+        gridPosition={0}
+        loaded={true}
+        audioLevel={[-30, -30]}
+      />,
+    );
+    expect(screen.queryByTestId('vu-meter-left-zone-marker-chan-zone-1')).toBeNull();
+    expect(screen.queryByTestId('vu-meter-right-zone-marker-chan-zone-1')).toBeNull();
+  });
+
+  it('percent trong zone warning ([80%,95%)) -> render marker "⚠", data-zone="warning"', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-2"
+        stationName="Đài Zone 02"
+        gridPosition={1}
+        loaded={true}
+        // (-10+60)/60*100 = 83.33...% -> trong [80,95)
+        audioLevel={[-10, -10]}
+      />,
+    );
+    const marker = screen.getByTestId('vu-meter-left-zone-marker-chan-zone-2');
+    expect(marker).toHaveTextContent('⚠');
+    expect(marker).toHaveAttribute('data-zone', 'warning');
+    // Code review [patch #6]: warning KHÔNG được lây nhầm class critical
+    // (chống hồi quy nếu ternary chọn class bị đảo/xoá).
+    expect(marker.className).not.toMatch(/vuMeterZoneMarkerCritical/);
+  });
+
+  it('percent đúng bằng warning-mark (80%, biên dưới) -> zone="warning" (inclusive, khớp I/O matrix "[warning, peak)")', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-3"
+        stationName="Đài Zone 03"
+        gridPosition={2}
+        loaded={true}
+        // -12 dBFS = đúng AUDIO_LEVEL_WARNING_MARK_DBFS -> percent = 80% chẵn
+        audioLevel={[-12, -12]}
+      />,
+    );
+    const left = screen.getByTestId('vu-meter-left-chan-zone-3');
+    expect(left).toHaveAttribute('data-percent', '80');
+    expect(screen.getByTestId('vu-meter-left-zone-marker-chan-zone-3')).toHaveAttribute('data-zone', 'warning');
+  });
+
+  it('percent trong zone critical (>= peak-mark 95%) -> render marker "✕", data-zone="critical"', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-4"
+        stationName="Đài Zone 04"
+        gridPosition={3}
+        loaded={true}
+        // (-2+60)/60*100 = 96.66...% -> >= 95
+        audioLevel={[-2, -2]}
+      />,
+    );
+    const marker = screen.getByTestId('vu-meter-left-zone-marker-chan-zone-4');
+    expect(marker).toHaveTextContent('✕');
+    expect(marker).toHaveAttribute('data-zone', 'critical');
+    // Code review [patch #6]: critical PHẢI có class riêng cho hình dạng
+    // to/đậm hơn (`.vuMeterZoneMarkerCritical`) - chống hồi quy nếu ternary
+    // chọn class bị đảo/xoá (không còn phân biệt "bằng HÌNH DẠNG" như CSS
+    // comment của `.vuMeterZoneMarkerCritical` yêu cầu).
+    expect(marker.className).toMatch(/vuMeterZoneMarkerCritical/);
+  });
+
+  it('percent đúng bằng peak-mark (95%, biên) -> zone="critical" (không rơi vào warning)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-5"
+        stationName="Đài Zone 05"
+        gridPosition={4}
+        loaded={true}
+        // -3 dBFS = đúng AUDIO_LEVEL_PEAK_MARK_DBFS -> percent = 95% chẵn
+        audioLevel={[-3, -3]}
+      />,
+    );
+    const left = screen.getByTestId('vu-meter-left-chan-zone-5');
+    expect(left).toHaveAttribute('data-percent', '95');
+    expect(screen.getByTestId('vu-meter-left-zone-marker-chan-zone-5')).toHaveAttribute('data-zone', 'critical');
+  });
+
+  // Code review [patch #4]: percent gần/đúng 100% (audioLevel Infinity/
+  // clipping) - marker's `bottom` style phải bị TRẦN ở 97% để nửa trên glyph
+  // không tràn lên trên mép `.vuMeterWrapper` (rủi ro bị `.cell`'s
+  // overflow:hidden cắt mất), NHƯNG `data-percent`/`data-zone` vẫn phải phản
+  // ánh giá trị THẬT (100%/critical) - chỉ clamp phần HIỂN THỊ, không clamp
+  // dữ liệu.
+  it('percent=100 (audioLevel Infinity/clipping) -> marker bottom bị trần ở 97% để không tràn khỏi wrapper, nhưng data-percent/data-zone vẫn phản ánh giá trị thật', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-10"
+        stationName="Đài Zone 10"
+        gridPosition={9}
+        loaded={true}
+        audioLevel={[Infinity, Infinity]}
+      />,
+    );
+    const left = screen.getByTestId('vu-meter-left-chan-zone-10');
+    const marker = screen.getByTestId('vu-meter-left-zone-marker-chan-zone-10');
+    expect(left).toHaveAttribute('data-percent', '100');
+    expect(marker).toHaveAttribute('data-zone', 'critical');
+    expect(marker.style.bottom).toBe('97%');
+  });
+
+  it('vị trí marker (style.bottom) khớp đúng percent HIỆN TẠI, khác vị trí cố định của threshold-mark', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-6"
+        stationName="Đài Zone 06"
+        gridPosition={5}
+        loaded={true}
+        audioLevel={[-10, -10]}
+      />,
+    );
+    const left = screen.getByTestId('vu-meter-left-chan-zone-6');
+    const marker = screen.getByTestId('vu-meter-left-zone-marker-chan-zone-6');
+    expect(marker.style.bottom).toBe(`${left.getAttribute('data-percent')}%`);
+  });
+
+  it('L và R độc lập nhau: L ở zone normal, R ở zone critical -> marker CHỈ hiện đúng cho R', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-7"
+        stationName="Đài Zone 07"
+        gridPosition={6}
+        loaded={true}
+        audioLevel={[-30, -2]}
+      />,
+    );
+    expect(screen.queryByTestId('vu-meter-left-zone-marker-chan-zone-7')).toBeNull();
+    expect(screen.getByTestId('vu-meter-right-zone-marker-chan-zone-7')).toHaveAttribute('data-zone', 'critical');
+  });
+
+  it('displayState="critical" nhưng audioLevel ở zone normal -> marker KHÔNG hiện (marker chỉ phụ thuộc percent, độc lập displayState)', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-8"
+        stationName="Đài Zone 08"
+        gridPosition={7}
+        loaded={true}
+        displayState="critical"
+        audioLevel={[-30, -30]}
+      />,
+    );
+    expect(screen.queryByTestId('vu-meter-left-zone-marker-chan-zone-8')).toBeNull();
+    expect(screen.queryByTestId('vu-meter-right-zone-marker-chan-zone-8')).toBeNull();
+  });
+
+  it('audioLevel=[NaN,Infinity] (dữ liệu hỏng) -> percent 0/100 tương ứng, marker theo đúng zone suy ra (0%=normal ẩn, 100%=critical hiện), không crash', () => {
+    render(
+      <ChannelGridCell
+        channelId="chan-zone-9"
+        stationName="Đài Zone 09"
+        gridPosition={8}
+        loaded={true}
+        audioLevel={[NaN, Infinity]}
+      />,
+    );
+    expect(screen.queryByTestId('vu-meter-left-zone-marker-chan-zone-9')).toBeNull();
+    expect(screen.getByTestId('vu-meter-right-zone-marker-chan-zone-9')).toHaveAttribute('data-zone', 'critical');
+  });
+});
