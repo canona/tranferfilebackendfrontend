@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Party Mode · Epic 5 Retro & Hardening · 2026-09-23</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --panel2:#161d28; --line:#232c3a;
+    --ink:#e7edf5; --dim:#8a97ab; --accent:#ff7a3d; --accent2:#3ddc97; --danger:#ff5d6c;
+    --mary:#f2c14e; --john:#5aa9ff; --sally:#ff6fae; --winston:#3ddc97; --amelia:#ff7a3d;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+    radial-gradient(1200px 600px at 15% -10%, #16233a 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #1a1230 0%, transparent 55%),
+    var(--bg);
+    color:var(--ink); padding:0 0 80px;}
+  header{padding:56px 24px 32px; text-align:center; position:relative; overflow:hidden;}
+  header::before{content:"";position:absolute;inset:0;background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 1px, transparent 1px 3px);
+    pointer-events:none;}
+  .eyebrow{letter-spacing:.2em;text-transform:uppercase;font-size:12px;color:var(--dim);margin-bottom:10px}
+  h1{margin:0;font-size:clamp(26px,4vw,42px);font-weight:800;
+     background:linear-gradient(90deg,#fff,#9fb4d6);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .sub{color:var(--dim);margin-top:10px;font-size:15px;max-width:660px;margin-left:auto;margin-right:auto;}
+  .wrap{max-width:920px;margin:0 auto;padding:0 20px}
+  section{margin-top:44px; opacity:0; transform:translateY(10px); animation:rise .6s ease forwards}
+  section:nth-of-type(1){animation-delay:.05s} section:nth-of-type(2){animation-delay:.12s}
+  section:nth-of-type(3){animation-delay:.19s} section:nth-of-type(4){animation-delay:.26s}
+  section:nth-of-type(5){animation-delay:.33s} section:nth-of-type(6){animation-delay:.40s}
+  @keyframes rise{to{opacity:1;transform:none}}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim);margin:0 0 18px;
+     display:flex;align-items:center;gap:10px}
+  h2::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  .cast{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;text-align:center}
+  .card .icon{font-size:28px}
+  .card .name{font-weight:700;margin-top:6px}
+  .card .role{font-size:12px;color:var(--dim);margin-top:2px}
+
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px 16px;overflow-x:auto}
+  .diagram svg{display:block;min-width:640px;width:100%}
+  .diagram .cap{text-align:center;color:var(--dim);font-size:12.5px;margin-top:12px}
+
+  .beat{display:grid;grid-template-columns:26px 1fr;gap:14px;margin-bottom:22px}
+  .dot{width:26px;height:26px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);
+       display:flex;align-items:center;justify-content:center;font-size:13px}
+  .quote{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .who{font-weight:700;margin-right:6px}
+  .who.mary{color:var(--mary)} .who.john{color:var(--john)} .who.sally{color:var(--sally)}
+  .who.winston{color:var(--winston)} .who.amelia{color:var(--amelia)}
+  .quote p{margin:6px 0 0;color:#cfd8e6;line-height:1.5;font-size:14.5px}
+
+  .pivot{background:linear-gradient(135deg,#1c1420,#221224);border:1px solid #3a2233;border-radius:14px;padding:18px 20px}
+  .pivot .tag{display:inline-block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--danger);
+     background:rgba(255,93,108,.12);border:1px solid rgba(255,93,108,.3);padding:3px 10px;border-radius:999px}
+  .pivot p{margin:12px 0 0;color:#cfd8e6;font-size:14.5px;line-height:1.7}
+  .pivot code{background:#0d1219;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px;color:#ffb08a}
+
+  .decisions{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .dcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .dcard.storyA{border-color:rgba(255,93,108,.35)}
+  .dcard.storyB{border-color:rgba(90,169,255,.3)}
+  .dcard.hw{border-color:rgba(242,193,78,.3)}
+  .dcard .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2)}
+  .dcard.storyA .k{color:var(--danger)}
+  .dcard.storyB .k{color:var(--john)}
+  .dcard.hw .k{color:var(--mary)}
+  .dcard p{margin:8px 0 0;color:#cfd8e6;font-size:14px;line-height:1.55}
+  .dcard ul{margin:8px 0 0;padding-left:18px;color:#cfd8e6;font-size:13.5px;line-height:1.65}
+
+  .open{background:var(--panel2);border:1px dashed var(--line);border-radius:14px;padding:16px 18px;color:var(--dim);font-size:14px}
+  footer{text-align:center;color:var(--dim);font-size:12.5px;margin-top:60px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Bmad Party Mode · Roundtable</div>
+  <h1>Xong 5 Epic không có nghĩa là xong</h1>
+  <div class="sub">24 action item mở, 1 retrospective còn bỏ ngỏ, và 1 lỗi im lặng vừa lộ ra ngay khi phòng ngồi lại soát tổng thể — TranferFiles, 23/09/2026.</div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <h2>Trong phòng</h2>
+    <div class="cast">
+      <div class="card"><div class="icon">📊</div><div class="name" style="color:var(--mary)">Mary</div><div class="role">Business Analyst — giữ đúng JTBD gốc</div></div>
+      <div class="card"><div class="icon">📋</div><div class="name" style="color:var(--john)">John</div><div class="role">Product Manager — muốn tiến lên pilot thật</div></div>
+      <div class="card"><div class="icon">🎨</div><div class="name" style="color:var(--sally)">Sally</div><div class="role">UX Designer — gắn cờ TV-wall chưa validate</div></div>
+      <div class="card"><div class="icon">🏗️</div><div class="name" style="color:var(--winston)">Winston</div><div class="role">System Architect — đọc sprint-status trước tiên</div></div>
+      <div class="card"><div class="icon">💻</div><div class="name" style="color:var(--amelia)">Amelia</div><div class="role">Senior Engineer — trích dòng, không suy diễn</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Con đường tới pilot 20 kênh</h2>
+    <div class="diagram">
+      <svg viewBox="0 0 900 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#8a97ab"/>
+          </marker>
+        </defs>
+        <path d="M40,100 H860" stroke="#232c3a" stroke-width="2" fill="none"/>
+        <path d="M40,100 H860" stroke="#8a97ab" stroke-width="1.4" fill="none" marker-end="url(#arrow)" opacity="0.5"/>
+        <circle r="5" fill="#ff5d6c">
+          <animateMotion dur="4.5s" repeatCount="indefinite" path="M40,100 H860"/>
+        </circle>
+        <g font-family="Segoe UI, sans-serif">
+          <g transform="translate(40,100)">
+            <circle r="5" fill="#3ddc97"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">Pilot 1 kênh</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">5 Epic build+review xong</text>
+          </g>
+          <g transform="translate(270,100)">
+            <circle r="6" fill="#ff5d6c"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">Story A</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">silent-failure · ưu tiên 1</text>
+          </g>
+          <g transform="translate(460,100)">
+            <circle r="6" fill="#5aa9ff"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">Story B</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">AA polish</text>
+          </g>
+          <g transform="translate(650,100)">
+            <circle r="6" fill="#f2c14e"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">Xác minh phần cứng</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">DeckLink + TV wall thật</text>
+          </g>
+          <g transform="translate(830,100)">
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="800">20 kênh</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">JTBD#1 thành hiện thực</text>
+          </g>
+        </g>
+      </svg>
+      <div class="cap">Gate không phải 1 cổng — là 3 cổng nối tiếp. Chưa cổng nào mở.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Khoảnh khắc đáng nhớ</h2>
+
+    <div class="beat">
+      <div class="dot">🏗️</div>
+      <div class="quote"><span class="who winston">Winston</span>
+        <p>"Build và review hết" không có nghĩa là "đóng sổ" — kéo sprint-status.yaml lên trước khi ai kịp ăn mừng, tìm thấy 24/28 action item vẫn mở và epic-5-retrospective còn ghi <code style="color:#ffb08a">optional</code>.</p>
+      </div>
+    </div>
+
+    <div class="beat">
+      <div class="dot">💻</div>
+      <div class="quote"><span class="who amelia">Amelia</span>
+        <p>Trích thẳng dòng: "RealSignal mode hiện không ghi thêm packet nào ra card sau lần chuyển mode đầu tiên, SDI output sẽ đóng băng dù telemetry báo RealSignal." — dashboard nói ổn trong khi màn hình playout thật đứng hình.</p>
+      </div>
+    </div>
+
+    <div class="beat">
+      <div class="dot">🔎</div>
+      <div class="quote"><span class="who" style="color:var(--danger)">2 lens review độc lập</span>
+        <p>Chạy retro epic 5 thật, không phải bàn suông: adversarial và edge-case-hunter — mỗi bên không thấy kết quả bên kia — cùng lúc bắt được <code style="color:#ffb08a">key={"{"}channel.gridPosition{"}"}</code> tại ChannelGrid.tsx:113. Trùng vị trí không làm sai thứ tự như spec giả định — nó làm <b>rớt hẳn 1 kênh</b> khỏi lưới giám sát.</p>
+      </div>
+    </div>
+
+    <div class="beat">
+      <div class="dot">📊</div>
+      <div class="quote"><span class="who mary">Mary</span>
+        <p>JTBD#3 (giám sát) chưa bao giờ là mục tiêu tự thân — nó là điều kiện để JTBD#1 (giảm chi phí, lý do dự án tồn tại) được duyệt. Công bố "MVP xong" mà chưa verify đúng điều kiện đó trên phần cứng thật là tự lừa chính khung quyết định đã chốt từ đầu.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pattern lặp lại — lần này khác</h2>
+    <div class="pivot">
+      <span class="tag">theo dõi xuyên 5 epic</span>
+      <p>Git-status-sạch trước khi set <code>done</code> từng vỡ ở epic 1, 2, 3 — epic 5 là <b>lần thứ 2 liên tiếp</b> (sau epic 4) đóng sạch, đủ ổn định để đề xuất chuyển từ nhắc nhở sang gate cơ chế thật.</p>
+      <p>Ask-First HALT thì ngược lại: không tái phạm vì <b>không hề bị trigger</b> — 2 frozen clause của epic 5 chưa từng gặp điều kiện kích hoạt. Và chính vì không trigger, không ai kiểm chứng được giả định nền của clause đó có đúng không — cho tới khi 2 lens review độc lập chỉ ra hậu quả thật (rớt kênh) khác hẳn hậu quả spec từng giả định (sai thứ tự).</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chốt lại hôm nay</h2>
+    <div class="decisions">
+      <div class="dcard storyA"><div class="k">Story A — silent-failure, làm trước</div>
+        <ul>
+          <li>RealSignal không forward frame ra PlayoutSink</li>
+          <li>3 blocking-call SRT không timeout trong runCenter()</li>
+          <li><code style="color:#ffb08a">gridPosition</code> trùng → rớt kênh qua React key</li>
+        </ul>
+      </div>
+      <div class="dcard storyB"><div class="k">Story B — AA polish, ngay sau A</div>
+        <ul>
+          <li>.panel (detail-panel) thiếu :focus-visible</li>
+          <li>.cell:focus-visible — AC cốt lõi 5.1 — chưa có test khoá</li>
+          <li>Marker vu-meter (⚠/✕) thiếu aria-hidden</li>
+        </ul>
+      </div>
+      <div class="dcard hw"><div class="k">Chờ xác nhận phần cứng</div>
+        <ul>
+          <li>Duplex device conflict — cần DeckLink thật</li>
+          <li>Checkpoint tích hợp WS thật transport-core ↔ dashboard-backend</li>
+          <li>Font/icon size trên TV wall ở khoảng cách xem thật</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Còn treo cho vòng sau</h2>
+    <div class="open">Epic 5 retro verdict: <b>accepted-with-open-items</b>, 8 action item mới đã ghi vào sprint-status.yaml · field <code>epic-5: in-progress</code> vẫn chưa tự chuyển <code>done</code> dù story+retro đã xong (gap tooling, chưa sửa) · nợ kỹ thuật dồn toa từ epic 2/3 (Map không prune, DisplayState sai vị trí, hằng số grid lặp) vẫn ngoài phạm vi, chưa ai trả.</div>
+  </section>
+
+</div>
+
+<footer>Bmad Party Mode · installed roster · 23/09/2026</footer>
+</body>
+</html>

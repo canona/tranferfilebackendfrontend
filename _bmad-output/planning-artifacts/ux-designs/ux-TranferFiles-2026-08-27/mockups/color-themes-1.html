@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Phương án màu Dashboard SRT - VTCDigital</title>
+<style>
+/* ==========================================================================
+   DASHBOARD GIÁM SÁT 20 KÊNH SRT — PHƯƠNG ÁN MÀU (DARK THEME MẶC ĐỊNH)
+   Toàn bộ giá trị hex được ghi rõ trong comment ngay tại nơi khai báo biến,
+   để dễ copy khi chốt phương án. Font: system-ui stack, không CDN, không JS.
+   ========================================================================== */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: #05070A; /* nền ngoài cùng của trang, không thuộc theme nào */
+  color: #C7D0DC;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.45;
+}
+
+.page-header {
+  padding: 28px 28px 8px;
+  border-bottom: 1px solid #1A2029;
+}
+.page-header h1 {
+  font-size: 20px;
+  color: #E8EDF4;
+  font-weight: 600;
+}
+.page-header p {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #7C8798;
+  max-width: 900px;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+  gap: 22px;
+  padding: 24px;
+}
+
+.theme-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 20px 22px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.theme-card .kicker {
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.theme-card h2 {
+  font-size: 19px;
+  color: var(--accent);
+  margin-top: 2px;
+  font-weight: 700;
+}
+.theme-card .mood {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  margin-bottom: 16px;
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+}
+
+/* ---- token chips ---- */
+.tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 18px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px 5px 6px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.chip .swatch {
+  width: 14px; height: 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,.18);
+  flex-shrink: 0;
+}
+.chip b { color: var(--text-primary); font-weight: 600; }
+.chip code { font-size: 9.5px; opacity: .75; }
+
+/* ---- mini channel grid ---- */
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.channel {
+  background: var(--surface-raised);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  padding: 8px;
+  position: relative;
+}
+.channel .ch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.channel .ch-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.thumb {
+  height: 46px;
+  border-radius: 5px;
+  background: linear-gradient(160deg, #3a4048, #1c2026 65%, #0e1013);
+  margin-bottom: 6px;
+  position: relative;
+  overflow: hidden;
+}
+.thumb.colorbars {
+  background: repeating-linear-gradient(
+    90deg,
+    #c0c0c0 0 12.5%, #c0c000 12.5% 25%, #00c0c0 25% 37.5%,
+    #00c000 37.5% 50%, #c000c0 50% 62.5%, #c00000 62.5% 75%,
+    #0000c0 75% 87.5%, #202020 87.5% 100%
+  );
+  opacity: .85;
+}
+.thumb .thumb-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
+
+.foot-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+}
+.vu {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 20px;
+}
+.vu-bar {
+  width: 5px;
+  border-radius: 2px;
+  background: linear-gradient(0deg, #35D07F 0%, #35D07F 60%, #F5B915 80%, #FF3B3B 100%);
+  opacity: .9;
+}
+
+.state-tag {
+  font-size: 8.5px;
+  color: var(--text-secondary);
+}
+
+.ack-tag {
+  margin-top: 5px;
+  font-size: 8.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.28);
+  border: 1px dashed var(--text-primary);
+  color: var(--text-primary);
+}
+
+/* ================= state helper classes (per-card, using local vars) === */
+.channel.is-ok       { border-color: var(--border); }
+.channel.is-warning   { border-color: var(--state-warning); background: color-mix(in srgb, var(--state-warning) 14%, var(--surface-raised)); }
+.channel.is-critical  { border-color: var(--state-critical); background: color-mix(in srgb, var(--state-critical) 18%, var(--surface-raised)); }
+.channel.is-ack       { border-style: dashed; }
+
+.badge.badge-ok       { background: color-mix(in srgb, var(--state-ok) 25%, transparent); color: var(--state-ok); border: 1px solid color-mix(in srgb, var(--state-ok) 55%, transparent); }
+.badge.badge-warning  { background: var(--state-warning); color: #241a00; }
+.badge.badge-critical { background: var(--state-critical); color: #2a0000; }
+.badge.badge-ack      { background: transparent; color: var(--text-primary); border: 1px solid var(--text-primary); }
+
+/* ==========================================================================
+   THEME 1 — ELECTRIC TECHNICAL BLUE
+   Đăng ký cảm xúc: sắc bén, tỉnh táo, năng lượng cao — cảm giác "trạm điều
+   khiển công nghệ cao / phòng lab kỹ thuật", accent xanh điện rực để mắt
+   luôn bị hút về các con số & trạng thái đang hoạt động.
+   ---------------------------------------------------------------------
+   surface-base       #0A0E14   nền chính, gần đen ánh xanh
+   surface-raised      #121B27   nền panel/card, tách lớp nhẹ
+   border              #223247   viền chuẩn (không cảnh báo)
+   text-primary        #EAF1FB   chữ chính, trắng ánh xanh
+   text-secondary      #8CA0BE   chữ phụ
+   accent              #2F8FFF   xanh điện — header, nút chính, brand
+   state-ok            #2F8FFF   OK dùng luôn accent (đồng bộ với brand)
+   state-warning       #F5B915   vàng cảnh báo ABR thấp
+   state-critical      #FF3B3B   đỏ mất tín hiệu / color bars
+   state-acknowledged  dùng nền state hiện có + viền đứt nét text-primary
+   ========================================================================== */
+.theme-electric {
+  --surface-base: #0A0E14;
+  --surface-raised: #121B27;
+  --border: #223247;
+  --text-primary: #EAF1FB;
+  --text-secondary: #8CA0BE;
+  --accent: #2F8FFF;
+  --state-ok: #2F8FFF;
+  --state-warning: #F5B915;
+  --state-critical: #FF3B3B;
+}
+
+/* ==========================================================================
+   THEME 2 — CONTROL-ROOM NAVY
+   Đăng ký cảm xúc: trầm, điềm tĩnh, đáng tin cậy — như phòng điều khiển vệ
+   tinh/không lưu vận hành 24/7 lâu năm. Không neon, giảm mỏi mắt khi nhìn
+   nhiều giờ liên tục, cảnh báo vẫn nổi rõ nhờ độ tương phản với nền trầm.
+   ---------------------------------------------------------------------
+   surface-base       #0B121D   navy gần đen, rất trầm
+   surface-raised      #101A2B   panel navy đậm hơn 1 bậc
+   border              #1F314C   viền navy dịu
+   text-primary        #DCE4F0   chữ chính, xám xanh sáng vừa phải
+   text-secondary      #7C8CA8   chữ phụ, xanh xám mờ
+   accent              #2D5BA3   navy blue vừa phải — chuyên nghiệp, brand
+   state-ok            #3E8E63   xanh lá trầm — "vận hành ổn định"
+   state-warning       #D9A62E   vàng ánh đồng — cảnh báo không chói
+   state-critical      #C13B3B   đỏ trầm — nghiêm trọng nhưng không gắt
+   state-acknowledged  viền đứt nét trắng ngà + nhãn người xử lý
+   ========================================================================== */
+.theme-navy {
+  --surface-base: #0B121D;
+  --surface-raised: #101A2B;
+  --border: #1F314C;
+  --text-primary: #DCE4F0;
+  --text-secondary: #7C8CA8;
+  --accent: #2D5BA3;
+  --state-ok: #3E8E63;
+  --state-warning: #D9A62E;
+  --state-critical: #C13B3B;
+}
+
+/* ==========================================================================
+   THEME 3 — BROADCAST CYAN / TEAL (CRT MONITOR FEEL)
+   Đăng ký cảm xúc: hoài cổ phòng phát sóng, ánh phốt-pho CRT xanh lục lam —
+   gợi cảm giác "đang xem trực tiếp waveform/vectorscope", rất đặc trưng
+   ngành broadcast, khác biệt rõ với 2 theme navy/electric phía trên.
+   ---------------------------------------------------------------------
+   surface-base       #071A1C   đen ánh lục lam sâu
+   surface-raised      #0D262A   panel cyan tối
+   border              #17434C   viền cyan trầm
+   text-primary        #D8F5F5   chữ chính, trắng ánh cyan (phosphor)
+   text-secondary      #7FB8BC   chữ phụ, cyan xám
+   accent              #17C3D6   cyan/teal broadcast — brand, header
+   state-ok            #2FE0A8   mint-teal — như đèn "ON AIR" phốt-pho
+   state-warning       #F2C230   vàng ấm, nổi bật trên nền lạnh
+   state-critical      #FF4757   đỏ san hô, tương phản mạnh với cyan
+   state-acknowledged  viền đứt nét trắng-cyan + nhãn người xử lý
+   ========================================================================== */
+.theme-teal {
+  --surface-base: #071A1C;
+  --surface-raised: #0D262A;
+  --border: #17434C;
+  --text-primary: #D8F5F5;
+  --text-secondary: #7FB8BC;
+  --accent: #17C3D6;
+  --state-ok: #2FE0A8;
+  --state-warning: #F2C230;
+  --state-critical: #FF4757;
+}
+
+/* ==========================================================================
+   THEME 4 — HIGH-CONTRAST ALERT-SAFE DEEP BLUE
+   Đăng ký cảm xúc: nghiêm ngặt, tối đa độ rõ — thiết kế cho phòng trực TV
+   lớn nhìn từ xa hoặc yêu cầu accessibility cao (tương phản mạnh, không
+   nhầm lẫn được trạng thái dù nhìn thoáng qua/ánh sáng phòng biến động).
+   ---------------------------------------------------------------------
+   surface-base       #000814   gần đen tuyệt đối
+   surface-raised      #001233   panel xanh đen đậm
+   border              #2A3A5C   viền tương phản vừa đủ để tách khối
+   text-primary        #FFFFFF   trắng tinh — độ đọc tối đa
+   text-secondary      #B8C4DB   xám xanh sáng
+   accent              #0057FF   xanh dương bão hòa cao — brand, cực nổi
+   state-ok            #00E676   xanh lá huỳnh quang — an toàn/rõ ràng
+   state-warning       #FFD600   vàng huỳnh quang — cảnh báo tối đa
+   state-critical      #FF1744   đỏ huỳnh quang — nguy cấp tối đa
+   state-acknowledged  viền đứt nét trắng dày 2px + nhãn rõ ràng
+   ========================================================================== */
+.theme-contrast {
+  --surface-base: #000814;
+  --surface-raised: #001233;
+  --border: #2A3A5C;
+  --text-primary: #FFFFFF;
+  --text-secondary: #B8C4DB;
+  --accent: #0057FF;
+  --state-ok: #00E676;
+  --state-warning: #FFD600;
+  --state-critical: #FF1744;
+}
+
+/* ==========================================================================
+   THEME 5 — DEEP SPACE BLUE (VỆ TINH / TRUNG TÂM ĐIỀU HÀNH TƯƠNG LAI)
+   Đăng ký cảm xúc: tĩnh lặng nhưng cảnh giác, hơi huyền bí/tương lai — như
+   trung tâm điều hành vệ tinh ban đêm. Accent nghiêng nhẹ về xanh dương
+   sâu (không tím) để vẫn thuần "blue" nhưng có chiều sâu khác hẳn 4 theme
+   trên, tạo không khí "yên tĩnh quan sát" thay vì "báo động thường trực".
+   ---------------------------------------------------------------------
+   surface-base       #0A0C18   xanh đen rất sâu
+   surface-raised      #131730   panel xanh đậm
+   border              #262C52   viền xanh tím trầm
+   text-primary        #E7EAFB   chữ chính, trắng ánh xanh dịu
+   text-secondary      #8D93C4   chữ phụ
+   accent              #4C6FFF   xanh dương sâu, có chiều sâu — brand
+   state-ok            #4C6FFF   OK dùng accent — nhịp điệu "mọi thứ yên"
+   state-warning       #FBBF24   vàng hổ phách
+   state-critical      #F43F5E   đỏ hồng ngọc — cảnh báo nổi bật rõ rệt
+   state-acknowledged  viền đứt nét trắng ánh xanh + nhãn người xử lý
+   ========================================================================== */
+.theme-indigo {
+  --surface-base: #0A0C18;
+  --surface-raised: #131730;
+  --border: #262C52;
+  --text-primary: #E7EAFB;
+  --text-secondary: #8D93C4;
+  --accent: #4C6FFF;
+  --state-ok: #4C6FFF;
+  --state-warning: #FBBF24;
+  --state-critical: #F43F5E;
+}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Dashboard giám sát 20 kênh SRT — Phương án màu (Dark mặc định)</h1>
+  <p>So sánh 5 phương án theme, tất cả lấy xanh dương (blue) làm accent thương hiệu VTC nhưng khác sắc thái/độ bão hòa/không khí. Mỗi khối minh hoạ token ngữ nghĩa + lưới 3x2 kênh mô phỏng trạng thái OK / WARNING (ABR&lt;70%) / CRITICAL (mất tín hiệu) / CRITICAL &amp; WARNING đã ACKNOWLEDGED.</p>
+</div>
+
+<div class="theme-grid">
+
+  <!-- ============================ THEME 1 ============================ -->
+  <section class="theme-card theme-electric">
+    <div class="kicker">Phương án 1</div>
+    <h2>Electric Technical Blue</h2>
+    <p class="mood">Sắc bén, tỉnh táo, năng lượng cao — phòng lab kỹ thuật cao, mắt luôn bị hút về trạng thái đang hoạt động.</p>
+    <div class="tokens">
+      <span class="chip"><span class="swatch" style="background:#0A0E14"></span><b>surface-base</b><code>#0A0E14</code></span>
+      <span class="chip"><span class="swatch" style="background:#121B27"></span><b>surface-raised</b><code>#121B27</code></span>
+      <span class="chip"><span class="swatch" style="background:#223247"></span><b>border</b><code>#223247</code></span>
+      <span class="chip"><span class="swatch" style="background:#EAF1FB"></span><b>text-primary</b><code>#EAF1FB</code></span>
+      <span class="chip"><span class="swatch" style="background:#8CA0BE"></span><b>text-secondary</b><code>#8CA0BE</code></span>
+      <span class="chip"><span class="swatch" style="background:#2F8FFF"></span><b>accent</b><code>#2F8FFF</code></span>
+      <span class="chip"><span class="swatch" style="background:#2F8FFF"></span><b>state-ok</b><code>#2F8FFF</code></span>
+      <span class="chip"><span class="swatch" style="background:#F5B915"></span><b>state-warning</b><code>#F5B915</code></span>
+      <span class="chip"><span class="swatch" style="background:#FF3B3B"></span><b>state-critical</b><code>#FF3B3B</code></span>
+      <span class="chip"><span class="swatch" style="background:#FF3B3B;border:2px dashed #EAF1FB"></span><b>state-acknowledged</b><code>nền state + viền đứt</code></span>
+    </div>
+    <div class="mini-grid">
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Cần Thơ</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:65%"></div><div class="vu-bar" style="height:50%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Hải Phòng</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:58%"></div><div class="vu-bar" style="height:62%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-warning">
+        <div class="ch-head"><span class="ch-name">Đài Nghệ An</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:40%"></div><div class="vu-bar" style="height:30%"></div></div><span class="state-tag">Bitrate &lt;70%</span></div>
+      </div>
+      <div class="channel is-critical">
+        <div class="ch-head"><span class="ch-name">Đài Huế</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:04:12</span></div>
+      </div>
+      <div class="channel is-critical is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Đà Nẵng</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:11:30</span></div>
+        <div class="ack-tag">✓ Đã nhận: A.Long</div>
+      </div>
+      <div class="channel is-warning is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Quy Nhơn</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:38%"></div><div class="vu-bar" style="height:28%"></div></div><span class="state-tag">Bitrate 62%</span></div>
+        <div class="ack-tag">✓ Đã nhận: T.Minh</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ THEME 2 ============================ -->
+  <section class="theme-card theme-navy">
+    <div class="kicker">Phương án 2</div>
+    <h2>Control-Room Navy</h2>
+    <p class="mood">Trầm, điềm tĩnh, đáng tin cậy — như phòng điều khiển vận hành 24/7 lâu năm, giảm mỏi mắt khi trực nhiều giờ.</p>
+    <div class="tokens">
+      <span class="chip"><span class="swatch" style="background:#0B121D"></span><b>surface-base</b><code>#0B121D</code></span>
+      <span class="chip"><span class="swatch" style="background:#101A2B"></span><b>surface-raised</b><code>#101A2B</code></span>
+      <span class="chip"><span class="swatch" style="background:#1F314C"></span><b>border</b><code>#1F314C</code></span>
+      <span class="chip"><span class="swatch" style="background:#DCE4F0"></span><b>text-primary</b><code>#DCE4F0</code></span>
+      <span class="chip"><span class="swatch" style="background:#7C8CA8"></span><b>text-secondary</b><code>#7C8CA8</code></span>
+      <span class="chip"><span class="swatch" style="background:#2D5BA3"></span><b>accent</b><code>#2D5BA3</code></span>
+      <span class="chip"><span class="swatch" style="background:#3E8E63"></span><b>state-ok</b><code>#3E8E63</code></span>
+      <span class="chip"><span class="swatch" style="background:#D9A62E"></span><b>state-warning</b><code>#D9A62E</code></span>
+      <span class="chip"><span class="swatch" style="background:#C13B3B"></span><b>state-critical</b><code>#C13B3B</code></span>
+      <span class="chip"><span class="swatch" style="background:#C13B3B;border:2px dashed #DCE4F0"></span><b>state-acknowledged</b><code>nền state + viền đứt</code></span>
+    </div>
+    <div class="mini-grid">
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Cần Thơ</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:65%"></div><div class="vu-bar" style="height:50%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Hải Phòng</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:58%"></div><div class="vu-bar" style="height:62%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-warning">
+        <div class="ch-head"><span class="ch-name">Đài Nghệ An</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:40%"></div><div class="vu-bar" style="height:30%"></div></div><span class="state-tag">Bitrate &lt;70%</span></div>
+      </div>
+      <div class="channel is-critical">
+        <div class="ch-head"><span class="ch-name">Đài Huế</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:04:12</span></div>
+      </div>
+      <div class="channel is-critical is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Đà Nẵng</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:11:30</span></div>
+        <div class="ack-tag">✓ Đã nhận: A.Long</div>
+      </div>
+      <div class="channel is-warning is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Quy Nhơn</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:38%"></div><div class="vu-bar" style="height:28%"></div></div><span class="state-tag">Bitrate 62%</span></div>
+        <div class="ack-tag">✓ Đã nhận: T.Minh</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ THEME 3 ============================ -->
+  <section class="theme-card theme-teal">
+    <div class="kicker">Phương án 3</div>
+    <h2>Broadcast Cyan / Teal</h2>
+    <p class="mood">Hoài cổ phòng phát sóng, ánh phốt-pho CRT xanh lục lam — cảm giác đang xem waveform/vectorscope trực tiếp.</p>
+    <div class="tokens">
+      <span class="chip"><span class="swatch" style="background:#071A1C"></span><b>surface-base</b><code>#071A1C</code></span>
+      <span class="chip"><span class="swatch" style="background:#0D262A"></span><b>surface-raised</b><code>#0D262A</code></span>
+      <span class="chip"><span class="swatch" style="background:#17434C"></span><b>border</b><code>#17434C</code></span>
+      <span class="chip"><span class="swatch" style="background:#D8F5F5"></span><b>text-primary</b><code>#D8F5F5</code></span>
+      <span class="chip"><span class="swatch" style="background:#7FB8BC"></span><b>text-secondary</b><code>#7FB8BC</code></span>
+      <span class="chip"><span class="swatch" style="background:#17C3D6"></span><b>accent</b><code>#17C3D6</code></span>
+      <span class="chip"><span class="swatch" style="background:#2FE0A8"></span><b>state-ok</b><code>#2FE0A8</code></span>
+      <span class="chip"><span class="swatch" style="background:#F2C230"></span><b>state-warning</b><code>#F2C230</code></span>
+      <span class="chip"><span class="swatch" style="background:#FF4757"></span><b>state-critical</b><code>#FF4757</code></span>
+      <span class="chip"><span class="swatch" style="background:#FF4757;border:2px dashed #D8F5F5"></span><b>state-acknowledged</b><code>nền state + viền đứt</code></span>
+    </div>
+    <div class="mini-grid">
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Cần Thơ</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:65%"></div><div class="vu-bar" style="height:50%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Hải Phòng</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:58%"></div><div class="vu-bar" style="height:62%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-warning">
+        <div class="ch-head"><span class="ch-name">Đài Nghệ An</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:40%"></div><div class="vu-bar" style="height:30%"></div></div><span class="state-tag">Bitrate &lt;70%</span></div>
+      </div>
+      <div class="channel is-critical">
+        <div class="ch-head"><span class="ch-name">Đài Huế</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:04:12</span></div>
+      </div>
+      <div class="channel is-critical is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Đà Nẵng</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:11:30</span></div>
+        <div class="ack-tag">✓ Đã nhận: A.Long</div>
+      </div>
+      <div class="channel is-warning is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Quy Nhơn</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:38%"></div><div class="vu-bar" style="height:28%"></div></div><span class="state-tag">Bitrate 62%</span></div>
+        <div class="ack-tag">✓ Đã nhận: T.Minh</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ THEME 4 ============================ -->
+  <section class="theme-card theme-contrast">
+    <div class="kicker">Phương án 4</div>
+    <h2>High-Contrast Alert-Safe Blue</h2>
+    <p class="mood">Nghiêm ngặt, tối đa độ rõ — cho màn hình TV lớn nhìn từ xa, không thể nhầm trạng thái dù chỉ liếc qua.</p>
+    <div class="tokens">
+      <span class="chip"><span class="swatch" style="background:#000814"></span><b>surface-base</b><code>#000814</code></span>
+      <span class="chip"><span class="swatch" style="background:#001233"></span><b>surface-raised</b><code>#001233</code></span>
+      <span class="chip"><span class="swatch" style="background:#2A3A5C"></span><b>border</b><code>#2A3A5C</code></span>
+      <span class="chip"><span class="swatch" style="background:#FFFFFF"></span><b>text-primary</b><code>#FFFFFF</code></span>
+      <span class="chip"><span class="swatch" style="background:#B8C4DB"></span><b>text-secondary</b><code>#B8C4DB</code></span>
+      <span class="chip"><span class="swatch" style="background:#0057FF"></span><b>accent</b><code>#0057FF</code></span>
+      <span class="chip"><span class="swatch" style="background:#00E676"></span><b>state-ok</b><code>#00E676</code></span>
+      <span class="chip"><span class="swatch" style="background:#FFD600"></span><b>state-warning</b><code>#FFD600</code></span>
+      <span class="chip"><span class="swatch" style="background:#FF1744"></span><b>state-critical</b><code>#FF1744</code></span>
+      <span class="chip"><span class="swatch" style="background:#FF1744;border:2px dashed #FFFFFF"></span><b>state-acknowledged</b><code>nền state + viền đứt dày</code></span>
+    </div>
+    <div class="mini-grid">
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Cần Thơ</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:65%"></div><div class="vu-bar" style="height:50%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Hải Phòng</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:58%"></div><div class="vu-bar" style="height:62%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-warning">
+        <div class="ch-head"><span class="ch-name">Đài Nghệ An</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:40%"></div><div class="vu-bar" style="height:30%"></div></div><span class="state-tag">Bitrate &lt;70%</span></div>
+      </div>
+      <div class="channel is-critical">
+        <div class="ch-head"><span class="ch-name">Đài Huế</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:04:12</span></div>
+      </div>
+      <div class="channel is-critical is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Đà Nẵng</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:11:30</span></div>
+        <div class="ack-tag">✓ Đã nhận: A.Long</div>
+      </div>
+      <div class="channel is-warning is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Quy Nhơn</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:38%"></div><div class="vu-bar" style="height:28%"></div></div><span class="state-tag">Bitrate 62%</span></div>
+        <div class="ack-tag">✓ Đã nhận: T.Minh</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ THEME 5 ============================ -->
+  <section class="theme-card theme-indigo">
+    <div class="kicker">Phương án 5</div>
+    <h2>Deep Space Blue</h2>
+    <p class="mood">Tĩnh lặng nhưng cảnh giác, hơi huyền bí/tương lai — như trung tâm điều hành vệ tinh ban đêm, quan sát thay vì báo động thường trực.</p>
+    <div class="tokens">
+      <span class="chip"><span class="swatch" style="background:#0A0C18"></span><b>surface-base</b><code>#0A0C18</code></span>
+      <span class="chip"><span class="swatch" style="background:#131730"></span><b>surface-raised</b><code>#131730</code></span>
+      <span class="chip"><span class="swatch" style="background:#262C52"></span><b>border</b><code>#262C52</code></span>
+      <span class="chip"><span class="swatch" style="background:#E7EAFB"></span><b>text-primary</b><code>#E7EAFB</code></span>
+      <span class="chip"><span class="swatch" style="background:#8D93C4"></span><b>text-secondary</b><code>#8D93C4</code></span>
+      <span class="chip"><span class="swatch" style="background:#4C6FFF"></span><b>accent</b><code>#4C6FFF</code></span>
+      <span class="chip"><span class="swatch" style="background:#4C6FFF"></span><b>state-ok</b><code>#4C6FFF</code></span>
+      <span class="chip"><span class="swatch" style="background:#FBBF24"></span><b>state-warning</b><code>#FBBF24</code></span>
+      <span class="chip"><span class="swatch" style="background:#F43F5E"></span><b>state-critical</b><code>#F43F5E</code></span>
+      <span class="chip"><span class="swatch" style="background:#F43F5E;border:2px dashed #E7EAFB"></span><b>state-acknowledged</b><code>nền state + viền đứt</code></span>
+    </div>
+    <div class="mini-grid">
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Cần Thơ</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:65%"></div><div class="vu-bar" style="height:50%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-ok">
+        <div class="ch-head"><span class="ch-name">Đài Hải Phòng</span><span class="badge badge-ok">OK</span></div>
+        <div class="thumb"></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:58%"></div><div class="vu-bar" style="height:62%"></div></div><span class="state-tag">SRT ổn định</span></div>
+      </div>
+      <div class="channel is-warning">
+        <div class="ch-head"><span class="ch-name">Đài Nghệ An</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:40%"></div><div class="vu-bar" style="height:30%"></div></div><span class="state-tag">Bitrate &lt;70%</span></div>
+      </div>
+      <div class="channel is-critical">
+        <div class="ch-head"><span class="ch-name">Đài Huế</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:04:12</span></div>
+      </div>
+      <div class="channel is-critical is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Đà Nẵng</span><span class="badge badge-critical">✕ MẤT T.HIỆU</span></div>
+        <div class="thumb colorbars"><div class="thumb-icon">✕</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:5%"></div><div class="vu-bar" style="height:5%"></div></div><span class="state-tag">00:11:30</span></div>
+        <div class="ack-tag">✓ Đã nhận: A.Long</div>
+      </div>
+      <div class="channel is-warning is-ack">
+        <div class="ch-head"><span class="ch-name">Đài Quy Nhơn</span><span class="badge badge-warning">⚠ ABR</span></div>
+        <div class="thumb"><div class="thumb-icon">⚠</div></div>
+        <div class="foot-row"><div class="vu"><div class="vu-bar" style="height:38%"></div><div class="vu-bar" style="height:28%"></div></div><span class="state-tag">Bitrate 62%</span></div>
+        <div class="ack-tag">✓ Đã nhận: T.Minh</div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>

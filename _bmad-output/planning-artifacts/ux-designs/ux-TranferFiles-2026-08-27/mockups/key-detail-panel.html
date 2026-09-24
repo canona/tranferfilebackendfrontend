@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Mock — Panel chi tiết kênh (detail-panel) — TranferFiles</title>
+<style>
+/* ==========================================================================
+   MOCK MÀN HÌNH CHÍNH: PANEL CHI TIẾT KÊNH (detail-panel) — TranferFiles
+   Nguồn: DESIGN.md (token màu/chữ/bo góc/spacing/component đã chốt) +
+          EXPERIENCE.md + .memlog.md (tên riêng, voice/tone).
+
+   Mục spine chi phối màn này:
+   - EXPERIENCE.md > Component Patterns > detail-panel (mở tức thì, không
+     chặn thao tác trên lưới phía sau; đóng bằng click-outside hoặc Esc)
+   - EXPERIENCE.md > Component Patterns > ack-label (thêm nhãn, không đổi
+     màu/badge, không xoá cảnh báo)
+   - EXPERIENCE.md > State Patterns > "Panel chi tiết kênh" — state `loaded`
+     (bitrate hiện tại, biểu đồ lịch sử, tên đài, tên+SĐT đầu mối liên hệ)
+   - DESIGN.md > Components: detail-panel, ack-label (hex/px thật)
+   - Key Flow 1 (anh Long) bước 4: click ô Đài Huế → panel mở, bitrate 0%,
+     biểu đồ tụt đột ngột, tên đài + SĐT đầu mối liên hệ
+   - Key Flow 1 bước 5: bấm "Xác nhận đã tiếp nhận" → ô/panel giữ nguyên
+     trạng thái cảnh báo, chỉ thêm ack-label "✓ Đã nhận: A.Long"
+   - EXPERIENCE.md > Accessibility Floor: focus-ring {colors.focus-ring}
+     trên nút "Xác nhận đã tiếp nhận", focusable + kích hoạt bằng Enter/Space
+   ========================================================================== */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* --- DESIGN.md > colors --- */
+  --surface-base:     #0A0E14;
+  --surface-raised:    #121B27;
+  --border:            #223247;
+  --text-primary:      #EAF1FB;
+  --text-secondary:    #8CA0BE;
+  --accent:            #2F8FFF;
+  --state-ok:          #2F8FFF;
+  --state-warning:     #F5B915;
+  --state-critical:    #FF3B3B;
+  --on-state-warning:  #241A00;
+  --on-state-critical: #000000;
+  --on-state-ok:       #EAF1FB;
+  --audio-normal:      #35D07F;
+  --focus-ring:        #2F8FFF;
+
+  /* --- DESIGN.md > rounded --- */
+  --r-sm: 4px;
+  --r-md: 9px;
+  --r-lg: 14px;
+  --r-pill: 10px;
+
+  /* --- DESIGN.md > spacing --- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --panel-padding: 24px;
+
+  --font-sys: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+}
+
+html, body {
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-sys);
+  line-height: 1.45;
+}
+
+.page {
+  padding: var(--sp-5);
+  max-width: 1300px;
+  margin: 0 auto;
+}
+
+.page-title {
+  font-size: 22px;      /* typography.display */
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.page-caption {
+  margin-top: var(--sp-2);
+  font-size: 12px;       /* typography.caption */
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-5);
+}
+
+.section-label {
+  font-size: 13px;       /* typography.label-caps */
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-3);
+}
+
+.sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-5);
+  align-items: start;
+}
+
+/* ==========================================================================
+   BACKDROP — channel-grid thu gọn phía sau, vẫn thấy được (không mất bối
+   cảnh), làm mờ bằng scrim để dồn chú ý vào detail-panel nổi lên trên
+   ========================================================================== */
+.stage {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-base);
+  padding: var(--sp-4);
+  min-height: 460px;
+  overflow: hidden;
+}
+
+.backdrop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-3);
+  opacity: 0.4;
+}
+
+.mini-cell {
+  position: relative;
+  background: var(--surface-raised);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: var(--sp-2);
+}
+.mini-cell.is-critical {
+  border-color: var(--state-critical);
+  background: color-mix(in srgb, var(--state-critical) 18%, var(--surface-raised));
+}
+.mini-cell .mini-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.mini-cell .mini-badge {
+  position: absolute;
+  top: 6px; right: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+}
+.mini-badge.ok {
+  background: color-mix(in srgb, var(--state-ok) 25%, transparent);
+  color: var(--on-state-ok);
+  border: 1px solid color-mix(in srgb, var(--state-ok) 55%, transparent);
+}
+.mini-badge.critical {
+  background: var(--state-critical);
+  color: var(--on-state-critical);
+}
+
+/* ==========================================================================
+   DETAIL-PANEL — DESIGN.md.components.detail-panel
+   overlay nổi lên trên lưới, surface-raised, rounded.lg, panel-padding
+   ========================================================================== */
+.detail-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  width: 380px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--panel-padding);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+
+.panel-title {
+  font-size: 18px;      /* typography.heading */
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.panel-status-badge {
+  font-size: 13px;       /* typography.label-caps */
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: var(--state-critical);
+  color: var(--on-state-critical);
+  white-space: nowrap;
+}
+
+.panel-block { margin-bottom: var(--sp-4); }
+
+.panel-label {
+  font-size: 12px;       /* typography.caption */
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-1);
+}
+
+.bitrate-value {
+  font-family: var(--font-mono);
+  font-size: 20px;      /* typography.numeric */
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--state-critical);
+}
+
+.panel-chart {
+  background: var(--surface-base);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
+}
+.panel-chart svg { display: block; width: 100%; height: auto; }
+.chart-caption {
+  margin-top: var(--sp-2);
+  font-size: 12px;       /* typography.caption */
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.contact-name {
+  font-size: 14px;       /* typography.body */
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+.contact-phone {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   NÚT HÀNH ĐỘNG CHÍNH — Brand & Style: accent dùng cho nút hành động chính.
+   Nhãn theo Voice and Tone: "Xác nhận đã tiếp nhận" (không dùng "OK"/"Đồng ý")
+   ========================================================================== */
+.btn-ack {
+  display: block;
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--text-primary);
+  font-family: var(--font-sys);
+  font-size: 14px;       /* typography.body */
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* Accessibility Floor: viền focus dùng {colors.focus-ring}, ≥3:1 so với nền */
+.btn-ack:focus,
+.btn-ack.is-focused {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.focus-note {
+  margin-top: var(--sp-2);
+  font-size: 12px;       /* typography.caption */
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   ACK-LABEL — DESIGN.md.components.ack-label
+   ========================================================================== */
+.ack-label {
+  display: inline-block;
+  margin-top: var(--sp-3);
+  padding: 2px var(--sp-2);
+  border: 1px dashed var(--text-primary);
+  border-radius: var(--r-pill);
+  background: transparent;
+  font-size: 14px;       /* typography.body */
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.panel-persist-note {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  font-size: 12px;       /* typography.caption */
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1 class="page-title">TranferFiles — Panel chi tiết kênh (detail-panel)</h1>
+  <p class="page-caption">Key Flow 1 (anh Long, trực ca đêm) — click vào ô "Đài Huế" đang critical trên lưới tổng quan.</p>
+
+  <div class="sections">
+
+    <div class="section">
+      <div class="section-label">Trước khi ack — nút "Xác nhận đã tiếp nhận" đang focus</div>
+      <div class="stage">
+        <div class="backdrop-grid">
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Hà Nội</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Hải Phòng</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Quảng Ninh</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Nam Định</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Thái Nguyên</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Việt Trì</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Nghệ An</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Hà Tĩnh</span></div>
+          <div class="mini-cell is-critical"><span class="mini-badge critical">✕ MẤT TÍN HIỆU</span><span class="mini-name">Đài Huế</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Đà Nẵng</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Quy Nhơn</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Nha Trang</span></div>
+        </div>
+
+        <div class="detail-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Đài Huế</h2>
+            <span class="panel-status-badge">✕ MẤT TÍN HIỆU</span>
+          </div>
+
+          <div class="panel-block">
+            <div class="panel-label">Bitrate hiện tại</div>
+            <div class="bitrate-value">0%</div>
+          </div>
+
+          <div class="panel-block panel-chart">
+            <svg viewBox="0 0 340 100" preserveAspectRatio="none">
+              <line x1="0" y1="99" x2="340" y2="99" stroke="#223247" stroke-width="1"/>
+              <polyline points="0,18 40,16 80,20 120,15 160,19 195,22 205,90 340,96"
+                        fill="none" stroke="#2F8FFF" stroke-width="2"/>
+              <circle cx="205" cy="90" r="3" fill="#FF3B3B"/>
+            </svg>
+            <div class="chart-caption">Lịch sử bitrate — tụt đột ngột lúc 03:42</div>
+          </div>
+
+          <div class="panel-block">
+            <div class="panel-label">Đầu mối liên hệ</div>
+            <div class="contact-name">Trần Văn Hùng — kỹ thuật viên Đài Huế</div>
+            <div class="contact-phone">0905 123 456</div>
+          </div>
+
+          <button class="btn-ack is-focused">Xác nhận đã tiếp nhận</button>
+          <div class="focus-note">Minh hoạ trạng thái focus (Tab/Enter) — viền {colors.focus-ring}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Sau khi ack — giữ nguyên cảnh báo, chỉ thêm ack-label</div>
+      <div class="stage">
+        <div class="backdrop-grid">
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Hà Nội</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Hải Phòng</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Quảng Ninh</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Nam Định</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Thái Nguyên</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Việt Trì</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Nghệ An</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Hà Tĩnh</span></div>
+          <div class="mini-cell is-critical"><span class="mini-badge critical">✕ MẤT TÍN HIỆU</span><span class="mini-name">Đài Huế</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Đà Nẵng</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Quy Nhơn</span></div>
+          <div class="mini-cell"><span class="mini-badge ok">OK</span><span class="mini-name">Đài Nha Trang</span></div>
+        </div>
+
+        <div class="detail-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Đài Huế</h2>
+            <span class="panel-status-badge">✕ MẤT TÍN HIỆU</span>
+          </div>
+
+          <div class="panel-block">
+            <div class="panel-label">Bitrate hiện tại</div>
+            <div class="bitrate-value">0%</div>
+          </div>
+
+          <div class="panel-block panel-chart">
+            <svg viewBox="0 0 340 100" preserveAspectRatio="none">
+              <line x1="0" y1="99" x2="340" y2="99" stroke="#223247" stroke-width="1"/>
+              <polyline points="0,18 40,16 80,20 120,15 160,19 195,22 205,90 340,96"
+                        fill="none" stroke="#2F8FFF" stroke-width="2"/>
+              <circle cx="205" cy="90" r="3" fill="#FF3B3B"/>
+            </svg>
+            <div class="chart-caption">Lịch sử bitrate — tụt đột ngột lúc 03:42</div>
+          </div>
+
+          <div class="panel-block">
+            <div class="panel-label">Đầu mối liên hệ</div>
+            <div class="contact-name">Trần Văn Hùng — kỹ thuật viên Đài Huế</div>
+            <div class="contact-phone">0905 123 456</div>
+          </div>
+
+          <button class="btn-ack">Xác nhận đã tiếp nhận</button>
+          <div class="ack-label">✓ Đã nhận: A.Long</div>
+
+          <div class="panel-persist-note">Viền đỏ + badge "✕ MẤT TÍN HIỆU" vẫn giữ nguyên trên ô kênh ở lưới tổng quan — ack không đổi màu, không xoá cảnh báo.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

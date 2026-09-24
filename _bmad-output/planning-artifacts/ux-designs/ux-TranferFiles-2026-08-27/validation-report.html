@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>UX Design Validation: TranferFiles</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+
+    --verdict-strong: #16a34a;
+    --verdict-adequate: #65a30d;
+    --verdict-thin: #d97706;
+    --verdict-broken: #dc2626;
+
+    --sev-low: #64748b;
+    --sev-medium: #ca8a04;
+    --sev-high: #ea580c;
+    --sev-critical: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  header.report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  .synthesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+    font-size: 15.5px;
+  }
+  .synthesis p { margin: 0 0 10px; }
+  .synthesis p:last-child { margin-bottom: 0; }
+
+  .dimension-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .dim-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dim-card .dim-name { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .dim-card .dim-verdict { font-size: 14px; font-weight: 600; }
+
+  section.dimension, section.reviewer-section { margin-bottom: 14px; }
+  section.dimension details, section.reviewer-section details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  section summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section summary::-webkit-details-marker { display: none; }
+  section summary::before {
+    content: "▸";
+    display: inline-block;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  section details[open] summary::before { transform: rotate(90deg); }
+  section summary h2 {
+    display: inline;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    flex: 1;
+  }
+  .verdict-pill {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: white;
+  }
+  .verdict-strong { background: var(--verdict-strong); }
+  .verdict-adequate { background: var(--verdict-adequate); }
+  .verdict-thin { background: var(--verdict-thin); }
+  .verdict-broken { background: var(--verdict-broken); }
+
+  .dim-body { padding: 4px 20px 18px; }
+  .dim-judgment { color: var(--text); font-size: 14.5px; }
+  .dim-judgment p { margin: 0 0 10px; }
+
+  .findings-list { padding: 0 20px 4px; }
+  article.finding {
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  article.finding:first-child { border-top: none; }
+  article.finding header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .badge {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
+  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
+  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
+  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
+  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
+  .finding-location { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--muted); }
+  .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; }
+  .finding-fix strong { color: var(--muted); font-weight: 500; }
+
+  .reviewer-source {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  .mechanical {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-top: 24px;
+    font-size: 14px;
+  }
+  .mechanical h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mechanical ul { margin: 0; padding-left: 20px; }
+  .mechanical li { margin-bottom: 4px; color: var(--text); }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  footer .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <header class="report-header">
+      <div class="title">
+        <h1>TranferFiles — UX Design Validation Report</h1>
+        <div class="subtitle">_bmad-output/planning-artifacts/ux-designs/ux-TranferFiles-2026-08-27/</div>
+      </div>
+    </header>
+
+    <div class="synthesis">
+      <p>Cặp spine DESIGN.md/EXPERIENCE.md có shape chuẩn, token/cross-ref sạch, và 2 Key Flow bám sát đúng 2 loại cảnh báo đã chốt trong brief/addendum — consumer (architecture, story-dev) source-extract được không vướng. Điểm yếu thật của rubric là <strong>state coverage</strong>: không có state cho tình huống chính dashboard mất kết nối dữ liệu giám sát (khác một kênh mất tín hiệu) — lỗ hổng critical vì đe doạ trực tiếp mục tiêu "phát hiện sự cố trong 1 phút" của brief.</p>
+      <p>Review accessibility mở rộng bức tranh này: không có finding nào ở mức critical riêng, nhưng 5 finding <strong>high</strong> đều rơi đúng vào hai đường dây rủi ro nhất của sản phẩm — "không được bỏ sót cảnh báo" (vu-meter phụ thuộc màu đơn lẻ, âm báo chỉ kêu một lần không có lớp bù thị giác, contrast badge critical chưa đạt AAA) và "không được gọi trùng đài" (ack-label dùng cỡ chữ nhỏ nhất hệ thống). Hai review độc lập cùng chỉ ra spine lạc quan hơn thực tế ở phần state/accessibility so với tự đánh giá trong <code>.memlog.md</code>.</p>
+    </div>
+
+    <div class="dimension-summary">
+      <div class="dim-card"><div class="dim-name">1. Flow coverage</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
+      <div class="dim-card"><div class="dim-name">2. Token completeness</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+      <div class="dim-card"><div class="dim-name">3. Component coverage</div><div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div></div>
+      <div class="dim-card"><div class="dim-name">4. State coverage</div><div class="dim-verdict" style="color: var(--verdict-thin)">thin</div></div>
+      <div class="dim-card"><div class="dim-name">5. Visual reference coverage</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
+      <div class="dim-card"><div class="dim-name">6. Bloat &amp; overspecification</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
+      <div class="dim-card"><div class="dim-name">7. Inheritance discipline</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
+      <div class="dim-card"><div class="dim-name">8. Shape fit</div><div class="dim-verdict" style="color: var(--verdict-strong)">strong</div></div>
+    </div>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>1. Flow coverage</h2><span class="verdict-pill verdict-strong">strong</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>2 Key Flow (anh Long/mất tín hiệu, anh Minh/ABR) khớp đúng 2 mức cảnh báo đã chốt trong addendum.md, có nhân vật tên riêng, bước đánh số, climax rõ, failure path cụ thể. Không phát hiện thiếu sót.</p></div></div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>2. Token completeness</h2><span class="verdict-pill verdict-adequate">adequate</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Mọi token frontmatter và mọi <code>{path.to.token}</code> reference resolve đúng. Contrast thực tế tính được: on-state-warning/state-warning 9.68:1, on-state-critical/state-critical 5.41:1, text-primary/surface-base 17.01:1 — đạt AA.</p></div></div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Không nêu contrast target số cụ thể trong spine</h3><span class="finding-location">DESIGN.md dòng 149, 200</span></header>
+            <div class="finding-note">Chỉ có mô tả định tính "đảm bảo tương phản đọc được"; downstream không có ngưỡng để tự kiểm khi đổi màu sau này.</div>
+            <div class="finding-fix"><strong>Fix:</strong> thêm ngưỡng tối thiểu (AA 4.5:1 text, 3:1 border/graphical) và xác nhận các cặp trọng yếu đã đạt.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-low">low</span><h3 class="finding-title">alert-badge thiếu field typography trong frontmatter</h3><span class="finding-location">DESIGN.md dòng 105-116 (so với ack-label dòng 122)</span></header>
+            <div class="finding-note">Prose nói label-caps dùng cho alert-badge nhưng component block không khai báo field typography.</div>
+            <div class="finding-fix"><strong>Fix:</strong> thêm <code>typography: '{typography.label-caps}'</code> vào block alert-badge.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>3. Component coverage</h2><span class="verdict-pill verdict-adequate">adequate</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>6 component đều có visual spec (DESIGN.md) + behavioral spec (EXPERIENCE.md) với luật thật. 2 row phi-visual (âm báo, Telegram/Email) hợp lý không cần visual counterpart.</p></div></div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-low">low</span><h3 class="finding-title">channel-grid không có row hành vi riêng trong EXPERIENCE.md</h3><span class="finding-location">EXPERIENCE.md — rải ở channel-grid-cell dòng 54 và Interaction Primitives dòng 85</span></header>
+            <div class="finding-note">Không chặn downstream nhưng gây khó tra cứu.</div>
+            <div class="finding-fix"><strong>Fix:</strong> cân nhắc thêm 1 row channel-grid riêng trong Component Patterns.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details open>
+        <summary><h2>4. State coverage</h2><span class="verdict-pill verdict-thin">thin</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>channel-grid-cell có đủ 5 state theo logic cảnh báo. detail-panel có 3 state hợp lý. Permission-denied không áp dụng (persona duy nhất). Nhưng thiếu state ở cấp hệ thống.</p></div></div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-critical">critical</span><h3 class="finding-title">Không có state cho dashboard tự mất kết nối dữ liệu giám sát</h3><span class="finding-location">EXPERIENCE.md — Foundation / State Patterns / Accessibility Floor (không xuất hiện ở đâu)</span></header>
+            <div class="finding-note">Nếu event stream chết, các ô kênh đứng yên ở trạng thái cũ (có thể "ok") vô thời hạn — false-negative im lặng, phá vỡ mục tiêu "phát hiện sự cố trong 1 phút" (brief.md dòng 59).</div>
+            <div class="finding-fix"><strong>Fix:</strong> thêm state toàn cục mới (vd stale/disconnected) tách biệt với critical của từng kênh, cộng banner + timestamp "cập nhật lần cuối".</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Thiếu cold-load state cho channel-grid</h3><span class="finding-location">EXPERIENCE.md Foundation / State Patterns</span></header>
+            <div class="finding-note">Không mô tả UI trong khoảng thời gian ngắn chưa có dữ liệu khi vừa mở app (event-driven, độ trễ 1-2s).</div>
+            <div class="finding-fix"><strong>Fix:</strong> thêm state cold-load/initial (skeleton/placeholder cho 34 ô).</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Thiếu state/spec cho focus bàn phím trên channel-grid-cell</h3><span class="finding-location">EXPERIENCE.md Accessibility Floor dòng 96; không có token focus trong DESIGN.md</span></header>
+            <div class="finding-note">Accessibility Floor yêu cầu thao tác đầy đủ bằng bàn phím nhưng không có token màu focus-ring lẫn mô tả Tab-order.</div>
+            <div class="finding-fix"><strong>Fix:</strong> thêm token focus-ring vào DESIGN.md và mô tả Tab-order trong Accessibility Floor.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>5. Visual reference coverage</h2><span class="verdict-pill verdict-strong">strong</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>1 file tham chiếu (.working/color-themes-1.html), được link inline và giải thích rõ ở DESIGN.md.Colors, có mặt trong frontmatter sources cả hai file. Không orphan, không tham chiếu mơ hồ.</p></div></div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>6. Bloat &amp; overspecification</h2><span class="verdict-pill verdict-strong">strong</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Mọi chi tiết (debounce 5s, cooldown 60s, ngưỡng 70%, hex cụ thể) bắt nguồn trực tiếp từ quyết định đã chốt. Không section thừa, không lặp nội dung giữa hai file.</p></div></div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>7. Inheritance discipline</h2><span class="verdict-pill verdict-strong">strong</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>6/6 đường dẫn sources resolve được. Thuật ngữ verbatim khớp nguồn. Tên component nhất quán tuyệt đối giữa hai file. Assumption đã resolve và assumption còn treo đều gắn cờ tường minh.</p></div></div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-low">low</span><h3 class="finding-title">Trường name khác nhau giữa hai file frontmatter</h3><span class="finding-location">DESIGN.md: "TranferFiles — Dashboard Giám Sát SRT" · EXPERIENCE.md: "TranferFiles"</span></header>
+            <div class="finding-note">Không nhất quán tên định danh spine.</div>
+            <div class="finding-fix"><strong>Fix:</strong> thống nhất "TranferFiles" ở cả hai, mô tả dài chuyển vào field description.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <section class="dimension">
+      <details>
+        <summary><h2>8. Shape fit</h2><span class="verdict-pill verdict-strong">strong</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>DESIGN.md đúng 8 section canonical, đúng thứ tự. EXPERIENCE.md đủ 8 section mặc định. Responsive &amp; Platform và Inspiration &amp; Anti-patterns bị bỏ hợp lý (single-surface desktop, không có sản phẩm tham chiếu trong nguồn).</p></div></div>
+      </details>
+    </section>
+
+    <section class="reviewer-section">
+      <details open>
+        <summary><h2>Accessibility review</h2><span class="reviewer-source">review-accessibility.md</span></summary>
+        <div class="dim-body"><div class="dim-judgment"><p>Nền tảng tốt hơn phần lớn dashboard vận hành (badge luôn kèm chữ/icon, ack không đổi màu, assumption kích thước chữ gắn cờ rõ). Không có finding critical vì mỗi rủi ro đều có lớp bù trừ khác, nhưng nhiều finding high rơi đúng vào hai đường dây "không bỏ sót cảnh báo" và "không gọi trùng".</p></div></div>
+        <div class="findings-list">
+          <article class="finding">
+            <header><span class="badge badge-sev-high">high</span><h3 class="finding-title">vu-meter phụ thuộc màu đơn lẻ</h3><span class="finding-location">DESIGN.md dòng 99-104, 199</span></header>
+            <div class="finding-note">Gradient 3 mốc màu không có icon/chữ/hình dạng đi kèm để phân biệt — người khiếm thị màu không phân biệt được mốc âm thanh.</div>
+            <div class="finding-fix"><strong>Fix:</strong> thêm vạch ngưỡng cố định hoặc đổi chiều cao/độ dày thanh theo mốc.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Contrast on-state-critical/state-critical chưa đạt AAA</h3><span class="finding-location">DESIGN.md dòng 20-24, 47-51</span></header>
+            <div class="finding-note">~5.4:1 — đạt AA nhưng không đạt AAA, trong khi badge dùng label-caps 13px (không đủ lớn hưởng ngưỡng "large text").</div>
+            <div class="finding-fix"><strong>Fix:</strong> làm tối thêm on-state-critical để đạt ≥7:1, hoặc ghi rõ ngưỡng mục tiêu đã chọn.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Assumption kích thước chữ chỉ nằm ở văn xuôi, không gắn vào khối YAML</h3><span class="finding-location">DESIGN.md dòng 26-61 (token) vs dòng 166 (assumption)</span></header>
+            <div class="finding-note">Người sinh code trực tiếp từ token YAML có thể bỏ lỡ cảnh báo và dùng thẳng số liệu làm final.</div>
+            <div class="finding-fix"><strong>Fix:</strong> gắn annotation ASSUMPTION ngay trong khối YAML hoặc đánh dấu draft rõ ràng.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-high">high</span><h3 class="finding-title">ack-label dùng cỡ chữ nhỏ nhất hệ thống cho tín hiệu chống-gọi-trùng</h3><span class="finding-location">DESIGN.md dòng 122 (typography: caption, 12px)</span></header>
+            <div class="finding-note">Ở khoảng cách TV wall, chữ 12px + border dashed rất khó phân biệt so với solid — nếu đọc nhầm sẽ đúng kịch bản lỗi tính năng này sinh ra để ngăn.</div>
+            <div class="finding-fix"><strong>Fix:</strong> nâng typography lên body (14px), cân nhắc thêm chỉ báo hình dạng rõ hơn.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Accessibility Floor tuyên bố đầy đủ phím tắt nhưng spec hành vi chỉ mô tả click</h3><span class="finding-location">EXPERIENCE.md dòng 96 vs dòng 84-87, 52-57</span></header>
+            <div class="finding-note">Không có đặc tả Tab traversal, phím mở ô, phím kích hoạt nút ack.</div>
+            <div class="finding-fix"><strong>Fix:</strong> bổ sung Tab-order, Enter/Space để mở ô và kích hoạt ack vào Interaction Primitives.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-high">high</span><h3 class="finding-title">Âm báo chỉ kêu một lần — không có lớp bù thị giác cho cảnh báo tồn đọng chưa ack</h3><span class="finding-location">EXPERIENCE.md dòng 59-60, 87</span></header>
+            <div class="finding-note">Nếu người trực không nghe được lần phát duy nhất (phòng ồn, tai nghe, bước ra ngoài) và không để ý Telegram/Email ngay, dashboard không có chỉ báo tổng hợp nào khác ngoài ô đứng yên.</div>
+            <div class="finding-fix"><strong>Fix:</strong> cân nhắc thêm chỉ báo tĩnh (không animation) — vd số đếm cảnh báo critical chưa ack ở vị trí cố định.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">alert-badge trạng thái ok có contrast dưới AA</h3><span class="finding-location">DESIGN.md dòng 107-110</span></header>
+            <div class="finding-note">~3.7:1, dưới ngưỡng AA 4.5:1 cho text thường — badge xuất hiện ở đa số 34 ô.</div>
+            <div class="finding-fix"><strong>Fix:</strong> tăng opacity nền hoặc dùng text đặc hơn, đo lại bằng contrast checker.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Không ghi số đo contrast nào cho các cặp chữ-trên-nền</h3><span class="finding-location">DESIGN.md dòng 149</span></header>
+            <div class="finding-note">Chỉ có khẳng định định tính, không có cờ ASSUMPTION tương đương phần typography.</div>
+            <div class="finding-fix"><strong>Fix:</strong> thêm ghi chú ASSUMPTION/TODO cho các cặp on-state-*/state-* trước khi khoá token.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-medium">medium</span><h3 class="finding-title">Không có token focus-ring</h3><span class="finding-location">DESIGN.md — không xuất hiện</span></header>
+            <div class="finding-note">Trên nền gần đen, outline mặc định OS/browser có thể tương phản thấp.</div>
+            <div class="finding-fix"><strong>Fix:</strong> thêm token focus-ring (màu, độ dày, offset) đạt ≥3:1 với surface-base/surface-raised.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-low">low</span><h3 class="finding-title">Không có heartbeat check cho phần cứng loa</h3><span class="finding-location">EXPERIENCE.md dòng 87</span></header>
+            <div class="finding-note">Spec chỉ cấm tắt âm thanh vĩnh viễn từ UI, không đề cập rủi ro loa hỏng/âm lượng OS = 0.</div>
+            <div class="finding-fix"><strong>Fix:</strong> ghi nhận là rủi ro vận hành ngoài phạm vi UX spine, tương tự cách dòng 87 đã tách quyết định mute.</div>
+          </article>
+          <article class="finding">
+            <header><span class="badge badge-sev-low">low</span><h3 class="finding-title">text-secondary chưa đạt AAA cho text nhỏ</h3><span class="finding-location">DESIGN.md — text-secondary trên surface-raised</span></header>
+            <div class="finding-note">~6.5:1, đạt AA nhưng chưa AAA. Không dùng cho trạng thái cảnh báo nên không khẩn cấp.</div>
+            <div class="finding-fix"><strong>Fix:</strong> không bắt buộc sửa ngay; đo cùng đợt kiểm tra kích thước chữ thực tế.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <div class="mechanical">
+      <h3>Mechanical notes</h3>
+      <ul>
+        <li>Tên không nhất quán: name frontmatter khác nhau giữa DESIGN.md và EXPERIENCE.md.</li>
+        <li>Tất cả cross-ref {path.to.token} giữa hai file đều resolve đúng; không có broken reference.</li>
+        <li>Frontmatter đầy đủ trường bắt buộc ở cả hai file.</li>
+        <li>Không có diagram Mermaid trong cặp spine.</li>
+        <li>.memlog.md tự đánh giá "Pass 1 self-check đều strong" — review độc lập không đồng ý ở state coverage.</li>
+      </ul>
+    </div>
+
+    <footer class="report-footer">
+      <div class="meta">
+        <span>Rubric: review-rubric.md</span>
+        <span>Accessibility: review-accessibility.md</span>
+        <span>Generated: 2026-08-27</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

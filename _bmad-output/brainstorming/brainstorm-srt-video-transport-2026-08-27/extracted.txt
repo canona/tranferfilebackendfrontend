@@ -1,0 +1,317 @@
+﻿Tuyáº¿n TÃ­n Hiá»‡u Vá» Trung TÃ¢m
+PHIÃŠN BRAINSTORM Â· TRáº NG THÃI: HOÃ€N Táº¤T + ÄÃƒ ÄÃNH CHÃNH THIáº¾T Bá»Š Äáº¦U VÃ€O/RA
+Cháº¿ Ä‘á»™
+Partner
+Bá»™ ká»¹ thuáº­t
+4 + 3 addendum
+Quy mÃ´
+34 Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng
+Cáº­p nháº­t
+27/08/2026 Â· 15:52
+VTCDigital â€” Trung tÃ¢m phÃ¡t sÃ³ng vá»‡ tinh
+Tuyáº¿n tÃ­n hiá»‡u
+vá» trung tÃ¢m
+á»¨ng dá»¥ng truyá»n dáº«n video/audio qua internet báº±ng giao thá»©c SRT, xÃ¢y dá»±ng trÃªn ná»n táº£ng
+mÃ£ nguá»“n má»Ÿ (Haivision SRTâ€¦) â€” cÃ´ng cá»¥ ná»™i bá»™ Ä‘á»ƒ VTCDigital nháº­n tÃ­n hiá»‡u tin cáº­y tá»« cÃ¡c
+Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng vá» trung tÃ¢m uplink vá»‡ tinh, thay tháº¿ Ä‘Æ¡n vá»‹ truyá»n dáº«n thuÃª ngoÃ i hiá»‡n táº¡i.
+34 tá»‰nh thÃ nh Â· 34 Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng
+Káº¿t ná»‘i Ä‘iá»ƒm-Ä‘iá»ƒm â€” mÃ¡y tÃ­nh + card Blackmagic (SDI I/O) má»—i Ä‘áº§u
+ÄÃ£ chá»‘t pháº¡m vi pháº§n má»m
+Rundown
+01
+Job to Be Done
+02
+Question Storming
+03
+Morphological Analysis
+04
+Failure Analysis
+05
+HÃ nh trÃ¬nh quyáº¿t Ä‘á»‹nh
+06
+Kiáº¿n trÃºc Ä‘Ã£ chá»‘t
+01 / 06 â€” JOB TO BE DONE
+Äáº§u viá»‡c tháº­t sá»± cáº§n hoÃ n thÃ nh
+NhÃ¬n tá»« phÃ­a Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng: há» Ä‘ang thuÃª ngoÃ i truyá»n dáº«n, vÃ  VTCDigital Ä‘Ã³ng vai trÃ² Ä‘Æ¡n vá»‹ uplink lÃªn vá»‡ tinh.
+Bá»‘i cáº£nh
+VTCDigital váº­n hÃ nh trung tÃ¢m phÃ¡t sÃ³ng vá»‡ tinh, cung cáº¥p dá»‹ch vá»¥ uplink cho cÃ¡c Ä‘Ã i truyá»n hÃ¬nh Ä‘á»‹a phÆ°Æ¡ng.
+Hiá»‡n táº¡i, tÃ­n hiá»‡u tá»« Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng vá» trung tÃ¢m Ä‘ang Ä‘Æ°á»£c truyá»n dáº«n bá»Ÿi má»™t Ä‘Æ¡n vá»‹ ngoÃ i â€” khÃ´ng pháº£i do
+VTCDigital hay Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng tá»± váº­n hÃ nh.
+Ná»—i Ä‘au 01
+Chi phÃ­ truyá»n dáº«n cao
+ThuÃª Ä‘Æ¡n vá»‹ ngoÃ i truyá»n tÃ­n hiá»‡u vá» trung tÃ¢m tá»‘n kÃ©m, láº·p láº¡i theo tá»«ng kÃªnh.
+Ná»—i Ä‘au 02
+Thá»§ tá»¥c cháº­m
+Cáº§n thÃªm kÃªnh hoáº·c cÃ³ sá»± kiá»‡n Ä‘á»™t xuáº¥t Ä‘á»u pháº£i chá» quy trÃ¬nh kÃ½ há»£p Ä‘á»“ng vÃ  cáº¥u hÃ¬nh thá»§ cÃ´ng.
+Ná»—i Ä‘au 03
+MÃ¹ thÃ´ng tin tÃ­n hiá»‡u
+ÄÃ i Ä‘á»‹a phÆ°Æ¡ng khÃ´ng tá»± giÃ¡m sÃ¡t Ä‘Æ°á»£c tÃ­n hiá»‡u cá»§a chÃ­nh mÃ¬nh Ä‘ang Ä‘i Ä‘Ã¢u, cháº¥t lÆ°á»£ng ra sao.
+Quy trÃ¬nh hiá»‡n táº¡i:
+Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng khÃ´ng tá»± tÄƒng kÃªnh Ä‘Æ°á»£c â€” má»—i láº§n tÄƒng kÃªnh pháº£i kÃ½ há»£p Ä‘á»“ng
+má»›i, sau Ä‘Ã³ VTCDigital tá»± cáº¥u hÃ¬nh thá»§ cÃ´ng á»Ÿ phÃ­a trung tÃ¢m.
+Quyáº¿t Ä‘á»‹nh mÃ´ hÃ¬nh váº­n hÃ nh
+VTCDigital
+chá»§ Ä‘á»™ng cáº¥u hÃ¬nh
+pháº§n má»m truyá»n dáº«n tá»« tÃ­n hiá»‡u Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng vá» trung tÃ¢m.
+ÄÃ¢y
+khÃ´ng pháº£i
+mÃ´ hÃ¬nh self-service cho Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng â€” quyá»n ká»¹ thuáº­t váº«n thuá»™c vá» VTCDigital.
+02 / 06 â€” QUESTION STORMING
+Nhá»¯ng cÃ¢u há»i lá»­ng lÆ¡
+Ká»¹ thuáº­t nÃ y khÃ´ng táº¡o ra cÃ¢u tráº£ lá»i ngay â€” nÃ³ khoanh vÃ¹ng nhá»¯ng gÃ¬ phiÃªn brainstorm
+cá»‘ tÃ¬nh chÆ°a chá»‘t. Cáº£ 5 cÃ¢u Ä‘Ã£ Ä‘Æ°á»£c tráº£ lá»i trong addendum bá»• sung cuá»‘i phiÃªn; cÃ¢u Q3 lÃ m lá»™ ra
+má»™t mÃ¢u thuáº«n quan trá»ng (xem má»¥c 05), vÃ  cÃ¢u tráº£ lá»i ban Ä‘áº§u cho Q4 sau Ä‘Ã³ Ä‘Æ°á»£c Ä‘Ã­nh chÃ­nh láº¡i
+trong addendum cuá»‘i cÃ¹ng (xem má»¥c 06).
+5 cÃ¢u há»i má»Ÿ cÃ²n treo láº¡i sau vÃ²ng Question Storming â€” tráº¡ng thÃ¡i táº¡i thá»i Ä‘iá»ƒm hoÃ n táº¥t phiÃªn:
+Q1
+Xá»­ lÃ½ tháº¿ nÃ o khi Ä‘á»©t máº¡ng giá»¯a chá»«ng?
+Tráº£ lá»i â€” addendum
+Hiá»ƒn thá»‹
+báº£ng mÃ u / color bars
+che khung hÃ¬nh khi máº¥t káº¿t ná»‘i hoÃ n toÃ n â€” khÃ´ng Ä‘á»ƒ Ä‘á»©ng hÃ¬nh hoáº·c mÃ n hÃ¬nh Ä‘en.
+ÄÃ£ tráº£ lá»i
+Q2
+Ai lÃ  ngÆ°á»i phÃ¡t hiá»‡n sá»± cá»‘ Ä‘áº§u tiÃªn?
+Tráº£ lá»i â€” addendum
+VTCDigital cÃ³
+Ä‘á»™i trá»±c sÃ³ng 24/7
+, chá»§ Ä‘á»™ng phÃ¡t hiá»‡n â€” khÃ´ng phá»¥ thuá»™c Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng bÃ¡o lÃªn.
+ÄÃ£ tráº£ lá»i
+Q3
+CÃ³ cáº§n Ä‘Æ°á»ng dá»± phÃ²ng / 2 nhÃ  máº¡ng khÃ¡c nhau khÃ´ng?
+Tráº£ lá»i â€” addendum
+KhÃ´ng cáº§n
+â€” vÃ¬ Ä‘áº§u nháº­n lÃ  mÃ¡y tÃ­nh cÃ i pháº§n má»m, Ä‘Ã£ cÃ³ modem cá»§a trung tÃ¢m Ä‘áº£m báº£o.
+âš  CÃ¢u tráº£ lá»i nÃ y mÃ¢u thuáº«n vá»›i tá»• há»£p "2 Ä‘Æ°á»ng internet + SRT Bonding"
+chá»n trÆ°á»›c Ä‘Ã³ á»Ÿ Morphological Analysis â€” xem
+má»¥c 05
+.
+PhÃ¡t sinh mÃ¢u thuáº«n
+Q4
+Äá»‹nh dáº¡ng/thiáº¿t bá»‹ Ä‘áº§u nháº­n hiá»‡n táº¡i cá»§a Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng lÃ  gÃ¬?
+Tráº£ lá»i â€” Ä‘Ã£ Ä‘Ã­nh chÃ­nh á»Ÿ addendum cuá»‘i phiÃªn
+Má»—i Ä‘áº§u (Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng vÃ  trung tÃ¢m) lÃ
+1 mÃ¡y tÃ­nh + card Blackmagic (SDI I/O)
+cháº¡y pháº§n má»m
+xá»­ lÃ½/encode â€” card Blackmagic lÃ  cáº§u ná»‘i pháº§n cá»©ng chuyÃªn dá»¥ng giá»¯a tÃ­n hiá»‡u SDI vÃ  mÃ¡y tÃ­nh.
+âš  MÃ´ táº£ ban Ä‘áº§u ("chá»‰ lÃ  mÃ¡y tÃ­nh cÃ i pháº§n má»m, khÃ´ng pháº§n cá»©ng chuyÃªn
+dá»¥ng") Ä‘Ã£ bá»‹ Ä‘Ã­nh chÃ­nh â€” xem sÆ¡ Ä‘á»“ chuá»—i tÃ­n hiá»‡u á»Ÿ
+má»¥c 06
+.
+ÄÃ£ Ä‘Ã­nh chÃ­nh
+Q5
+CÃ³ bao nhiÃªu Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng, vÃ  há» náº±m á»Ÿ nhá»¯ng vá»‹ trÃ­ Ä‘á»‹a lÃ½ nÃ o?
+Tráº£ lá»i â€” addendum
+34 tá»‰nh thÃ nh
+, tÆ°Æ¡ng á»©ng
+34 Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng
+.
+ÄÃ£ tráº£ lá»i
+03 / 06 â€” MORPHOLOGICAL ANALYSIS
+Tá»• há»£p Ä‘Æ°á»£c chá»n giá»¯a phiÃªn
+5 tham sá»‘ cáº¥u hÃ¬nh Ä‘Æ°á»£c ghÃ©p thÃ nh má»™t chuá»—i tÃ­n hiá»‡u duy nháº¥t â€” nhÆ° Ä‘i qua tá»«ng
+module trÃªn má»™t patch bay ká»¹ thuáº­t. Ghi nháº­n nguyÃªn tráº¡ng táº¡i thá»i Ä‘iá»ƒm quyáº¿t Ä‘á»‹nh; 2 dÃ²ng bÃªn dÆ°á»›i sau
+Ä‘Ã³ Ä‘Æ°á»£c Ä‘iá»u chá»‰nh láº¡i á»Ÿ addendum cuá»‘i phiÃªn â€” xem má»¥c 05.
+Topology máº¡ng
+2 Ä‘Æ°á»ng internet song song
+Äiá»u chá»‰nh cuá»‘i phiÃªn Â· xem 05
+Ná»n táº£ng pháº§n má»m
+Tá»± build â€” libSRT + custom orchestration
+Cáº¥u hÃ¬nh kÃªnh
+Portal / API â€” tá»± Ä‘á»™ng hoÃ¡ Ä‘áº§y Ä‘á»§
+GiÃ¡m sÃ¡t
+Dashboard ná»™i bá»™ VTCDigital
+Dá»± phÃ²ng khi lá»—i
+SRT Connection Bonding
+Äiá»u chá»‰nh cuá»‘i phiÃªn Â· xem 05
+NÃ¢ng cáº¥p trong phiÃªn
+Failover Ä‘Æ¡n thuáº§n â€” tá»± Ä‘á»™ng chuyá»ƒn sang Ä‘Æ°á»ng cÃ²n láº¡i khi máº¥t 1 Ä‘Æ°á»ng
+â†’
+Bonding â€” gá»­i song song cáº£ 2 Ä‘Æ°á»ng, khÃ´ng giáº­t/glitch khi chuyá»ƒn
+Loáº¡i khá»i pháº¡m vi â€” addendum cuá»‘i phiÃªn
+SRT Connection Bonding
+â€” bá»‹ loáº¡i khá»i pháº¡m vi pháº§n má»m sau khi lÃ m
+rÃµ kiáº¿n trÃºc lÃ  káº¿t ná»‘i Ä‘iá»ƒm-Ä‘iá»ƒm. Äáº£m báº£o Ä‘Æ°á»ng truyá»n lÃ  trÃ¡ch nhiá»‡m háº¡ táº§ng máº¡ng, khÃ´ng pháº£i tÃ­nh
+nÄƒng cáº§n build. Xem
+hÃ nh trÃ¬nh Ä‘áº§y Ä‘á»§ á»Ÿ má»¥c 05
+.
+04 / 06 â€” FAILURE ANALYSIS
+Diá»…n táº­p má»™t sá»± cá»‘ giáº£ Ä‘á»‹nh
+Äáº·t há»‡ thá»‘ng vÃ o tÃ¬nh huá»‘ng xáº¥u nháº¥t trÆ°á»›c khi nÃ³ xáº£y ra tháº­t.
+Sá»± cá»‘ giáº£ Ä‘á»‹nh
+Giáº£ Ä‘á»‹nh
+NhÃ  máº¡ng cam káº¿t má»™t tá»‘c Ä‘á»™ Ä‘Æ°á»ng truyá»n internet â€” nhÆ°ng tá»‘c Ä‘á»™ thá»±c táº¿ khÃ´ng á»•n Ä‘á»‹nh nhÆ° cam káº¿t.
+BÃ i há»c rÃºt ra
+KhÃ´ng thá»ƒ Ä‘áº·t cÆ°á»£c Ä‘á»™ tin cáº­y cá»§a há»‡ thá»‘ng vÃ o cam káº¿t bÄƒng thÃ´ng cá»§a nhÃ  máº¡ng.
+â€œKhÃ´ng thá»ƒ tin tÆ°á»Ÿng cam káº¿t tá»‘c Ä‘á»™ internet â€” nÃªn cáº§n ká»¹ thuáº­t nÃ©n tá»‘t, Ä‘á»ƒ dÃ¹ng Ã­t bÄƒng thÃ´ng hÆ¡n
+nhÆ°ng váº«n giá»¯ Ä‘Æ°á»£c cháº¥t lÆ°á»£ng tÃ­n hiá»‡u.â€
+BÃ i há»c nÃ y váº«n Ä‘Ãºng á»Ÿ kiáº¿n trÃºc cuá»‘i cÃ¹ng â€” nhÆ°ng pháº§n "ká»¹ thuáº­t nÃ©n tá»‘t" Ä‘á»ng láº¡i thÃ nh lá»›p ABR
+trong kiáº¿n trÃºc Ä‘Ã£ chá»‘t (má»¥c 06), chá»© khÃ´ng pháº£i lÃ½ do Ä‘á»ƒ giá»¯ Bonding.
+05 / 06 â€” HÃ€NH TRÃŒNH QUYáº¾T Äá»ŠNH
+Tá»« Bonding song song, Ä‘áº¿n Ä‘iá»ƒm-Ä‘iá»ƒm Ä‘Æ¡n giáº£n
+KhÃ´ng pháº£i má»i quyáº¿t Ä‘á»‹nh giá»¯a phiÃªn Ä‘á»u sá»‘ng sÃ³t Ä‘áº¿n cuá»‘i phiÃªn. ÄÃ¢y lÃ  log sá»­a
+sÃ³ng â€” ghi láº¡i Ä‘Ãºng thá»© tá»± phiÃªn Ä‘Ã£ Ä‘i qua, ká»ƒ cáº£ khÃºc cua.
+Giá»¯a phiÃªn Â· Morphological Analysis
+Chá»n tá»• há»£p: 2 Ä‘Æ°á»ng internet + SRT Bonding
+Tá»• há»£p ban Ä‘áº§u dÃ¹ng failover Ä‘Æ¡n thuáº§n cho dá»± phÃ²ng, sau Ä‘Ã³ Ä‘Æ°á»£c nÃ¢ng cáº¥p ngay
+trong phiÃªn thÃ nh
+SRT Connection Bonding
+â€” gá»­i song song trÃªn 2 Ä‘Æ°á»ng internet, chuyá»ƒn Ä‘á»•i khÃ´ng
+giáº­t hÃ¬nh.
+Giá»¯a phiÃªn Â· Failure Analysis
+Sá»± cá»‘ ISP cá»§ng cá»‘ thÃªm cho hÆ°á»›ng Bonding
+BÃ i há»c "khÃ´ng thá»ƒ tin cam káº¿t tá»‘c Ä‘á»™ ISP" Ä‘Æ°á»£c Ä‘á»c nhÆ° má»™t lÃ½ do á»§ng há»™ thÃªm
+cho viá»‡c gá»­i song song 2 Ä‘Æ°á»ng. Tá»•ng há»£p táº¡m thá»i táº¡i thá»i Ä‘iá»ƒm nÃ y: kiáº¿n trÃºc phÃ²ng thá»§
+3 lá»›p
+â€” ABR â†’ SRT Bonding â†’ cáº£nh bÃ¡o khi cáº£ 2 Ä‘Æ°á»ng cÃ¹ng ngháº½n.
+Addendum cuá»‘i phiÃªn
+Tráº£ lá»i Q3: "KhÃ´ng cáº§n" Ä‘Æ°á»ng dá»± phÃ²ng / 2 nhÃ  máº¡ng
+Khi lÃ m rÃµ láº¡i cÃ¡c cÃ¢u há»i má»Ÿ cá»§a Question Storming, cÃ¢u tráº£ lá»i cho Q3 lÃ
+khÃ´ng cáº§n
+â€” vÃ¬ Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng chá»‰ lÃ  má»™t mÃ¡y tÃ­nh cÃ i pháº§n má»m, vÃ  modem cá»§a trung tÃ¢m Ä‘Ã£ Ä‘áº£m
+báº£o Ä‘Æ°á»ng truyá»n. CÃ¢u tráº£ lá»i nÃ y gieo háº¡t cho bÆ°á»›c tiáº¿p theo.
+Addendum cuá»‘i phiÃªn Â· phÃ¡t hiá»‡n mÃ¢u thuáº«n
+"KhÃ´ng cáº§n dá»± phÃ²ng" mÃ¢u thuáº«n vá»›i "2 Ä‘Æ°á»ng + Bonding"
+CÃ¢u tráº£ lá»i Q3 Ä‘á»‘i chá»i trá»±c tiáº¿p vá»›i tá»• há»£p Ä‘Ã£ chá»n á»Ÿ Morphological Analysis.
+KhÃ´ng thá»ƒ vá»«a "khÃ´ng cáº§n Ä‘Æ°á»ng dá»± phÃ²ng" vá»«a "cáº§n 2 Ä‘Æ°á»ng internet song song + Bonding" â€” cáº§n ngÆ°á»i
+dÃ¹ng xÃ¡c nháº­n láº¡i hÆ°á»›ng nÃ o Ä‘Ãºng trÆ°á»›c khi Ä‘Ã³ng phiÃªn.
+Chá»‘t pháº¡m vi
+Kiáº¿n trÃºc tháº­t sá»±: káº¿t ná»‘i Ä‘iá»ƒm-Ä‘iá»ƒm giá»¯a 2 mÃ¡y tÃ­nh
+MÃ¢u thuáº«n Ä‘Æ°á»£c giáº£i quyáº¿t báº±ng cÃ¡ch tÃ¡ch Ä‘Ãºng lá»›p trÃ¡ch nhiá»‡m: pháº§n má»m chá»‰ lÃ
+1 káº¿t ná»‘i SRT Ä‘iá»ƒm-Ä‘iá»ƒm
+giá»¯a mÃ¡y tÃ­nh Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng vÃ  mÃ¡y tÃ­nh trung tÃ¢m â€” á»Ÿ táº§ng á»©ng dá»¥ng.
+Viá»‡c Ä‘áº£m báº£o Ä‘Æ°á»ng truyá»n (dá»± phÃ²ng, dual-ISP, bonding váº­t lÃ½) lÃ  viá»‡c cá»§a
+háº¡ táº§ng máº¡ng bÃªn dÆ°á»›i
+,
+náº±m ngoÃ i pháº¡m vi pháº§n má»m. SRT Bonding â€” Ã½ tÆ°á»Ÿng nÃ¢ng cáº¥p thÃº vá»‹ giá»¯a phiÃªn â€” vÃ¬ váº­y bá»‹ loáº¡i khá»i pháº¡m
+vi; ABR váº«n giá»¯ nguyÃªn vÃ¬ Ä‘Ã³ lÃ  trÃ¡ch nhiá»‡m cá»§a táº§ng á»©ng dá»¥ng.
+Trong phiÃªn Â· Morphological Analysis
+2 Ä‘Æ°á»ng internet song song + SRT Bonding
+ÄÃ i Ä‘á»‹a phÆ°Æ¡ng gá»­i song song trÃªn 2 háº¡ táº§ng máº¡ng khÃ¡c nhau; pháº§n má»m tá»± bonding
+hai luá»“ng thÃ nh má»™t tÃ­n hiá»‡u liá»n máº¡ch táº¡i trung tÃ¢m.
+âœ• RA KHá»ŽI PHáº M VI PHáº¦N Má»€M
+KhÃ´ng pháº£i má»™t sai láº§m â€” má»™t hÆ°á»›ng khÃ¡m phÃ¡ thÃº vá»‹ bá»‹ thu háº¹p pháº¡m vi khi
+hiá»ƒu rÃµ hÆ¡n bá»‘i cáº£nh triá»ƒn khai thá»±c táº¿.
+Chá»‘t cuá»‘i phiÃªn Â· Addendum
+Káº¿t ná»‘i Ä‘iá»ƒm-Ä‘iá»ƒm â€” mÃ¡y tÃ­nh + Blackmagic SDI má»—i Ä‘áº§u
+Má»™t káº¿t ná»‘i SRT trá»±c tiáº¿p giá»¯a 2 mÃ¡y tÃ­nh. Äáº£m báº£o Ä‘Æ°á»ng truyá»n lÃ  viá»‡c cá»§a háº¡
+táº§ng máº¡ng bÃªn dÆ°á»›i â€” náº±m ngoÃ i pháº¡m vi pháº§n má»m.
+âœ“ ÄÃƒ CHá»T
+06 / 06 â€” Tá»”NG Há»¢P CUá»I CÃ™NG
+Kiáº¿n trÃºc Ä‘Ã£ chá»‘t
+Káº¿t ná»‘i Ä‘iá»ƒm-Ä‘iá»ƒm giá»¯a 2 mÃ¡y tÃ­nh, Ä‘Æ°á»£c bá»c bá»Ÿi 2 lá»›p phÃ²ng thá»§ táº§ng á»©ng dá»¥ng â€”
+cÃ²n háº¡ táº§ng máº¡ng bÃªn dÆ°á»›i lÃ  chuyá»‡n cá»§a Ä‘á»™i máº¡ng, khÃ´ng pháº£i cá»§a pháº§n má»m nÃ y.
+Ã— 34 tá»‰nh thÃ nh
+ÄÃ i Ä‘á»‹a phÆ°Æ¡ng
+MÃY TÃNH + BLACKMAGIC (SDI I/O)
+SRT Â· ÄIá»‚M-ÄIá»‚M
+Trung tÃ¢m VTCDigital
+MÃY TÃNH + BLACKMAGIC (SDI I/O)
+NgoÃ i pháº¡m vi pháº§n má»m:
+Ä‘áº£m báº£o Ä‘Æ°á»ng truyá»n (redundancy, dual-ISP, bonding váº­t
+lÃ½â€¦) â€” trÃ¡ch nhiá»‡m cá»§a háº¡ táº§ng máº¡ng bÃªn dÆ°á»›i, khÃ´ng pháº£i tÃ­nh nÄƒng cáº§n build.
+Chuá»—i tÃ­n hiá»‡u SDI â†” IP â€” Ä‘Ã­nh chÃ­nh addendum cuá»‘i phiÃªn
+Äáº§u vÃ o/ra
+khÃ´ng pháº£i
+"chá»‰ lÃ  mÃ¡y tÃ­nh cÃ i pháº§n má»m, khÃ´ng pháº§n cá»©ng chuyÃªn dá»¥ng" nhÆ° mÃ´ táº£
+trÆ°á»›c Ä‘Ã³. Thá»±c táº¿: má»—i Ä‘áº§u Ä‘á»u cÃ³
+card Blackmagic (SDI I/O)
+lÃ m cáº§u ná»‘i pháº§n cá»©ng giá»¯a tÃ­n hiá»‡u
+SDI vÃ  mÃ¡y tÃ­nh/pháº§n má»m.
+SDI
+TÃN HIá»†U VÃ€O
+BLACKMAGIC
+CAPTURE CARD
+SDI I/O
+MÃY TÃNH
+ÄÃ€I Äá»ŠA PHÆ¯Æ NG
+PHáº¦N Má»€M ENCODE
+SRT Â· INTERNET
+MÃY TÃNH
+TRUNG TÃ‚M VTCDIGITAL
+PHáº¦N Má»€M Xá»¬ LÃ
+BLACKMAGIC
+PLAYOUT CARD
+SDI I/O
+SDI
+TÃN HIá»†U RA
+ÄÃ€I Äá»ŠA PHÆ¯Æ NG
+UPLINK Vá»† TINH
+34
+Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng â€” 34 káº¿t ná»‘i Ä‘iá»ƒm-Ä‘iá»ƒm Ä‘á»™c láº­p
+1 â†” 1
+mÃ¡y tÃ­nh + card Blackmagic (SDI I/O) má»—i Ä‘áº§u
+2
+lá»›p phÃ²ng thá»§ á»Ÿ táº§ng á»©ng dá»¥ng: ABR + che báº£ng mÃ u
+1
+Lá»›p 1 â€”
+ABR chá»§ Ä‘á»™ng
+Há»‡ thá»‘ng tá»± háº¡ bitrate ngay khi phÃ¡t hiá»‡n bÄƒng thÃ´ng Ä‘Æ°á»ng truyá»n suy yáº¿u,
+thay vÃ¬ chá» tÃ­n hiá»‡u vá»¡ khá»‘i má»›i pháº£n á»©ng. ÄÃ¢y lÃ  trÃ¡ch nhiá»‡m cá»§a táº§ng á»©ng dá»¥ng â€” váº«n giá»¯ nguyÃªn sau khi
+chá»‘t láº¡i pháº¡m vi.
+2
+Lá»›p 2 â€”
+Che báº£ng mÃ u khi máº¥t káº¿t ná»‘i hoÃ n toÃ n
+Khi ABR khÃ´ng cÃ²n gÃ¬ Ä‘á»ƒ háº¡ vÃ  káº¿t ná»‘i Ä‘iá»ƒm-Ä‘iá»ƒm máº¥t hoÃ n toÃ n, Ä‘áº§u nháº­n hiá»ƒn
+thá»‹
+báº£ng mÃ u chuáº©n (color bars)
+thay vÃ¬ Ä‘á»©ng hÃ¬nh hoáº·c mÃ n hÃ¬nh Ä‘en.
+Äá»™i trá»±c sÃ³ng 24/7
+cá»§a
+VTCDigital chá»§ Ä‘á»™ng phÃ¡t hiá»‡n sá»± cá»‘ ngay táº¡i Ä‘Ã¢y â€” khÃ´ng phá»¥ thuá»™c Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng bÃ¡o lÃªn.
+Nháº­t kÃ½ quyáº¿t Ä‘á»‹nh â€” tráº¡ng thÃ¡i cuá»‘i phiÃªn
+MÃ´ hÃ¬nh váº­n hÃ nh do VTCDigital chá»§ Ä‘á»™ng cáº¥u hÃ¬nh
+KhÃ´ng self-service cho Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng â€” quyá»n ká»¹ thuáº­t váº«n giá»¯ á»Ÿ trung tÃ¢m.
+ÄÃ£ chá»‘t
+Kiáº¿n trÃºc lÃ  káº¿t ná»‘i Ä‘iá»ƒm-Ä‘iá»ƒm giá»¯a 2 mÃ¡y tÃ­nh
+ÄÃ i Ä‘á»‹a phÆ°Æ¡ng â†” trung tÃ¢m, á»Ÿ táº§ng á»©ng dá»¥ng â€” khÃ´ng qua trung gian bonding pháº§n má»m.
+ÄÃ£ chá»‘t
+Äáº£m báº£o Ä‘Æ°á»ng truyá»n = trÃ¡ch nhiá»‡m háº¡ táº§ng máº¡ng bÃªn dÆ°á»›i
+Dá»± phÃ²ng, dual-ISP, bonding váº­t lÃ½ â€” náº±m ngoÃ i pháº¡m vi pháº§n má»m.
+ÄÃ£ chá»‘t
+Thiáº¿t bá»‹ Ä‘áº§u vÃ o/ra: card Blackmagic (SDI I/O) á»Ÿ cáº£ 2 Ä‘áº§u â€” khÃ´ng pháº£i chá»‰ pháº§n má»m
+ÄÃ­nh chÃ­nh addendum cuá»‘i phiÃªn: SDI â†’ Blackmagic â†’ mÃ¡y tÃ­nh/pháº§n má»m â†’ SRT (Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng); SRT â†’ mÃ¡y tÃ­nh/pháº§n má»m â†’ Blackmagic â†’ SDI (trung tÃ¢m). MÃ´ táº£ trÆ°á»›c Ä‘Ã³ ("chá»‰ lÃ  mÃ¡y tÃ­nh, khÃ´ng pháº§n cá»©ng chuyÃªn dá»¥ng") khÃ´ng chÃ­nh xÃ¡c.
+ÄÃ£ Ä‘Ã­nh chÃ­nh
+SRT Connection Bonding
+Ã tÆ°á»Ÿng nÃ¢ng cáº¥p giá»¯a phiÃªn á»Ÿ Morphological Analysis â€” loáº¡i khá»i pháº¡m vi pháº§n má»m sau khi lÃ m rÃµ kiáº¿n trÃºc Ä‘iá»ƒm-Ä‘iá»ƒm.
+NgoÃ i pháº¡m vi
+ABR chá»§ Ä‘á»™ng háº¡ bitrate
+Giá»¯ nguyÃªn sau khi chá»‘t pháº¡m vi â€” vÃ¬ lÃ  trÃ¡ch nhiá»‡m cá»§a táº§ng á»©ng dá»¥ng/pháº§n má»m.
+ÄÃ£ chá»‘t
+Che báº£ng mÃ u khi máº¥t káº¿t ná»‘i hoÃ n toÃ n, Ä‘á»™i trá»±c 24/7 phÃ¡t hiá»‡n
+Thay tháº¿ lá»›p cáº£nh bÃ¡o cÅ© â€” VTCDigital chá»§ Ä‘á»™ng phÃ¡t hiá»‡n, khÃ´ng phá»¥ thuá»™c Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng bÃ¡o.
+ÄÃ£ chá»‘t
+Tá»± Ä‘á»™ng hoÃ¡ cáº¥u hÃ¬nh kÃªnh qua Portal / API ná»™i bá»™
+Giáº£i quyáº¿t trá»±c tiáº¿p ná»—i Ä‘au "thá»§ tá»¥c cháº­m" khi cáº§n thÃªm kÃªnh gáº¥p.
+ÄÃ£ chá»‘t
+Dashboard cÃ³ má»Ÿ view riÃªng cho Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng khÃ´ng?
+ChÆ°a quyáº¿t Ä‘á»‹nh: cho Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng xem tÃ­n hiá»‡u cá»§a chÃ­nh há», hay giá»¯ kÃ­n ná»™i bá»™ VTCDigital.
+CÃ²n má»Ÿ
+Chá»‘t pháº¡m vi â€” sáºµn sÃ ng thiáº¿t káº¿ chi tiáº¿t
+Point-to-point Â· ABR Â· Che báº£ng mÃ u Â· Portal/API Â· GiÃ¡m sÃ¡t 24/7
+01
+Point-to-point
+1 káº¿t ná»‘i SRT trá»±c tiáº¿p, 2 mÃ¡y tÃ­nh, khÃ´ng trung gian bonding
+02
+ABR chá»§ Ä‘á»™ng
+Tá»± háº¡ bitrate khi bÄƒng thÃ´ng suy yáº¿u
+03
+Che báº£ng mÃ u
+Color bars khi máº¥t káº¿t ná»‘i hoÃ n toÃ n
+04
+Portal / API
+Tá»± Ä‘á»™ng hoÃ¡ cáº¥u hÃ¬nh kÃªnh, VTCDigital giá»¯ quyá»n ká»¹ thuáº­t
+05
+GiÃ¡m sÃ¡t 24/7
+Äá»™i trá»±c sÃ³ng VTCDigital chá»§ Ä‘á»™ng phÃ¡t hiá»‡n sá»± cá»‘
+Ãp dá»¥ng cho
+34 tá»‰nh thÃ nh / 34 Ä‘Ã i Ä‘á»‹a phÆ°Æ¡ng
+â€” má»—i Ä‘Ã i lÃ  má»™t káº¿t ná»‘i
+Ä‘iá»ƒm-Ä‘iá»ƒm Ä‘á»™c láº­p vá» trung tÃ¢m. Pháº§n má»m chá»‹u trÃ¡ch nhiá»‡m táº§ng á»©ng dá»¥ng; Ä‘áº£m báº£o Ä‘Æ°á»ng truyá»n lÃ  viá»‡c cá»§a
+háº¡ táº§ng máº¡ng bÃªn dÆ°á»›i.
+Ghi chÃº ká»¹ thuáº­t
+Tá»± build trÃªn
+libSRT
++ custom orchestration
+KhÃ´ng dÃ¹ng nguyÃªn báº£n Haivision SRT hay wrapper cÃ³ sáºµn
+PhiÃªn brainstorm káº¿t thÃºc â€” 27/08/2026 Â· 15:52 â€” 4/4 ká»¹ thuáº­t + 3 addendum lÃ m rÃµ & Ä‘Ã­nh chÃ­nh pháº¡m vi kiáº¿n trÃºc

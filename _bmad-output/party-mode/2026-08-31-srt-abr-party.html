@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Party Mode · SRT Point-to-Point · 2026-08-31</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --panel2:#161d28; --line:#232c3a;
+    --ink:#e7edf5; --dim:#8a97ab; --accent:#ff7a3d; --accent2:#3ddc97;
+    --mary:#f2c14e; --john:#5aa9ff; --sally:#ff6fae; --winston:#3ddc97; --amelia:#ff7a3d;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+    radial-gradient(1200px 600px at 15% -10%, #16233a 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #1a1230 0%, transparent 55%),
+    var(--bg);
+    color:var(--ink); padding:0 0 80px;}
+  header{padding:56px 24px 32px; text-align:center; position:relative; overflow:hidden;}
+  header::before{content:"";position:absolute;inset:0;background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 1px, transparent 1px 3px);
+    pointer-events:none;}
+  .eyebrow{letter-spacing:.2em;text-transform:uppercase;font-size:12px;color:var(--dim);margin-bottom:10px}
+  h1{margin:0;font-size:clamp(28px,4vw,44px);font-weight:800;
+     background:linear-gradient(90deg,#fff,#9fb4d6);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .sub{color:var(--dim);margin-top:10px;font-size:15px;max-width:640px;margin-left:auto;margin-right:auto;}
+  .wrap{max-width:920px;margin:0 auto;padding:0 20px}
+  section{margin-top:44px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim);margin:0 0 18px;
+     display:flex;align-items:center;gap:10px}
+  h2::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  /* cast */
+  .cast{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;text-align:center}
+  .card .icon{font-size:28px}
+  .card .name{font-weight:700;margin-top:6px}
+  .card .role{font-size:12px;color:var(--dim);margin-top:2px}
+
+  /* diagram */
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px 16px;overflow-x:auto}
+  .diagram svg{display:block;min-width:640px;width:100%}
+  .diagram .cap{text-align:center;color:var(--dim);font-size:12.5px;margin-top:12px}
+
+  /* timeline */
+  .beat{display:grid;grid-template-columns:26px 1fr;gap:14px;margin-bottom:22px}
+  .dot{width:26px;height:26px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);
+       display:flex;align-items:center;justify-content:center;font-size:13px}
+  .beat .line{grid-column:1;width:1px;background:var(--line);margin:0 auto;height:calc(100% - 8px)}
+  .quote{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .who{font-weight:700;margin-right:6px}
+  .who.mary{color:var(--mary)} .who.john{color:var(--john)} .who.sally{color:var(--sally)}
+  .who.winston{color:var(--winston)} .who.amelia{color:var(--amelia)}
+  .quote p{margin:6px 0 0;color:#cfd8e6;line-height:1.5;font-size:14.5px}
+
+  /* pivot callback */
+  .pivot{background:linear-gradient(135deg,#1c1420,#221224);border:1px solid #3a2233;border-radius:14px;padding:18px 20px}
+  .pivot .tag{display:inline-block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--john);
+     background:rgba(90,169,255,.12);border:1px solid rgba(90,169,255,.3);padding:3px 10px;border-radius:999px}
+  .pivot ol{margin:12px 0 0;padding-left:20px;color:#cfd8e6;font-size:14.5px;line-height:1.7}
+
+  /* decisions grid */
+  .decisions{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .dcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .dcard .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent2)}
+  .dcard p{margin:8px 0 0;color:#cfd8e6;font-size:14px;line-height:1.55}
+
+  .open{background:var(--panel2);border:1px dashed var(--line);border-radius:14px;padding:16px 18px;color:var(--dim);font-size:14px}
+  footer{text-align:center;color:var(--dim);font-size:12.5px;margin-top:60px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Bmad Party Mode · Roundtable</div>
+  <h1>20 kênh, một cú xoay ba lần</h1>
+  <div class="sub">Từ "một dashboard giám sát nội bộ" đến "xây từ số 0 một hệ encoder–decoder SRT điểm-điểm" — VTCDigital, 30–31/08/2026.</div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <h2>Trong phòng</h2>
+    <div class="cast">
+      <div class="card"><div class="icon">📊</div><div class="name" style="color:var(--mary)">Mary</div><div class="role">Business Analyst — bắt mâu thuẫn</div></div>
+      <div class="card"><div class="icon">📋</div><div class="name" style="color:var(--john)">John</div><div class="role">Product Manager — xoay ưu tiên</div></div>
+      <div class="card"><div class="icon">🎨</div><div class="name" style="color:var(--sally)">Sally</div><div class="role">UX Designer — chờ tới lượt</div></div>
+      <div class="card"><div class="icon">🏗️</div><div class="name" style="color:var(--winston)">Winston</div><div class="role">System Architect — hỏi vặn kiến trúc</div></div>
+      <div class="card"><div class="icon">💻</div><div class="name" style="color:var(--amelia)">Amelia</div><div class="role">Senior Engineer — đóng đinh số liệu</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Kiến trúc chốt</h2>
+    <div class="diagram">
+      <svg viewBox="0 0 900 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#8a97ab"/>
+          </marker>
+        </defs>
+        <!-- path line -->
+        <path id="flow" d="M40,100 H860" stroke="#232c3a" stroke-width="2" fill="none"/>
+        <path d="M40,100 H860" stroke="#8a97ab" stroke-width="1.4" fill="none" marker-end="url(#arrow)" opacity="0.5"/>
+
+        <!-- traveling pulse -->
+        <circle r="5" fill="#ff7a3d">
+          <animateMotion dur="4s" repeatCount="indefinite" path="M40,100 H860"/>
+        </circle>
+
+        <!-- nodes: station side -->
+        <g font-family="Segoe UI, sans-serif">
+          <g transform="translate(40,100)">
+            <circle r="5" fill="#5aa9ff"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">SDI</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">camera/switcher</text>
+          </g>
+          <g transform="translate(190,100)">
+            <circle r="5" fill="#5aa9ff"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">Blackmagic</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">DeckLink capture</text>
+          </g>
+          <g transform="translate(340,100)">
+            <circle r="6" fill="#ff7a3d"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">Encode + ABR</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">tự viết · libsrt send</text>
+          </g>
+          <g transform="translate(500,100)">
+            <text y="-30" text-anchor="middle" fill="#8a97ab" font-size="11">20× · qua</text>
+            <text y="6" text-anchor="middle" fill="#e7edf5" font-size="15" font-weight="800" letter-spacing="1">INTERNET</text>
+            <text y="24" text-anchor="middle" fill="#8a97ab" font-size="11">(ngoài phạm vi dự án)</text>
+          </g>
+          <g transform="translate(660,100)">
+            <circle r="6" fill="#3ddc97"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">libsrt receive</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">decode</text>
+          </g>
+          <g transform="translate(800,100)">
+            <circle r="5" fill="#5aa9ff"/>
+            <text y="-16" text-anchor="middle" fill="#e7edf5" font-size="13" font-weight="700">SDI out</text>
+            <text y="30" text-anchor="middle" fill="#8a97ab" font-size="11">trung tâm VTCDigital</text>
+          </g>
+        </g>
+      </svg>
+      <div class="cap">srt_bstats đọc xuyên suốt hai đầu — nuôi cả cảnh báo lẫn vòng điều khiển ABR. 20 kênh chạy song song, độc lập.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ba lần John đảo ngược</h2>
+    <div class="pivot">
+      <span class="tag">running bit của buổi</span>
+      <ol>
+        <li>MVP = JTBD#2 → chốt lại thành MVP = <b>JTBD#3</b> (dashboard giám sát nội bộ).</li>
+        <li>JTBD#1 (giảm chi phí) hạ xuống "chỉ là lý do chiến lược" → hoá ra là <b>động cơ thật</b> của cả dự án.</li>
+        <li>"Xây một dashboard" → hoá ra là <b>xây từ số 0 một hệ encoder–decoder SRT</b>, giám sát+ABR chỉ là tính năng bên trong.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <h2>Diễn biến đáng nhớ</h2>
+
+    <div class="beat">
+      <div class="dot">🏗️</div>
+      <div class="quote"><span class="who winston">Winston</span>
+        <p>"Đó không phải event-driven ở tầng nguồn — đó là polling ở biên, event hoá ở lớp giám sát. Tôi không phản đối cách làm, chỉ phản đối cách gọi tên."</p>
+      </div>
+    </div>
+
+    <div class="beat">
+      <div class="dot">📊</div>
+      <div class="quote"><span class="who mary">Mary</span>
+        <p>Ghép được hai câu trả lời tưởng mâu thuẫn: "quang trắng → switch, không hiểu SRT" và "decoder chuyên dụng" hoá ra nói về <i>hai tầng khác nhau</i> của cùng một hệ thống — không ai sai, chỉ đang nói lệch tầng.</p>
+      </div>
+    </div>
+
+    <div class="beat">
+      <div class="dot">💻</div>
+      <div class="quote"><span class="who amelia">Amelia</span>
+        <p>Từ "tôi chỉ cần gắn thêm lớp đọc stats" đến "viết từ số 0 cả encoder lẫn decoder, cộng vòng điều khiển ABR thời gian thực" — trong vòng vài lượt thoại. Không nao núng, chỉ đổi ước tính khối lượng việc.</p>
+      </div>
+    </div>
+
+    <div class="beat">
+      <div class="dot">🎨</div>
+      <div class="quote"><span class="who sally">Sally</span>
+        <p>"Tôi vẫn ở đây. Cứ để tôi ngồi nghe thêm một vòng nữa." — chờ nguyên buổi để tới lượt UX. Vòng sau là của cô.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chốt lại hôm nay</h2>
+    <div class="decisions">
+      <div class="dcard"><div class="k">Phạm vi thật</div><p>20 kênh SRT điểm-điểm mới, thay quang trắng thuê — không phải giám sát hạ tầng cũ.</p></div>
+      <div class="dcard"><div class="k">Động cơ</div><p>JTBD#1 giảm chi phí là lý do tồn tại; JTBD#3 giám sát là điều kiện để JTBD#1 được duyệt.</p></div>
+      <div class="dcard"><div class="k">Công nghệ</div><p>Phương án A — tự viết bằng libsrt. Loại B (OSS media server) và C (thiết bị thương mại, đội chi phí).</p></div>
+      <div class="dcard"><div class="k">Phần cứng</div><p>SDI vào qua card Blackmagic DeckLink tại mỗi đài.</p></div>
+      <div class="dcard"><div class="k">ABR</div><p>Thật — vòng điều khiển đóng, encoder tự đổi bitrate theo RTT/loss/băng thông đo từ SRT, không phải ngưỡng tĩnh.</p></div>
+      <div class="dcard"><div class="k">Ngoài phạm vi</div><p>Chất lượng đường internet ở đài và trung tâm là giả định đầu vào — không phải việc của dự án này.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Còn treo cho vòng sau</h2>
+    <div class="open">Codec &amp; encode phần cứng/phần mềm · độ trễ (latency) mục tiêu của SRT · dải bitrate co giãn cho ABR · phân cấp mức cảnh báo trên UI (Sally) · PRD chính thức (bmad-prd) &amp; tài liệu kiến trúc (bmad-architecture).</div>
+  </section>
+
+</div>
+
+<footer>Bmad Party Mode · installed roster · 2026-08-31</footer>
+</body>
+</html>

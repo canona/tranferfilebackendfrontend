@@ -1,0 +1,627 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found]){display:none!important}</style></head><body>
+<title>Đường Đi Của Telemetry</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#f2f5f8;
+    --surface:#ffffff;
+    --surface-2:#e7edf3;
+    --text:#0f1720;
+    --text-dim:#54626f;
+    --border:#d2dbe3;
+    --accent:#2f6fed;
+    --accent-soft:#e7effe;
+    --ok:#1a8f4f;
+    --ok-soft:#e5f5ec;
+    --warning:#b4750f;
+    --warning-soft:#fbf0dd;
+    --critical:#c93b3f;
+    --critical-soft:#fbe9e9;
+    --mono-surface:#eef1f5;
+    --shadow: 0 1px 2px rgba(15,23,32,0.05), 0 8px 24px rgba(15,23,32,0.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0b0f14;
+      --surface:#121822;
+      --surface-2:#1a222d;
+      --text:#e7edf3;
+      --text-dim:#93a2b1;
+      --border:#26313e;
+      --accent:#6ea3ff;
+      --accent-soft:#182640;
+      --ok:#3ddc84;
+      --ok-soft:#132a1f;
+      --warning:#f0a93b;
+      --warning-soft:#332510;
+      --critical:#ff6b6b;
+      --critical-soft:#341819;
+      --mono-surface:#0f151e;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b0f14;
+    --surface:#121822;
+    --surface-2:#1a222d;
+    --text:#e7edf3;
+    --text-dim:#93a2b1;
+    --border:#26313e;
+    --accent:#6ea3ff;
+    --accent-soft:#182640;
+    --ok:#3ddc84;
+    --ok-soft:#132a1f;
+    --warning:#f0a93b;
+    --warning-soft:#332510;
+    --critical:#ff6b6b;
+    --critical-soft:#341819;
+    --mono-surface:#0f151e;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"IBM Plex Sans", "Segoe UI", sans-serif;
+    line-height:1.55;
+  }
+  .page{max-width:1180px;margin:0 auto;padding:40px 24px 96px}
+
+  h1,h2,h3,.eyebrow{font-family:"Barlow Condensed","Segoe UI",sans-serif}
+  h1{text-wrap:balance}
+  code,.mono,.mono-title{font-family:"IBM Plex Mono","Consolas",monospace}
+
+  /* ---------- header ---------- */
+  header.hero{padding:8px 0 28px;border-bottom:1px solid var(--border);margin-bottom:28px}
+  .eyebrow{
+    display:inline-block;font-size:12.5px;font-weight:600;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:10px;
+  }
+  h1{font-size:44px;font-weight:700;letter-spacing:.01em;margin:0 0 12px;color:var(--text)}
+  .lede{font-size:16.5px;color:var(--text-dim);max-width:70ch;margin:0 0 20px}
+  .run-config{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:1px;background:var(--border);border:1px solid var(--border);border-radius:10px;overflow:hidden;
+    font-size:13px;
+  }
+  .run-config div{background:var(--surface);padding:10px 14px}
+  .run-config .k{display:block;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+  .run-config .v{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:500}
+
+  /* ---------- mini nav ---------- */
+  nav.jump{
+    position:sticky;top:0;z-index:5;display:flex;gap:4px;flex-wrap:wrap;
+    background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:blur(6px);
+    padding:10px 0;margin-bottom:32px;border-bottom:1px solid var(--border);
+  }
+  nav.jump a{
+    font-size:13px;color:var(--text-dim);text-decoration:none;padding:6px 12px;
+    border-radius:999px;border:1px solid transparent;white-space:nowrap;
+  }
+  nav.jump a:hover,nav.jump a:focus-visible{border-color:var(--border);color:var(--text);background:var(--surface)}
+
+  section{margin-bottom:56px;scroll-margin-top:56px}
+  h2{font-size:28px;font-weight:600;margin:0 0 6px;display:flex;align-items:baseline;gap:10px}
+  h2 .num{
+    font-family:"IBM Plex Mono",monospace;font-size:16px;color:var(--accent);
+    background:var(--accent-soft);border-radius:6px;padding:2px 8px;font-weight:600;
+  }
+  .section-sub{color:var(--text-dim);font-size:14.5px;margin:0 0 20px;max-width:75ch}
+
+  /* ---------- diagram ---------- */
+  figure.diagram{margin:0;padding:0}
+  .diagram-frame{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:20px 14px;box-shadow:var(--shadow);overflow-x:auto;
+  }
+  .diagram-frame svg{display:block;margin:0 auto;max-width:100%;height:auto}
+  figcaption{color:var(--text-dim);font-size:13.5px;margin-top:12px;max-width:85ch}
+  .legend{display:flex;gap:22px;flex-wrap:wrap;font-size:12.5px;color:var(--text-dim);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .legend i{width:22px;height:0;border-top:2px solid currentColor;display:inline-block}
+  .legend i.dashed{border-top-style:dashed}
+  .legend i.warn{border-color:var(--warning)}
+
+  /* ---------- quick ref table ---------- */
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;margin-top:24px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
+  thead th{
+    text-align:left;font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;font-size:12px;color:var(--text-dim);
+    background:var(--surface-2);padding:10px 14px;border-bottom:1px solid var(--border);
+  }
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:nth-child(even){background:color-mix(in srgb, var(--surface-2) 40%, transparent)}
+  td .mono,th .mono{font-size:12.5px}
+  .pill{
+    display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
+    padding:2px 8px;border-radius:999px;white-space:nowrap;
+  }
+  .pill.auth{background:var(--accent-soft);color:var(--accent)}
+  .pill.noauth{background:var(--warning-soft);color:var(--warning)}
+  .pill.internal{background:var(--surface-2);color:var(--text-dim)}
+
+  /* ---------- link sections ---------- */
+  .link-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:24px 26px;box-shadow:var(--shadow);
+  }
+  .link-card h3{font-size:15px;font-weight:600;margin:22px 0 8px;color:var(--text)}
+  .link-card h3:first-of-type{margin-top:4px}
+  .link-card p{margin:0 0 10px;font-size:14.5px}
+  .link-card p.small{color:var(--text-dim);font-size:13.5px}
+  .grid-2{display:grid;grid-template-columns:1.1fr 1fr;gap:26px}
+  @media (max-width:840px){.grid-2{grid-template-columns:1fr}}
+
+  pre{
+    background:var(--mono-surface);border:1px solid var(--border);border-radius:10px;
+    padding:14px 16px;overflow-x:auto;font-size:12.5px;line-height:1.6;margin:0 0 4px;
+  }
+  pre code{font-family:"IBM Plex Mono",monospace}
+  .tok-key{color:var(--accent)}
+  .tok-str{color:var(--ok)}
+  .tok-com{color:var(--text-dim);font-style:italic}
+
+  .refs{list-style:none;margin:10px 0 0;padding:0;font-size:12px;color:var(--text-dim)}
+  .refs li{padding:3px 0;font-family:"IBM Plex Mono",monospace}
+
+  .callout{
+    border-radius:10px;padding:14px 16px;font-size:13.5px;margin:14px 0;
+    border:1px solid var(--border);background:var(--surface-2);
+  }
+  .callout.warn{background:var(--warning-soft);border-color:transparent}
+  .callout .callout-title{font-weight:600;display:block;margin-bottom:4px;color:var(--text)}
+
+  .state-row{display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .dot.ok{background:var(--ok)}
+  .dot.warning{background:var(--warning)}
+  .dot.critical{background:var(--critical)}
+
+  footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--border);color:var(--text-dim);font-size:12.5px}
+</style>
+
+<div class="page">
+
+  <header class="hero">
+    <span class="eyebrow">Sơ đồ kỹ thuật · pipeline giám sát SRT</span>
+    <h1>Đường Đi Của Telemetry</h1>
+    <p class="lede">
+      Truy theo đúng 1 mẫu telemetry — từ lúc <code>transport-station.exe</code> nén xong 1 access unit
+      H.264, tới lúc ô <code>dai-01</code> trên lưới 20 kênh đổi màu — qua 5 chặng, 4 cửa sổ terminal,
+      3 giao thức khác nhau (SRT / WebSocket có auth / WebSocket không auth).
+    </p>
+    <div class="run-config">
+      <div><span class="k">channel_id</span><span class="v">dai-01</span></div>
+      <div><span class="k">SRT</span><span class="v">127.0.0.1 : 9001</span></div>
+      <div><span class="k">WS telemetry (in)</span><span class="v">:8080</span></div>
+      <div><span class="k">WS UI (out)</span><span class="v">:8081</span></div>
+      <div><span class="k">frontend dev</span><span class="v">:3000</span></div>
+      <div><span class="k">bearer_token</span><span class="v">test-bearer-token-e2e-01</span></div>
+    </div>
+  </header>
+
+  <nav class="jump">
+    <a href="#tong-quan">Tổng quan</a>
+    <a href="#link-1">① SRT</a>
+    <a href="#link-2">② WS Telemetry</a>
+    <a href="#link-3">③ Core</a>
+    <a href="#link-4">④ WS UI</a>
+    <a href="#link-5">⑤ Frontend</a>
+  </nav>
+
+  <!-- ================= OVERVIEW DIAGRAM ================= -->
+  <section id="tong-quan">
+    <h2>Tổng quan luồng dữ liệu</h2>
+    <p class="section-sub">4 tiến trình bạn đang chạy trong 4 cửa sổ PowerShell, cộng 1 “tiến trình” thứ 5
+      không hiện trong danh sách terminal: chính trình duyệt của bạn — nó nói chuyện WS trực tiếp với
+      dashboard-backend, không đi qua Terminal 2.</p>
+
+    <figure class="diagram">
+      <div class="diagram-frame">
+        <svg viewBox="0 0 1180 660" role="img" aria-label="Sơ đồ 4 terminal và trình duyệt trao đổi dữ liệu qua SRT và 2 kênh WebSocket, với dashboard-backend tách thành 3 thành phần nội bộ: wsTelemetryAdapter, ChannelStateService, wsUiAdapter">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+            <marker id="arrowWarn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--warning)"/>
+            </marker>
+          </defs>
+
+          <!-- backend outer group -->
+          <rect x="560" y="20" width="380" height="435" rx="14" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-dasharray="5 4"/>
+          <text x="580" y="45" font-family="Barlow Condensed" font-weight="600" font-size="11" letter-spacing="1" fill="var(--accent)">TERMINAL 1</text>
+          <text x="580" y="63" font-family="IBM Plex Mono" font-weight="600" font-size="13" fill="currentColor">dashboard-backend · node dist/app/main.js</text>
+
+          <!-- STATION -->
+          <rect x="20" y="70" width="190" height="100" rx="10" fill="var(--surface-2)" stroke="currentColor" stroke-opacity="0.5"/>
+          <text x="115" y="86" text-anchor="middle" font-family="Barlow Condensed" font-weight="600" font-size="11" letter-spacing="1" fill="var(--accent)">TERMINAL 4</text>
+          <text x="115" y="104" text-anchor="middle" font-family="IBM Plex Mono" font-weight="600" font-size="12.5" fill="currentColor">transport-station.exe</text>
+          <text x="115" y="122" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">channel_id=dai-01</text>
+          <text x="115" y="138" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">nguồn: sample.mp4</text>
+          <text x="115" y="154" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">encode x264 (H.264)</text>
+
+          <!-- CENTER -->
+          <rect x="290" y="70" width="190" height="100" rx="10" fill="var(--surface-2)" stroke="currentColor" stroke-opacity="0.5"/>
+          <text x="385" y="86" text-anchor="middle" font-family="Barlow Condensed" font-weight="600" font-size="11" letter-spacing="1" fill="var(--accent)">TERMINAL 3</text>
+          <text x="385" y="104" text-anchor="middle" font-family="IBM Plex Mono" font-weight="600" font-size="12.5" fill="currentColor">transport-center.exe</text>
+          <text x="385" y="122" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">nghe UDP :9001</text>
+          <text x="385" y="138" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">giải mã H.264 (FFmpeg)</text>
+          <text x="385" y="154" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">PlayoutSink: Noop</text>
+
+          <!-- subA telemetry-in -->
+          <rect x="590" y="75" width="320" height="90" rx="8" fill="var(--surface)" stroke="currentColor" stroke-opacity="0.5"/>
+          <text x="750" y="98" text-anchor="middle" font-family="IBM Plex Mono" font-weight="600" font-size="12.5" fill="currentColor">wsTelemetryAdapter</text>
+          <text x="750" y="114" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">:8080 · inbound</text>
+          <text x="750" y="130" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">auth: Authorization Bearer</text>
+          <text x="750" y="146" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">maxPayload 1 MiB</text>
+
+          <!-- subB core -->
+          <rect x="590" y="205" width="320" height="100" rx="8" fill="var(--surface)" stroke="currentColor" stroke-opacity="0.5"/>
+          <text x="750" y="228" text-anchor="middle" font-family="IBM Plex Mono" font-weight="600" font-size="12.5" fill="currentColor">ChannelStateService</text>
+          <text x="750" y="244" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">core thuần domain</text>
+          <text x="750" y="260" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">debounce ≥5s · bitrate_pct</text>
+          <text x="750" y="276" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">heartbeat timeout 15s</text>
+
+          <!-- subC ui-out -->
+          <rect x="590" y="345" width="320" height="90" rx="8" fill="var(--surface)" stroke="currentColor" stroke-opacity="0.5"/>
+          <text x="750" y="368" text-anchor="middle" font-family="IBM Plex Mono" font-weight="600" font-size="12.5" fill="currentColor">wsUiAdapter</text>
+          <text x="750" y="384" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">:8081 · outbound</text>
+          <text x="750" y="400" text-anchor="middle" font-size="10.5" fill="var(--warning)">KHÔNG auth (LAN-only)</text>
+          <text x="750" y="416" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">broadcast mọi client</text>
+
+          <!-- BROWSER -->
+          <rect x="650" y="520" width="220" height="100" rx="10" fill="var(--surface-2)" stroke="currentColor" stroke-opacity="0.5"/>
+          <text x="760" y="536" text-anchor="middle" font-family="Barlow Condensed" font-weight="600" font-size="11" letter-spacing="1" fill="var(--text-dim)">TRÌNH DUYỆT (bạn tự mở)</text>
+          <text x="760" y="556" text-anchor="middle" font-family="IBM Plex Sans" font-weight="600" font-size="12.5" fill="currentColor">ChannelGrid (React)</text>
+          <text x="760" y="573" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">nhận WS trực tiếp :8081</text>
+          <text x="760" y="589" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">render qua channelStore.ts</text>
+
+          <!-- FRONTEND / next dev -->
+          <rect x="920" y="520" width="200" height="100" rx="10" fill="var(--surface-2)" stroke="currentColor" stroke-opacity="0.5"/>
+          <text x="1020" y="536" text-anchor="middle" font-family="Barlow Condensed" font-weight="600" font-size="11" letter-spacing="1" fill="var(--accent)">TERMINAL 2</text>
+          <text x="1020" y="556" text-anchor="middle" font-family="IBM Plex Mono" font-weight="600" font-size="12.5" fill="currentColor">next dev</text>
+          <text x="1020" y="573" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">cổng :3000</text>
+          <text x="1020" y="589" text-anchor="middle" font-size="10.5" fill="var(--text-dim)">chỉ phục vụ HTML/JS bundle</text>
+
+          <!-- ARROW: station -> center -->
+          <line x1="210" y1="120" x2="286" y2="120" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+          <text x="248" y="107" text-anchor="middle" font-size="10.5" fill="currentColor">SRT · UDP :9001</text>
+          <text x="248" y="139" text-anchor="middle" font-size="10" fill="var(--text-dim)">AES-128 · latency 300ms</text>
+
+          <!-- ARROW: center -> subA -->
+          <line x1="480" y1="120" x2="586" y2="120" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+          <text x="533" y="107" text-anchor="middle" font-size="10.5" fill="currentColor">WS upgrade · ws://:8080</text>
+          <text x="533" y="139" text-anchor="middle" font-size="10" fill="var(--text-dim)">Authorization: Bearer &lt;token&gt;</text>
+
+          <!-- ARROW: subA -> subB -->
+          <line x1="750" y1="165" x2="750" y2="201" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+          <text x="762" y="180" font-size="10" fill="var(--text-dim)">handleTelemetry()</text>
+          <text x="762" y="193" font-size="10" fill="var(--text-dim)">handleHeartbeat()</text>
+
+          <!-- ARROW: subB -> subC -->
+          <line x1="750" y1="305" x2="750" y2="341" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+          <text x="762" y="320" font-size="10" fill="var(--text-dim)">publishChannelSeen()</text>
+          <text x="762" y="333" font-size="10" fill="var(--text-dim)">publishStateChange()</text>
+
+          <!-- ARROW: subC -> browser (the one unauth hop, warning color) -->
+          <line x1="748" y1="435" x2="763" y2="516" stroke="var(--warning)" stroke-width="1.8" marker-end="url(#arrowWarn)"/>
+          <text x="835" y="470" text-anchor="middle" font-size="10.5" fill="var(--warning)">WS · ws://:8081</text>
+          <text x="835" y="487" text-anchor="middle" font-size="10" fill="var(--warning)">(không auth · LAN-only)</text>
+
+          <!-- ARROW: frontend -> browser (dashed, http page load) -->
+          <line x1="916" y1="570" x2="874" y2="570" stroke="currentColor" stroke-width="1.4" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+          <text x="895" y="557" text-anchor="middle" font-size="10" fill="var(--text-dim)">HTTP :3000</text>
+          <text x="895" y="605" text-anchor="middle" font-size="9.5" fill="var(--text-dim)">(tải bundle, 1 lần)</text>
+        </svg>
+      </div>
+      <figcaption>
+        Chặng màu cam (③→trình duyệt, cổng 8081) là chặng <strong>không xác thực</strong> duy nhất trong
+        toàn bộ pipeline — chấp nhận được vì đây là quyết định kiến trúc "LAN-only" đã chốt (Boundaries/Never
+        của Story 2.3), không phải sơ sót. Mọi chặng còn lại đều có AES-128 (SRT) hoặc bearer-token (WS).
+      </figcaption>
+      <div class="legend">
+        <span><i></i> giao thức mang dữ liệu chính</span>
+        <span><i class="dashed"></i> chỉ tải trang, 1 lần lúc mở</span>
+        <span><i class="warn"></i> chặng không xác thực</span>
+      </div>
+    </figure>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Chặng</th><th>Giao thức</th><th>Cổng</th><th>Auth</th><th>Hướng</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>①</td><td>Station → Center</td><td class="mono">SRT (libsrt, UDP)</td><td class="mono">9001</td>
+            <td><span class="pill auth">AES-128</span></td><td>caller → listener</td></tr>
+          <tr><td>②</td><td>Center → Backend</td><td class="mono">WebSocket (ixwebsocket)</td><td class="mono">8080</td>
+            <td><span class="pill auth">Bearer-token</span></td><td>outbound từ Center</td></tr>
+          <tr><td>③</td><td>trong dashboard-backend</td><td class="mono">gọi hàm trong-process</td><td class="mono">—</td>
+            <td><span class="pill internal">nội bộ</span></td><td>telemetry-in → core → ui-out</td></tr>
+          <tr><td>④</td><td>Backend → trình duyệt</td><td class="mono">WebSocket (ws)</td><td class="mono">8081</td>
+            <td><span class="pill noauth">không auth</span></td><td>outbound từ Backend</td></tr>
+          <tr><td>⑤</td><td>next dev → trình duyệt</td><td class="mono">HTTP (Next.js dev)</td><td class="mono">3000</td>
+            <td><span class="pill internal">—</span></td><td>1 lần lúc tải trang</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= LINK 1 : SRT ================= -->
+  <section id="link-1">
+    <h2><span class="num">①</span> Station ↔ Center — SRT (video thật)</h2>
+    <p class="section-sub">Terminal 4 ↔ Terminal 3 · cổng UDP 9001 · đây là chặng duy nhất mang video, không phải JSON.</p>
+    <div class="link-card">
+      <div class="grid-2">
+        <div>
+          <h3>Cơ chế bắt tay</h3>
+          <p>Trước khi handshake, <strong>cả 2 phía</strong> gọi <code>applyChannelOptions(pbkeylenBytes, passphrase, latencyMs)</code>
+          — set <code>SRTO_PBKEYLEN</code> (16 byte cho <code>aes_key_length=128</code>) và
+          <code>SRTO_ENFORCEDENCRYPTION=true</code>, để libsrt <strong>từ chối luôn</strong> một kết nối
+          không mã hoá dù phía kia có đồng ý hay không.</p>
+          <p>Station gọi <code>connectTo(remote_ip, port)</code> (vai <em>caller</em>) — Center gọi
+          <code>bindAndListen(port)</code> rồi <code>accept()</code> (vai <em>listener</em>). Passphrase sai
+          → libsrt trả <code>SRT_REJ_BADSECRET</code> → <code>ChannelActor</code> route sang state
+          <code>REJECTED</code> (Story 1.4), không rơi vào vòng reconnect thường.</p>
+
+          <h3>Sau khi CONNECTED</h3>
+          <p>Station: đọc frame từ <code>FileMediaSource</code> → encode <code>H264Encoder</code> (x264,
+          Constrained Baseline) → đóng gói <code>MpegTsMux</code> → cắt chunk theo
+          <code>FrameFraming</code> → <code>sendAccessUnit()</code> (mỗi lần gọi = 1..n
+          <code>srt_sendmsg2</code>).</p>
+          <p>Center: <code>receiveAccessUnit()</code> ghép lại qua <code>FrameReassembler</code> → demux
+          <code>MpegTsDemux</code> → <code>H264Decoder</code> (FFmpeg avcodec) → đẩy ra
+          <code>PlayoutSink</code> (mặc định <code>NoopPlayoutSink</code>; SDI thật nếu
+          <code>source_type=blackmagic</code>).</p>
+
+          <div class="callout">
+            <span class="callout-title">Đo đạc phụ trên cùng socket này</span>
+            <code>estimatedBandwidthMbps()</code> / <code>rttMs()</code> đọc qua
+            <code>srt_bstats(sock,&amp;stats,false)</code> — dùng cho ABR (Station tự hạ bitrate x264 khi
+            băng thông thấp, Story 1.7) <strong>và</strong> để Center điền field <code>rtt_ms</code>/
+            <code>bitrate_kbps</code> gửi ở chặng ②. Xem callout kỹ thuật ở mục ③ — đây chính là nguồn của
+            con số <code>bitrate_pct=13033%</code> bạn đã thấy.
+          </div>
+        </div>
+        <div>
+          <h3>Tham số kênh (từ <code>ChannelConfig</code>, mã hoá DPAPI)</h3>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><td class="mono">remote_ip / port</td><td>127.0.0.1 / 9001</td></tr>
+                <tr><td class="mono">aes_key_length</td><td>128 → <code>SRTO_PBKEYLEN=16</code> byte</td></tr>
+                <tr><td class="mono">latency_ms</td><td>300 — buffer chờ gói trễ trước khi coi là mất</td></tr>
+                <tr><td class="mono">passphrase</td><td>•••• (đã sinh CSPRNG, không log lại ở đây — cùng kỷ luật với chính transport-core)</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>State machine (ChannelActor)</h3>
+          <pre><code><span class="tok-com">// srt/ChannelActor.h — 4 giá trị đóng</span>
+CONNECTING → CONNECTED
+CONNECTED → RECONNECTING   <span class="tok-com">(mất kết nối, backoff luỹ thừa, vô hạn)</span>
+CONNECTING → REJECTED      <span class="tok-com">(SRT_REJ_BADSECRET / UNSECURE)</span></code></pre>
+          <ul class="refs">
+            <li>transport-core/src/srt/SrtSocket.h</li>
+            <li>transport-core/src/srt/ChannelActor.cpp</li>
+            <li>transport-core/src/pipeline/H264Encoder.{h,cpp}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LINK 2 : WS TELEMETRY ================= -->
+  <section id="link-2">
+    <h2><span class="num">②</span> Center → Backend — WS telemetry (có auth)</h2>
+    <p class="section-sub">Terminal 3 → Terminal 1 · cổng 8080 · đây là chặng vừa báo lỗi 401 với bạn.</p>
+    <div class="link-card">
+      <div class="grid-2">
+        <div>
+          <h3>Client (Center) — <code>TelemetryWsClient</code></h3>
+          <p>Bọc mỏng <code>ix::WebSocket</code> — constructor set
+          <code>setUrl(dashboard_ws_url)</code>, gắn header
+          <code>Authorization: Bearer &lt;bearerToken&gt;</code> (đã <code>stripControlCharsForHeader()</code>
+          chống header-injection), gọi <code>enableAutomaticReconnection()</code>. Lớp này
+          <strong>không có business logic đo lường</strong> — chỉ connect/reconnect/send.</p>
+          <p><code>send(jsonText)</code> không buffer khi đang mất kết nối — gói bị rớt luôn, vòng poll kế
+          tiếp gửi lại. Debounce/queue không phải việc của lớp này.</p>
+
+          <h3>Server (Backend) — <code>wsTelemetryAdapter.ts</code></h3>
+          <p>Bind <code>0.0.0.0:DASHBOARD_WS_PORT</code> (mặc định <span class="mono">8080</span>). Tự xử lý
+          <code>httpServer.on('upgrade')</code> — đọc header <code>Authorization</code> qua
+          <code>extractBearerToken()</code>, so khớp <code>Set&lt;string&gt;</code> dựng từ
+          <code>DASHBOARD_BEARER_TOKENS</code> (phân tách dấu phẩy).</p>
+          <div class="callout warn">
+            <span class="callout-title">Đúng lỗi 401 bạn vừa gặp</span>
+            Thiếu/sai token → <code>socket.write('HTTP/1.1 401 Unauthorized...')</code> + đóng socket +
+            log <code>ws_reject_auth</code> — <strong>không</strong> bao giờ tạo WS session. Nguyên nhân hôm
+            đó: biến <code>$env:DASHBOARD_BEARER_TOKENS</code> không được set trong cùng cửa sổ PowerShell
+            chạy <code>npm start</code>.
+          </div>
+        </div>
+        <div>
+          <h3>EventEnvelope (schema_version=1)</h3>
+          <pre><code>{
+  <span class="tok-key">"schema_version"</span>: 1,
+  <span class="tok-key">"channel_id"</span>: <span class="tok-str">"dai-01"</span>,
+  <span class="tok-key">"timestamp"</span>: <span class="tok-str">"2026-09-06T23:01:21.014Z"</span>,
+  <span class="tok-key">"event_type"</span>: <span class="tok-str">"telemetry"</span>,
+  <span class="tok-key">"payload"</span>: {
+    <span class="tok-key">"bitrate_kbps"</span>: 3024,
+    <span class="tok-key">"rtt_ms"</span>: 0.4,
+    <span class="tok-key">"connection_state"</span>: <span class="tok-str">"CONNECTED"</span>,
+    <span class="tok-key">"audio_level"</span>: [-14.2, -13.8]
+  }
+}</code></pre>
+          <h3>Tập đóng <code>event_type</code> (server chấp nhận)</h3>
+          <p class="small"><code>telemetry</code> · <code>heartbeat</code> · <code>snapshot</code> ·
+          <code>alert</code> · <code>ack-command</code> · <code>handshake_success</code> ·
+          <code>handshake_reject</code> — giá trị khác bị bỏ qua âm thầm, log <code>event_type_ignored</code>.</p>
+          <ul class="refs">
+            <li>transport-core/src/telemetry/TelemetryWsClient.{h,cpp}</li>
+            <li>transport-core/src/telemetry/EventEnvelope.h</li>
+            <li>dashboard-backend/src/adapters/inbound/wsTelemetryAdapter.ts</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LINK 3 : CORE ================= -->
+  <section id="link-3">
+    <h2><span class="num">③</span> Bên trong Backend — <code>ChannelStateService</code></h2>
+    <p class="section-sub">Không phải mạng — gọi hàm trực tiếp trong cùng process Terminal 1. Đây là nơi quyết định màu ô trên lưới.</p>
+    <div class="link-card">
+      <div class="grid-2">
+        <div>
+          <h3>Thứ tự xử lý 1 telemetry</h3>
+          <ol style="margin:0 0 14px 18px;padding:0;font-size:14.5px">
+            <li>validate <code>connection_state</code> ∈ 4 giá trị đóng (phòng thủ lớp 2)</li>
+            <li><code>registryPort.getEntry(channel_id)</code> — không có → log
+              <code>channel_unregistered</code>, bỏ qua telemetry này</li>
+            <li><code>computeBitratePct(bitrate_kbps, baseline_kbps)</code></li>
+            <li><code>mapToDisplayState(connection_state, bitrate_pct)</code></li>
+            <li><code>publishChannelSeen()</code> — <strong>ngay</strong>, lần đầu/kênh, không debounce</li>
+            <li>candidate ổn định liên tục ≥ <code>DEBOUNCE_MS</code> mới <code>publishStateChange()</code></li>
+          </ol>
+          <h3>Bảng mapping (đóng băng theo Intent)</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>connection_state</th><th>bitrate_pct</th><th>display_state</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">CONNECTED</td><td>≥ 70%</td><td><div class="state-row"><span class="dot ok"></span>ok</div></td></tr>
+                <tr><td class="mono">CONNECTED</td><td>&lt; 70%</td><td><div class="state-row"><span class="dot warning"></span>warning</div></td></tr>
+                <tr><td class="mono">RECONNECTING / CONNECTING</td><td>—</td><td><div class="state-row"><span class="dot critical"></span>critical</div></td></tr>
+                <tr><td class="mono">REJECTED</td><td>—</td><td><div class="state-row"><span class="dot critical"></span>critical <span class="pill internal">config-or-security-suspected</span></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="callout warn">
+            <span class="callout-title">Vì sao bitrate_pct đo được là 13033%, không phải ~76%</span>
+            <code>bitrate_kbps</code> trong payload <strong>không</strong> phải bitrate x264 đang encode —
+            nó là <code>estimatedBandwidthMbps() * 1000</code> (ChannelActor.cpp:625,660), tức
+            <strong>băng thông khả dụng ước tính của link SRT</strong> (một chỉ số libsrt khác hẳn), không
+            phải throughput thật đang dùng. Trên loopback <span class="mono">127.0.0.1</span>, con số ước
+            tính này rất lớn — chia cho <code>baseline_kbps=4000</code> (tôi đặt tạm trong
+            <code>channel-registry.json</code>) ra 13033%. Không phải bug, chỉ là 2 đại lượng khác nhau
+            đang bị so sánh — baseline thật cần đo trên WAN thật, không phải loopback.
+          </div>
+          <h3>Debounce vs heartbeat — 2 timer độc lập</h3>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><td class="mono">DEBOUNCE_MS</td><td>5000 — trạng thái hiển thị chỉ đổi khi ổn định liên tục ≥5s</td></tr>
+                <tr><td class="mono">HEARTBEAT_TIMEOUT_MS</td><td>15000 (3× chu kỳ 5s) — quá hạn không heartbeat → <code>machine-offline</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <ul class="refs">
+            <li>dashboard-backend/src/core/channelState.ts</li>
+            <li>dashboard-backend/src/core/bitrateThreshold.ts</li>
+            <li>transport-core/src/srt/ChannelActor.cpp:617-687</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LINK 4 : WS UI ================= -->
+  <section id="link-4">
+    <h2><span class="num">④</span> Backend → trình duyệt — WS UI (không auth)</h2>
+    <p class="section-sub">Terminal 1 → thẳng tới trình duyệt · cổng 8081 · không đi qua Terminal 2.</p>
+    <div class="link-card">
+      <div class="grid-2">
+        <div>
+          <h3><code>wsUiAdapter.ts</code> — 3 loại message, thứ tự cố định lúc connect</h3>
+          <p>Client mới connect nhận đúng thứ tự: <code>registry-snapshot</code> (toàn bộ
+          <code>channel-registry.json</code>) → replay <code>channel-seen</code> cho mọi kênh đã thấy trước
+          đó → replay <code>channel-state-change</code> mới nhất/kênh. Nhờ vậy 1 tab mở muộn vẫn lên đúng
+          màu ngay, không kẹt ở skeleton.</p>
+          <p>Không có handler <code>'message'</code> — kênh này <strong>chỉ phát</strong>, trình duyệt không
+          gửi gì lên qua đây.</p>
+          <pre><code><span class="tok-com">// registry-snapshot — 1 lần lúc connect</span>
+{ <span class="tok-key">"type"</span>: <span class="tok-str">"registry-snapshot"</span>,
+  <span class="tok-key">"channels"</span>: [{ <span class="tok-key">"channel_id"</span>: <span class="tok-str">"dai-01"</span>, <span class="tok-key">"grid_position"</span>: 0, ... }] }
+
+<span class="tok-com">// channel-seen — lần đầu có telemetry, không debounce</span>
+{ <span class="tok-key">"type"</span>: <span class="tok-str">"channel-seen"</span>, <span class="tok-key">"channel_id"</span>: <span class="tok-str">"dai-01"</span>, <span class="tok-key">"timestamp"</span>: <span class="tok-str">"..."</span> }
+
+<span class="tok-com">// channel-state-change — sau khi debounce ≥5s chốt xong</span>
+{ <span class="tok-key">"type"</span>: <span class="tok-str">"channel-state-change"</span>, <span class="tok-key">"channel_id"</span>: <span class="tok-str">"dai-01"</span>,
+  <span class="tok-key">"display_state"</span>: <span class="tok-str">"ok"</span>, <span class="tok-key">"timestamp"</span>: <span class="tok-str">"..."</span> }</code></pre>
+        </div>
+        <div>
+          <h3>Vì sao không auth?</h3>
+          <p>Quyết định kiến trúc đã chốt (Boundaries/Never, Story 2.3): kênh này chỉ phục vụ LAN nội bộ,
+          nhận <em>read-only snapshot đã tính sẵn</em> — không phải bearer-token của máy trung tâm (đó là
+          chặng ②). Đây là lý do đường mũi tên màu cam trong sơ đồ tổng quan.</p>
+          <h3>Server khoẻ khi client rớt</h3>
+          <p><code>wss.clients</code> (thư viện <code>ws</code>) tự dọn client khỏi danh sách broadcast khi
+          <code>'close'</code>/<code>'terminate'</code> — không cần adapter tự quản lý danh sách riêng.
+          Mỗi <code>send()</code> kiểm tra <code>ws.readyState === OPEN</code> trước khi ghi, tránh throw
+          khi 1 client vừa rớt giữa chừng.</p>
+          <ul class="refs">
+            <li>dashboard-backend/src/adapters/outbound/wsUiAdapter.ts</li>
+            <li>DASHBOARD_UI_WS_PORT (mặc định 8081)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LINK 5 : FRONTEND ================= -->
+  <section id="link-5">
+    <h2><span class="num">⑤</span> Trình duyệt ↔ Terminal 2</h2>
+    <p class="section-sub">2 việc tách biệt hoàn toàn: tải trang (qua :3000) và nhận dữ liệu sống (qua :8081, không qua :3000).</p>
+    <div class="link-card">
+      <div class="grid-2">
+        <div>
+          <h3><code>connectUiWsClient()</code> — chạy trong trình duyệt, không phải server</h3>
+          <p>Next.js (Terminal 2) chỉ build/serve HTML+JS bundle — không hề proxy WS. Bundle đó, khi chạy
+          trong trình duyệt, tự mở <code>new WebSocket(NEXT_PUBLIC_DASHBOARD_UI_WS_URL)</code> — mặc định
+          <code class="mono">ws://localhost:8081</code>, biến <code>NEXT_PUBLIC_*</code> nên bị
+          <strong>đóng băng vào bundle lúc build</strong>, đổi giá trị phải build lại.</p>
+          <p>Listener <code>'message'</code> gắn <strong>đồng bộ, trước</strong> <code>'open'</code> — nếu
+          gắn sau, <code>registry-snapshot</code> (server gửi ngay khi <code>'connection'</code> fire) có
+          thể bị lỡ vĩnh viễn. Mỗi message qua <code>applyUiWsMessage()</code>: parse JSON, validate đúng 1
+          trong 3 shape ở mục ④ (grid_position phải nguyên 0-19, display_state phải đúng 1 trong
+          <code>ok/warning/critical</code>) — sai shape → bỏ qua âm thầm, không throw, không đóng WS.</p>
+        </div>
+        <div>
+          <h3>Reconnect: cố định, không luỹ thừa</h3>
+          <p>Khác hẳn SRT (chặng ①, backoff luỹ thừa vô hạn — môi trường WAN không đáng tin): kênh này retry
+          <strong>cố định 2000ms</strong> mỗi khi <code>'close'</code>/<code>'error'</code> — giả định LAN
+          nội bộ ổn định, không cần backoff phức tạp.</p>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><td class="mono">RECONNECT_DELAY_MS</td><td>2000</td></tr>
+                <tr><td class="mono">NEXT_PUBLIC_DASHBOARD_UI_WS_URL</td><td>ws://localhost:8081 (mặc định)</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <ul class="refs">
+            <li>dashboard-frontend/src/services/uiWsClient.ts</li>
+            <li>dashboard-frontend/src/state/channelStore.ts</li>
+            <li>dashboard-frontend/app/page.tsx (useEffect gọi connectUiWsClient)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Dựng từ log/mã nguồn thật của lần chạy E2E channel <code>dai-01</code> — số liệu (bitrate, timestamp,
+    exit code) lấy trực tiếp từ log JSON của 4 tiến trình, không phải số minh hoạ.
+  </footer>
+
+</div>
+
+</body></html>

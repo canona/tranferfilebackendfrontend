@@ -1,0 +1,1278 @@
+<title>Tuyến Tín Hiệu Về Trung Tâm</title>
+<style>
+  /* ============================================================
+     TOKENS
+     ============================================================ */
+  :root{
+    --bg: #F2F5F7;
+    --surface: #FFFFFF;
+    --surface-alt: #E7ECF0;
+    --surface-sunken: #DCE3E8;
+    --border: #CBD5DC;
+    --border-strong: #9FADB8;
+    --text: #16212B;
+    --text-muted: #56697A;
+    --text-faint: #7C8B98;
+
+    --signal: #0E9F6E;   /* healthy / resolved / green trace */
+    --signal-soft: #DFF3EA;
+    --tech: #1C6FD6;     /* technical / data / blue trace */
+    --tech-soft: #E1EBFB;
+    --warn: #C1740A;     /* open question / caution amber */
+    --warn-soft: #FBEDD9;
+    --crit: #C43D3D;     /* alert / failure / out-of-scope red */
+    --crit-soft: #FAE2E2;
+
+    --mono: ui-monospace, "Cascadia Code", "SFMono-Regular", "Consolas", "Roboto Mono", "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --sp-1: .25rem; --sp-2: .5rem; --sp-3: .75rem; --sp-4: 1rem;
+    --sp-5: 1.5rem; --sp-6: 2rem; --sp-7: 3rem; --sp-8: 4.5rem; --sp-9: 6.5rem;
+
+    --radius: 3px;
+    --grid-line: rgba(20,32,44,.07);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg: #0A0E13;
+      --surface: #121922;
+      --surface-alt: #19222C;
+      --surface-sunken: #0E141B;
+      --border: #263140;
+      --border-strong: #3B4A5A;
+      --text: #E7EDF3;
+      --text-muted: #93A2B0;
+      --text-faint: #64717D;
+
+      --signal: #3FE0A0;
+      --signal-soft: rgba(63,224,160,.12);
+      --tech: #57ABFF;
+      --tech-soft: rgba(87,171,255,.12);
+      --warn: #F0AC42;
+      --warn-soft: rgba(240,172,66,.12);
+      --crit: #FF6E6E;
+      --crit-soft: rgba(255,110,110,.12);
+
+      --grid-line: rgba(255,255,255,.055);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: #0A0E13;
+    --surface: #121922;
+    --surface-alt: #19222C;
+    --surface-sunken: #0E141B;
+    --border: #263140;
+    --border-strong: #3B4A5A;
+    --text: #E7EDF3;
+    --text-muted: #93A2B0;
+    --text-faint: #64717D;
+
+    --signal: #3FE0A0;
+    --signal-soft: rgba(63,224,160,.12);
+    --tech: #57ABFF;
+    --tech-soft: rgba(87,171,255,.12);
+    --warn: #F0AC42;
+    --warn-soft: rgba(240,172,66,.12);
+    --crit: #FF6E6E;
+    --crit-soft: rgba(255,110,110,.12);
+
+    --grid-line: rgba(255,255,255,.055);
+  }
+
+  /* ============================================================
+     RESET / BASE
+     ============================================================ */
+  *,*::before,*::after{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,h2,h3,p{ margin:0; }
+  img,svg{ display:block; max-width:100%; }
+  ::selection{ background: var(--tech); color: #fff; }
+  :focus-visible{ outline: 2px solid var(--tech); outline-offset: 2px; }
+
+  .container{ max-width: 900px; margin: 0 auto; padding: 0 var(--sp-5); }
+  @media (max-width: 560px){ .container{ padding: 0 var(--sp-4); } }
+
+  .mono{ font-family: var(--mono); }
+  .eyebrow{
+    font-family: var(--mono);
+    font-size: .75rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  /* faint schematic grid used behind hero/status */
+  .grid-tex{
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* corner "safe-area" brackets — broadcast monitor marker motif */
+  .brackets{ position: relative; }
+  .brackets::before{
+    content:"";
+    position:absolute; inset:-1px;
+    pointer-events:none;
+    --c: var(--border-strong);
+    background:
+      linear-gradient(var(--c),var(--c)) top left / 14px 2px no-repeat,
+      linear-gradient(var(--c),var(--c)) top left / 2px 14px no-repeat,
+      linear-gradient(var(--c),var(--c)) top right / 14px 2px no-repeat,
+      linear-gradient(var(--c),var(--c)) top right / 2px 14px no-repeat,
+      linear-gradient(var(--c),var(--c)) bottom left / 14px 2px no-repeat,
+      linear-gradient(var(--c),var(--c)) bottom left / 2px 14px no-repeat,
+      linear-gradient(var(--c),var(--c)) bottom right / 14px 2px no-repeat,
+      linear-gradient(var(--c),var(--c)) bottom right / 2px 14px no-repeat;
+  }
+  .brackets.brackets--accent::before{ --c: var(--signal); }
+
+  /* ============================================================
+     STATUS BAR
+     ============================================================ */
+  .statusbar{
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .statusbar__inner{
+    padding: var(--sp-3) var(--sp-5);
+    display:flex; flex-wrap:wrap; gap: var(--sp-3) var(--sp-6);
+    align-items:center; justify-content: space-between;
+    max-width: 900px; margin: 0 auto;
+  }
+  .statusbar__id{ display:flex; align-items:center; gap: var(--sp-2); font-family: var(--mono); font-size:.72rem; letter-spacing:.08em; color: var(--text-muted); }
+  .dot{ width:8px; height:8px; border-radius:50%; background: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); flex:none; }
+  @media (prefers-reduced-motion: no-preference){
+    .dot{ animation: pulse 3.2s ease-in-out infinite; }
+  }
+  @keyframes pulse{ 0%,100%{ opacity:1 } 50%{ opacity:.45 } }
+  .statusbar__meta{ display:flex; flex-wrap:wrap; gap: var(--sp-1) var(--sp-6); font-family: var(--mono); font-size:.72rem; color: var(--text-faint); }
+  .statusbar__meta b{ color: var(--text-muted); font-weight:600; }
+
+  /* ============================================================
+     HERO
+     ============================================================ */
+  .hero{
+    position: relative;
+    padding: var(--sp-8) 0 var(--sp-7);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero__inner{ max-width: 900px; margin:0 auto; padding: 0 var(--sp-5); }
+  .hero__eyebrow{ margin-bottom: var(--sp-3); }
+  .hero h1{
+    font-size: clamp(2rem, 5vw, 3.1rem);
+    line-height: 1.08;
+    font-weight: 800;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+    max-width: 14ch;
+  }
+  .hero__lede{
+    margin-top: var(--sp-4);
+    max-width: 62ch;
+    color: var(--text-muted);
+    font-size: 1.05rem;
+  }
+  .hero__stats{
+    margin-top: var(--sp-5);
+    display:flex; flex-wrap:wrap; gap: var(--sp-2) var(--sp-4);
+    font-size: .74rem; letter-spacing:.06em; color: var(--tech);
+  }
+  .hero__stats span{ display:inline-flex; align-items:center; gap:.5em; }
+  .hero__stats span::before{ content:""; width:5px; height:5px; border-radius:50%; background: var(--tech); }
+  .hero__wave{ margin-top: var(--sp-7); }
+  .hero__wave svg{ width:100%; height:auto; display:block; }
+
+  /* ============================================================
+     RUNDOWN NAV
+     ============================================================ */
+  .rundown{ border-bottom: 1px solid var(--border); background: var(--surface-alt); }
+  .rundown__inner{
+    max-width: 900px; margin: 0 auto; padding: var(--sp-3) var(--sp-5);
+    display:flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5);
+    align-items:center;
+  }
+  .rundown__label{ font-family: var(--mono); font-size:.68rem; letter-spacing:.14em; color: var(--text-faint); text-transform: uppercase; margin-right: var(--sp-2); }
+  .rundown a{
+    font-family: var(--mono); font-size:.75rem; color: var(--text-muted);
+    text-decoration:none; display:inline-flex; align-items:baseline; gap:.4em;
+    padding: .2em 0; border-bottom: 1px solid transparent;
+  }
+  .rundown a:hover, .rundown a:focus-visible{ color: var(--tech); border-color: var(--tech); }
+  .rundown a span{ color: var(--text-faint); }
+
+  /* ============================================================
+     SECTION SHELL
+     ============================================================ */
+  section.tech{ padding: var(--sp-8) 0; border-bottom: 1px solid var(--border); }
+  section.tech:nth-of-type(even){ background: var(--surface-alt); }
+  .tech__head{ margin-bottom: var(--sp-6); }
+  .tech__num{ font-family: var(--mono); font-size:.75rem; color: var(--text-faint); letter-spacing:.1em; }
+  .tech__title{
+    margin-top: var(--sp-1);
+    font-size: clamp(1.4rem, 3vw, 1.85rem);
+    font-weight: 800; letter-spacing:-.01em; text-wrap: balance;
+  }
+  .tech__sub{ margin-top: var(--sp-2); color: var(--text-muted); max-width: 65ch; }
+
+  .panel{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  /* ============================================================
+     01 — JOB TO BE DONE
+     ============================================================ */
+  .context-card{ padding: var(--sp-5); margin-bottom: var(--sp-5); }
+  .context-card__label{ font-family: var(--mono); font-size:.68rem; letter-spacing:.12em; text-transform: uppercase; color: var(--tech); margin-bottom: var(--sp-2); }
+  .context-card p{ color: var(--text); }
+
+  .pain-grid{
+    display:grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4);
+    margin-bottom: var(--sp-5);
+  }
+  @media (max-width: 700px){ .pain-grid{ grid-template-columns: 1fr; } }
+  .pain-card{
+    padding: var(--sp-4);
+    border-top: 3px solid var(--crit);
+    display:flex; flex-direction:column; gap: var(--sp-3);
+  }
+  .pain-card__icon{ color: var(--crit); }
+  .pain-card__tag{ font-family: var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color: var(--text-faint); }
+  .pain-card__title{ font-weight:700; font-size: .98rem; }
+  .pain-card__desc{ font-size:.88rem; color: var(--text-muted); }
+
+  .process-strip{ padding: var(--sp-4) var(--sp-5); display:flex; gap: var(--sp-4); align-items:flex-start; margin-bottom: var(--sp-4); }
+  .process-strip svg{ flex:none; color: var(--text-faint); margin-top:.15rem; }
+  .process-strip p{ font-size:.92rem; color: var(--text-muted); }
+  .process-strip b{ color: var(--text); }
+
+  .decision-callout{
+    padding: var(--sp-4) var(--sp-5);
+    background: var(--signal-soft);
+    border: 1px solid var(--signal);
+    border-radius: var(--radius);
+    display:flex; gap: var(--sp-3); align-items:flex-start;
+  }
+  .decision-callout svg{ flex:none; color: var(--signal); margin-top: .15rem; }
+  .decision-callout__label{ font-family: var(--mono); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; color: var(--signal); margin-bottom: var(--sp-1); }
+  .decision-callout p{ font-size:.93rem; }
+
+  /* ============================================================
+     02 — QUESTION STORMING
+     ============================================================ */
+  .radar-note{ margin-bottom: var(--sp-6); color: var(--text-muted); max-width: 65ch; font-size:.94rem; }
+  .qgrid{ display:flex; flex-wrap:wrap; gap: var(--sp-4); }
+  .qcard{
+    flex: 1 1 260px; min-width: 240px;
+    padding: var(--sp-4);
+    background: var(--surface);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    position: relative;
+    display:flex; flex-direction:column;
+  }
+  .qcard__mark{
+    position:absolute; top:-10px; left: var(--sp-4);
+    background: var(--text-faint); color: var(--surface);
+    font-family: var(--mono); font-size:.62rem; font-weight:700; letter-spacing:.06em;
+    padding: .15em .5em; border-radius: 2px;
+  }
+  .qcard--flag .qcard__mark{ background: var(--crit); }
+  .qcard__q{ margin-top: var(--sp-2); font-size: .98rem; font-weight:600; text-wrap: balance; }
+  .qcard__a{
+    margin-top: var(--sp-3); padding-top: var(--sp-3);
+    border-top: 1px solid var(--border);
+    font-size: .86rem; color: var(--text-muted); flex: 1;
+  }
+  .qcard__a-label{ display:block; font-family: var(--mono); font-size:.62rem; letter-spacing:.1em; text-transform:uppercase; color: var(--signal); margin-bottom: var(--sp-1); }
+  .qcard--flag .qcard__a-label{ color: var(--warn); }
+  .qcard__a-note{ display:block; margin-top: var(--sp-2); font-size:.82rem; color: var(--crit); }
+  .qcard__a-note a{ color: inherit; }
+  .qcard__status{ margin-top: var(--sp-3); display:flex; align-items:center; gap:.4em; font-family: var(--mono); font-size:.66rem; color: var(--signal); letter-spacing:.08em; text-transform:uppercase; }
+  .qcard__status .qdot{ width:6px; height:6px; border-radius:50%; background: var(--signal); }
+  .qcard--flag .qcard__status{ color: var(--crit); }
+  .qcard--flag .qcard__status .qdot{ background: var(--crit); }
+
+  /* ============================================================
+     03 — MORPHOLOGICAL ANALYSIS
+     ============================================================ */
+  .chain{ position: relative; padding-left: var(--sp-7); }
+  .chain::before{
+    content:""; position:absolute; left: 27px; top: 14px; bottom: 14px; width: 2px;
+    background: repeating-linear-gradient(to bottom, var(--tech) 0 6px, transparent 6px 12px);
+  }
+  .chain-row{ position:relative; padding-bottom: var(--sp-5); }
+  .chain-row:last-child{ padding-bottom: 0; }
+  .chain-row__node{
+    position:absolute; left: -49px; top: 2px;
+    width: 12px; height:12px; border-radius:50%;
+    background: var(--surface); border: 2px solid var(--tech);
+    box-shadow: 0 0 0 4px var(--bg);
+  }
+  .chain-row__param{ font-family: var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color: var(--text-faint); margin-bottom: var(--sp-1); }
+  .chain-row__value{
+    display:inline-flex; flex-wrap: wrap; align-items:center; gap:.5em .6em;
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--tech-soft); border: 1px solid var(--tech);
+    border-radius: var(--radius);
+    font-weight:700; font-size:.92rem; color: var(--text);
+  }
+  .chain-row__note{ margin-top: var(--sp-2); font-size:.85rem; color: var(--text-muted); max-width: 55ch; }
+  .revised-tag{
+    font-family: var(--mono); font-weight:600; font-size:.6rem; letter-spacing:.06em; text-transform:uppercase;
+    color: var(--warn); background: var(--warn-soft); border: 1px solid var(--warn);
+    padding: .2em .5em; border-radius: 2px;
+  }
+  .revised-tag a, .revised-tag{ text-decoration:none; }
+  .upgrade{
+    margin-top: var(--sp-3); padding: var(--sp-3);
+    border: 1px solid var(--signal); background: var(--signal-soft); border-radius: var(--radius);
+    font-size: .85rem;
+  }
+  .upgrade__tag{ font-family: var(--mono); font-size:.62rem; letter-spacing:.1em; color: var(--signal); text-transform:uppercase; font-weight:700; }
+  .upgrade__old{ text-decoration: line-through; color: var(--text-faint); }
+  .upgrade__new{ font-weight:700; color: var(--text); }
+  .upgrade--descope{ border-color: var(--crit); background: var(--crit-soft); }
+  .upgrade--descope .upgrade__tag{ color: var(--crit); }
+  .upgrade--descope .upgrade__new{ text-decoration: line-through; color: var(--text-faint); font-weight:600; }
+  .upgrade--descope p{ margin-top:.4em; font-size:.85rem; color: var(--text); }
+  .upgrade--descope a{ color: var(--crit); font-weight:600; }
+
+  /* ============================================================
+     04 — FAILURE ANALYSIS
+     ============================================================ */
+  .incident{
+    border: 1px solid var(--crit);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .incident__bar{
+    background: var(--crit); color: #fff;
+    padding: var(--sp-2) var(--sp-4);
+    display:flex; align-items:center; gap: var(--sp-2);
+    font-family: var(--mono); font-size:.72rem; letter-spacing:.1em; text-transform:uppercase;
+  }
+  .incident__body{ padding: var(--sp-5); background: var(--surface); }
+  .incident__row{ display:flex; gap: var(--sp-4); margin-bottom: var(--sp-4); }
+  .incident__row:last-child{ margin-bottom:0; }
+  .incident__row svg{ flex:none; color: var(--crit); margin-top:.1rem; }
+  .incident__row-label{ font-family: var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform: uppercase; color: var(--text-faint); margin-bottom: var(--sp-1); }
+  .incident__quote{
+    margin-top: var(--sp-4); padding: var(--sp-4);
+    background: var(--surface-sunken); border-left: 3px solid var(--crit);
+    font-size: .96rem; font-style: italic; color: var(--text);
+  }
+  .incident__arrow{
+    margin-top: var(--sp-4); display:flex; align-items:center; gap: var(--sp-2);
+    font-family: var(--mono); font-size:.75rem; color: var(--tech);
+  }
+
+  /* ============================================================
+     05 — DECISION JOURNEY (correction reel)
+     ============================================================ */
+  .journey{ position:relative; padding-left: var(--sp-8); }
+  .journey::before{
+    content:""; position:absolute; left: 33px; top: 10px; bottom: 10px; width: 2px;
+    background: var(--border-strong);
+  }
+  .jbeat{ position:relative; padding-bottom: var(--sp-6); }
+  .jbeat:last-child{ padding-bottom:0; }
+  .jbeat__node{
+    position:absolute; left: -47px; top: 0;
+    width: 16px; height:16px; border-radius:50%;
+    background: var(--surface); border: 3px solid var(--beat-color, var(--tech));
+    box-shadow: 0 0 0 4px var(--bg);
+  }
+  .jbeat__tag{
+    display:inline-block; font-family: var(--mono); font-size:.64rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    color: var(--beat-color, var(--tech)); border: 1px solid var(--beat-color, var(--tech));
+    background: var(--beat-soft, var(--tech-soft));
+    padding: .2em .55em; border-radius: 2px; margin-bottom: var(--sp-2);
+  }
+  .jbeat__title{ font-weight:700; font-size: 1rem; margin-bottom: var(--sp-1); }
+  .jbeat__desc{ font-size:.9rem; color: var(--text-muted); max-width: 62ch; }
+  .jbeat__desc b{ color: var(--text); }
+
+  .pivot{
+    margin-top: var(--sp-7);
+    display:grid; grid-template-columns: 1fr 48px 1fr; gap: var(--sp-4);
+    align-items: stretch;
+  }
+  @media (max-width: 760px){
+    .pivot{ grid-template-columns: 1fr; }
+    .pivot__arrow{ transform: rotate(90deg); margin: 0 auto; }
+  }
+  .pivot__panel{ padding: var(--sp-5); border-radius: var(--radius); display:flex; flex-direction:column; gap: var(--sp-3); }
+  .pivot__old{ background: var(--crit-soft); border: 1px solid var(--crit); }
+  .pivot__new{ background: var(--signal-soft); border: 2px solid var(--signal); }
+  .pivot__label{ font-family: var(--mono); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; }
+  .pivot__old .pivot__label{ color: var(--crit); }
+  .pivot__new .pivot__label{ color: var(--signal); }
+  .pivot__title{ font-weight:800; font-size:1.02rem; }
+  .pivot__old .pivot__title{ text-decoration: line-through; color: var(--text-muted); }
+  .pivot__diagram{ margin: var(--sp-2) 0; }
+  .pivot__desc{ font-size:.85rem; color: var(--text-muted); }
+  .pivot__stamp{
+    align-self:flex-start; margin-top:auto; font-family: var(--mono); font-weight:700; font-size:.72rem;
+    letter-spacing:.06em; padding:.35em .7em; border-radius: 2px;
+  }
+  .pivot__old .pivot__stamp{ background: var(--crit); color:#fff; }
+  .pivot__new .pivot__stamp{ background: var(--signal); color: #06301f; }
+  .pivot__caption{ margin-top: var(--sp-2); font-size:.78rem; font-style: italic; color: var(--text-faint); }
+  .pivot__arrow{ display:flex; align-items:center; justify-content:center; color: var(--text-faint); }
+
+  /* ============================================================
+     06 — SYNTHESIS — CLIMAX
+     ============================================================ */
+  .synthesis{
+    background: var(--surface-sunken);
+    border-bottom: none;
+  }
+  .synthesis .tech__title{ font-size: clamp(1.7rem, 4vw, 2.4rem); }
+
+  .p2p{
+    position:relative; margin-top: var(--sp-6); padding: var(--sp-6) var(--sp-5);
+    background: var(--surface); border-radius: var(--radius);
+  }
+  .p2p__scale{
+    position:absolute; top: var(--sp-4); right: var(--sp-4);
+    font-family: var(--mono); font-weight:800; font-size: .78rem;
+    color: var(--tech); background: var(--tech-soft); border: 1px solid var(--tech);
+    padding: .3em .6em; border-radius: 2px;
+  }
+  .p2p__row{ display:flex; align-items:center; gap: var(--sp-3); flex-wrap: wrap; justify-content:center; }
+  .p2p__node{ display:flex; flex-direction:column; align-items:center; gap: var(--sp-2); text-align:center; width: 150px; }
+  .p2p__node-icon{
+    width:64px; height:64px; border-radius:8px; border:2px solid var(--tech); background: var(--tech-soft);
+    display:flex; align-items:center; justify-content:center; color: var(--tech);
+  }
+  .p2p__node-label{ font-weight:700; font-size:.82rem; }
+  .p2p__node-sub{ font-family: var(--mono); font-size:.64rem; color: var(--text-faint); letter-spacing:.04em; }
+  .p2p__link{ flex:1; min-width: 140px; display:flex; flex-direction:column; align-items:center; gap: var(--sp-1); }
+  .p2p__link-label{ font-family: var(--mono); font-size:.68rem; color: var(--signal); font-weight:700; letter-spacing:.04em; }
+  .p2p__link-line{ width:100%; display:flex; align-items:center; }
+  .p2p__link-line svg{ width:100%; }
+  .p2p__oos{
+    margin-top: var(--sp-4); padding: var(--sp-3) var(--sp-4);
+    border: 1px dashed var(--border-strong); border-radius: var(--radius);
+    font-size: .82rem; color: var(--text-muted); text-align:center;
+  }
+  .p2p__oos b{ color: var(--text); }
+
+  .stats{ display:grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); margin-top: var(--sp-5); }
+  @media (max-width: 700px){ .stats{ grid-template-columns: 1fr; } }
+  .stat{ padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); text-align:center; }
+  .stat__value{ font-family: var(--mono); font-weight:800; font-size: 1.6rem; color: var(--tech); font-variant-numeric: tabular-nums; }
+  .stat__label{ margin-top: var(--sp-1); font-size:.8rem; color: var(--text-muted); }
+
+  .defense{ margin: var(--sp-7) 0; }
+  .defense__layer{
+    position: relative;
+    padding: var(--sp-5) var(--sp-5) var(--sp-5) 96px;
+    background: var(--surface);
+    margin-bottom: var(--sp-5);
+  }
+  .defense__layer:last-child{ margin-bottom:0; }
+  .defense__num{
+    position:absolute; left: var(--sp-5); top: var(--sp-5);
+    width: 56px; height:56px; border-radius: 50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family: var(--mono); font-weight:800; font-size:1.1rem;
+    border: 2px solid var(--layer-color, var(--tech));
+    color: var(--layer-color, var(--tech));
+  }
+  .defense__layer--1{ --layer-color: var(--tech); }
+  .defense__layer--2{ --layer-color: var(--crit); }
+  .defense__title{ font-weight:800; font-size:1.05rem; margin-bottom: var(--sp-1); }
+  .defense__title em{ font-style:normal; color: var(--layer-color, var(--tech)); }
+  .defense__desc{ color: var(--text-muted); font-size:.93rem; max-width: 58ch; }
+  .defense__desc b{ color: var(--text); }
+  .defense__viz{ margin-top: var(--sp-4); }
+  .defense__connector{ display:flex; justify-content: flex-start; padding-left: 122px; }
+  .defense__connector svg{ color: var(--border-strong); }
+
+  .decision-log{ margin-top: var(--sp-8); }
+  .decision-log__head{ margin-bottom: var(--sp-4); }
+  .dl-item{
+    display:flex; gap: var(--sp-4); align-items:flex-start;
+    padding: var(--sp-4); background: var(--surface);
+    border-left: 4px solid var(--signal);
+    margin-bottom: var(--sp-3);
+  }
+  .dl-item--open{ border-left-style: dashed; border-left-color: var(--warn); }
+  .dl-item--descoped{ border-left-color: var(--crit); }
+  .dl-item__icon{ flex:none; color: var(--signal); margin-top:.1rem; }
+  .dl-item--open .dl-item__icon{ color: var(--warn); }
+  .dl-item--descoped .dl-item__icon{ color: var(--crit); }
+  .dl-item__title{ font-weight:700; font-size:.95rem; }
+  .dl-item--descoped .dl-item__title{ text-decoration: line-through; color: var(--text-muted); }
+  .dl-item__desc{ font-size:.87rem; color: var(--text-muted); margin-top:.2em; }
+  .dl-item__pill{
+    font-family: var(--mono); font-size:.6rem; letter-spacing:.1em; text-transform:uppercase;
+    padding:.15em .55em; border-radius:2px; margin-left:auto; flex:none;
+    background: var(--signal-soft); color: var(--signal); border:1px solid var(--signal);
+  }
+  .dl-item--open .dl-item__pill{ background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+  .dl-item--descoped .dl-item__pill{ background: var(--crit-soft); color: var(--crit); border-color: var(--crit); }
+
+  /* ---- finale banner: the climax ---- */
+  .finale{
+    margin: var(--sp-8) 0 var(--sp-6);
+    padding: var(--sp-7) var(--sp-6);
+    background: var(--surface);
+    border: 2px solid var(--signal);
+    border-radius: 6px;
+    text-align:center;
+  }
+  .finale__eyebrow{ font-family: var(--mono); font-size:.72rem; letter-spacing:.18em; text-transform:uppercase; color: var(--signal); }
+  .finale__title{
+    margin-top: var(--sp-3); font-weight:800; letter-spacing:-.01em;
+    font-size: clamp(1.25rem, 3vw, 1.7rem); text-wrap: balance; max-width: 46ch; margin-left:auto; margin-right:auto;
+  }
+  .finale__pillars{
+    margin-top: var(--sp-6); display:flex; flex-wrap:wrap; justify-content:center; gap: var(--sp-4);
+  }
+  .finale__pillar{
+    flex: 1 1 150px; max-width: 190px; padding: var(--sp-4) var(--sp-3);
+    background: var(--signal-soft); border: 1px solid var(--signal); border-radius: var(--radius);
+    display:flex; flex-direction:column; align-items:center; gap: var(--sp-2); text-align:center;
+  }
+  .finale__pillar-icon{ color: var(--signal); }
+  .finale__pillar-num{ font-family: var(--mono); font-size:.62rem; color: var(--text-faint); letter-spacing:.1em; }
+  .finale__pillar-label{ font-weight:700; font-size:.86rem; }
+  .finale__pillar-sub{ font-size:.74rem; color: var(--text-muted); }
+  .finale__sub{ margin-top: var(--sp-6); font-size:.9rem; color: var(--text-muted); max-width: 60ch; margin-left:auto; margin-right:auto; }
+  .finale__sub b{ color: var(--text); }
+
+  .stamp{
+    margin: var(--sp-6) auto 0; max-width: 480px;
+    padding: var(--sp-5) var(--sp-5);
+    text-align:center;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--surface);
+  }
+  .stamp__eyebrow{ font-family: var(--mono); font-size:.62rem; letter-spacing:.16em; text-transform:uppercase; color: var(--text-faint); }
+  .stamp__title{ margin-top: var(--sp-2); font-weight:700; font-size:1rem; letter-spacing:-.01em; color: var(--text-muted); }
+  .stamp__title code{ font-family: var(--mono); background:none; color: var(--text); }
+  .stamp__sub{ margin-top: var(--sp-2); font-size:.78rem; color: var(--text-faint); }
+
+  /* ============================================================
+     FOOTER
+     ============================================================ */
+  footer{ padding: var(--sp-7) 0; }
+  .footer__inner{
+    max-width:900px; margin:0 auto; padding: 0 var(--sp-5);
+    display:flex; align-items:center; gap: var(--sp-3);
+    font-family: var(--mono); font-size:.72rem; color: var(--text-faint);
+  }
+  .footer__inner svg{ flex:none; color: var(--text-faint); }
+</style>
+
+<div class="statusbar grid-tex">
+  <div class="statusbar__inner">
+    <div class="statusbar__id"><span class="dot"></span> PHIÊN BRAINSTORM · TRẠNG THÁI: HOÀN TẤT + ĐÃ ĐÍNH CHÍNH THIẾT BỊ ĐẦU VÀO/RA</div>
+    <div class="statusbar__meta">
+      <span><b>Chế độ</b> Partner</span>
+      <span><b>Bộ kỹ thuật</b> 4 + 3 addendum</span>
+      <span><b>Quy mô</b> 34 đài địa phương</span>
+      <span><b>Cập nhật</b> 27/08/2026 · 15:52</span>
+    </div>
+  </div>
+</div>
+
+<header class="hero grid-tex">
+  <div class="hero__inner">
+    <div class="eyebrow hero__eyebrow">VTCDigital — Trung tâm phát sóng vệ tinh</div>
+    <h1>Tuyến tín hiệu<br>về trung tâm</h1>
+    <p class="hero__lede">
+      Ứng dụng truyền dẫn video/audio qua internet bằng giao thức SRT, xây dựng trên nền tảng
+      mã nguồn mở (Haivision SRT…) — công cụ nội bộ để VTCDigital nhận tín hiệu tin cậy từ các
+      đài địa phương về trung tâm uplink vệ tinh, thay thế đơn vị truyền dẫn thuê ngoài hiện tại.
+    </p>
+    <div class="hero__stats mono">
+      <span>34 tỉnh thành · 34 đài địa phương</span>
+      <span>Kết nối điểm-điểm — máy tính + card Blackmagic (SDI I/O) mỗi đầu</span>
+      <span>Đã chốt phạm vi phần mềm</span>
+    </div>
+  </div>
+  <div class="hero__wave container" aria-hidden="true">
+    <svg viewBox="0 0 860 60" preserveAspectRatio="none">
+      <polyline points="0,30 60,30 80,10 100,50 120,30 180,30 200,18 215,42 230,30 300,30 320,6 335,54 350,30 430,30 450,20 465,40 480,30 560,30 580,12 595,48 610,30 700,30 720,22 735,38 750,30 860,30"
+        fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--tech)" opacity="0.55"/>
+    </svg>
+  </div>
+</header>
+
+<nav class="rundown" aria-label="Rundown phiên làm việc">
+  <div class="rundown__inner">
+    <span class="rundown__label">Rundown</span>
+    <a href="#jtbd"><span>01</span> Job to Be Done</a>
+    <a href="#questions"><span>02</span> Question Storming</a>
+    <a href="#morph"><span>03</span> Morphological Analysis</a>
+    <a href="#failure"><span>04</span> Failure Analysis</a>
+    <a href="#journey"><span>05</span> Hành trình quyết định</a>
+    <a href="#synthesis"><span>06</span> Kiến trúc đã chốt</a>
+  </div>
+</nav>
+
+<!-- ================= 01 — JOB TO BE DONE ================= -->
+<section class="tech" id="jtbd">
+  <div class="container">
+    <div class="tech__head">
+      <div class="tech__num mono">01 / 06 — JOB TO BE DONE</div>
+      <h2 class="tech__title">Đầu việc thật sự cần hoàn thành</h2>
+      <p class="tech__sub">Nhìn từ phía đài địa phương: họ đang thuê ngoài truyền dẫn, và VTCDigital đóng vai trò đơn vị uplink lên vệ tinh.</p>
+    </div>
+
+    <div class="context-card panel">
+      <div class="context-card__label">Bối cảnh</div>
+      <p>VTCDigital vận hành trung tâm phát sóng vệ tinh, cung cấp dịch vụ uplink cho các đài truyền hình địa phương.
+      Hiện tại, tín hiệu từ đài địa phương về trung tâm đang được truyền dẫn bởi một đơn vị ngoài — không phải do
+      VTCDigital hay đài địa phương tự vận hành.</p>
+    </div>
+
+    <div class="pain-grid">
+      <div class="pain-card panel">
+        <div class="pain-card__icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="1.5"/><circle cx="12" cy="12" r="3"/><line x1="5" y1="9" x2="5" y2="9.01"/><line x1="19" y1="15" x2="19" y2="15.01"/></svg>
+        </div>
+        <div>
+          <div class="pain-card__tag">Nỗi đau 01</div>
+          <div class="pain-card__title">Chi phí truyền dẫn cao</div>
+          <div class="pain-card__desc">Thuê đơn vị ngoài truyền tín hiệu về trung tâm tốn kém, lặp lại theo từng kênh.</div>
+        </div>
+      </div>
+      <div class="pain-card panel">
+        <div class="pain-card__icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        </div>
+        <div>
+          <div class="pain-card__tag">Nỗi đau 02</div>
+          <div class="pain-card__title">Thủ tục chậm</div>
+          <div class="pain-card__desc">Cần thêm kênh hoặc có sự kiện đột xuất đều phải chờ quy trình ký hợp đồng và cấu hình thủ công.</div>
+        </div>
+      </div>
+      <div class="pain-card panel">
+        <div class="pain-card__icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><line x1="3" y1="3" x2="21" y2="21"/></svg>
+        </div>
+        <div>
+          <div class="pain-card__tag">Nỗi đau 03</div>
+          <div class="pain-card__title">Mù thông tin tín hiệu</div>
+          <div class="pain-card__desc">Đài địa phương không tự giám sát được tín hiệu của chính mình đang đi đâu, chất lượng ra sao.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="process-strip panel">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4v6h6"/><path d="M4.5 15a8 8 0 1 0 2-9.9L4 10"/></svg>
+      <p><b>Quy trình hiện tại:</b> đài địa phương không tự tăng kênh được — mỗi lần tăng kênh phải ký hợp đồng
+      mới, sau đó VTCDigital tự cấu hình thủ công ở phía trung tâm.</p>
+    </div>
+
+    <div class="decision-callout">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12l5 5L20 6"/></svg>
+      <div>
+        <div class="decision-callout__label">Quyết định mô hình vận hành</div>
+        <p>VTCDigital <b>chủ động cấu hình</b> phần mềm truyền dẫn từ tín hiệu đài địa phương về trung tâm.
+        Đây <b>không phải</b> mô hình self-service cho đài địa phương — quyền kỹ thuật vẫn thuộc về VTCDigital.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 02 — QUESTION STORMING ================= -->
+<section class="tech" id="questions">
+  <div class="container">
+    <div class="tech__head">
+      <div class="tech__num mono">02 / 06 — QUESTION STORMING</div>
+      <h2 class="tech__title">Những câu hỏi lửng lơ</h2>
+      <p class="tech__sub">Kỹ thuật này không tạo ra câu trả lời ngay — nó khoanh vùng những gì phiên brainstorm
+      cố tình chưa chốt. Cả 5 câu đã được trả lời trong addendum bổ sung cuối phiên; câu Q3 làm lộ ra
+      một mâu thuẫn quan trọng (xem mục 05), và câu trả lời ban đầu cho Q4 sau đó được đính chính lại
+      trong addendum cuối cùng (xem mục 06).</p>
+    </div>
+    <p class="radar-note">5 câu hỏi mở còn treo lại sau vòng Question Storming — trạng thái tại thời điểm hoàn tất phiên:</p>
+
+    <div class="qgrid">
+      <div class="qcard">
+        <span class="qcard__mark">Q1</span>
+        <p class="qcard__q">Xử lý thế nào khi đứt mạng giữa chừng?</p>
+        <div class="qcard__a">
+          <span class="qcard__a-label">Trả lời — addendum</span>
+          Hiển thị <b>bảng màu / color bars</b> che khung hình khi mất kết nối hoàn toàn — không để đứng hình hoặc màn hình đen.
+        </div>
+        <div class="qcard__status"><span class="qdot"></span>Đã trả lời</div>
+      </div>
+      <div class="qcard">
+        <span class="qcard__mark">Q2</span>
+        <p class="qcard__q">Ai là người phát hiện sự cố đầu tiên?</p>
+        <div class="qcard__a">
+          <span class="qcard__a-label">Trả lời — addendum</span>
+          VTCDigital có <b>đội trực sóng 24/7</b>, chủ động phát hiện — không phụ thuộc đài địa phương báo lên.
+        </div>
+        <div class="qcard__status"><span class="qdot"></span>Đã trả lời</div>
+      </div>
+      <div class="qcard qcard--flag">
+        <span class="qcard__mark">Q3</span>
+        <p class="qcard__q">Có cần đường dự phòng / 2 nhà mạng khác nhau không?</p>
+        <div class="qcard__a">
+          <span class="qcard__a-label">Trả lời — addendum</span>
+          <b>Không cần</b> — vì đầu nhận là máy tính cài phần mềm, đã có modem của trung tâm đảm bảo.
+          <span class="qcard__a-note">⚠ Câu trả lời này mâu thuẫn với tổ hợp "2 đường internet + SRT Bonding"
+          chọn trước đó ở Morphological Analysis — xem <a href="#journey">mục 05</a>.</span>
+        </div>
+        <div class="qcard__status"><span class="qdot"></span>Phát sinh mâu thuẫn</div>
+      </div>
+      <div class="qcard qcard--flag">
+        <span class="qcard__mark">Q4</span>
+        <p class="qcard__q">Định dạng/thiết bị đầu nhận hiện tại của đài địa phương là gì?</p>
+        <div class="qcard__a">
+          <span class="qcard__a-label">Trả lời — đã đính chính ở addendum cuối phiên</span>
+          Mỗi đầu (đài địa phương và trung tâm) là <b>1 máy tính + card Blackmagic (SDI I/O)</b> chạy phần mềm
+          xử lý/encode — card Blackmagic là cầu nối phần cứng chuyên dụng giữa tín hiệu SDI và máy tính.
+          <span class="qcard__a-note">⚠ Mô tả ban đầu ("chỉ là máy tính cài phần mềm, không phần cứng chuyên
+          dụng") đã bị đính chính — xem sơ đồ chuỗi tín hiệu ở <a href="#synthesis">mục 06</a>.</span>
+        </div>
+        <div class="qcard__status"><span class="qdot"></span>Đã đính chính</div>
+      </div>
+      <div class="qcard">
+        <span class="qcard__mark">Q5</span>
+        <p class="qcard__q">Có bao nhiêu đài địa phương, và họ nằm ở những vị trí địa lý nào?</p>
+        <div class="qcard__a">
+          <span class="qcard__a-label">Trả lời — addendum</span>
+          <b>34 tỉnh thành</b>, tương ứng <b>34 đài địa phương</b>.
+        </div>
+        <div class="qcard__status"><span class="qdot"></span>Đã trả lời</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 03 — MORPHOLOGICAL ANALYSIS ================= -->
+<section class="tech" id="morph">
+  <div class="container">
+    <div class="tech__head">
+      <div class="tech__num mono">03 / 06 — MORPHOLOGICAL ANALYSIS</div>
+      <h2 class="tech__title">Tổ hợp được chọn giữa phiên</h2>
+      <p class="tech__sub">5 tham số cấu hình được ghép thành một chuỗi tín hiệu duy nhất — như đi qua từng
+      module trên một patch bay kỹ thuật. Ghi nhận nguyên trạng tại thời điểm quyết định; 2 dòng bên dưới sau
+      đó được điều chỉnh lại ở addendum cuối phiên — xem mục 05.</p>
+    </div>
+
+    <div class="chain">
+      <div class="chain-row">
+        <div class="chain-row__node"></div>
+        <div class="chain-row__param">Topology mạng</div>
+        <div class="chain-row__value">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><line x1="7.2" y1="11" x2="16.8" y2="7"/><line x1="7.2" y1="13" x2="16.8" y2="17"/></svg>
+          2 đường internet song song
+          <span class="revised-tag">Điều chỉnh cuối phiên · xem 05</span>
+        </div>
+      </div>
+      <div class="chain-row">
+        <div class="chain-row__node"></div>
+        <div class="chain-row__param">Nền tảng phần mềm</div>
+        <div class="chain-row__value">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><line x1="7" y1="7" x2="7" y2="7.01"/><line x1="7" y1="17" x2="7" y2="17.01"/></svg>
+          Tự build — libSRT + custom orchestration
+        </div>
+      </div>
+      <div class="chain-row">
+        <div class="chain-row__node"></div>
+        <div class="chain-row__param">Cấu hình kênh</div>
+        <div class="chain-row__value">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="16" x2="12" y2="16"/></svg>
+          Portal / API — tự động hoá đầy đủ
+        </div>
+      </div>
+      <div class="chain-row">
+        <div class="chain-row__node"></div>
+        <div class="chain-row__param">Giám sát</div>
+        <div class="chain-row__value">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="14" rx="1.5"/><line x1="7" y1="21" x2="17" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M7 13l3-4 2 2 3-5"/></svg>
+          Dashboard nội bộ VTCDigital
+        </div>
+      </div>
+      <div class="chain-row">
+        <div class="chain-row__node"></div>
+        <div class="chain-row__param">Dự phòng khi lỗi</div>
+        <div class="chain-row__value">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6c3-4 13-4 16 0M4 12c3-4 13-4 16 0M4 18c3-4 13-4 16 0"/></svg>
+          SRT Connection Bonding
+          <span class="revised-tag">Điều chỉnh cuối phiên · xem 05</span>
+        </div>
+        <div class="upgrade">
+          <span class="upgrade__tag">Nâng cấp trong phiên</span><br>
+          <span class="upgrade__old">Failover đơn thuần — tự động chuyển sang đường còn lại khi mất 1 đường</span>
+          →
+          <span class="upgrade__new">Bonding — gửi song song cả 2 đường, không giật/glitch khi chuyển</span>
+        </div>
+        <div class="upgrade upgrade--descope">
+          <span class="upgrade__tag">Loại khỏi phạm vi — addendum cuối phiên</span>
+          <p><span class="upgrade__new">SRT Connection Bonding</span> — bị loại khỏi phạm vi phần mềm sau khi làm
+          rõ kiến trúc là kết nối điểm-điểm. Đảm bảo đường truyền là trách nhiệm hạ tầng mạng, không phải tính
+          năng cần build. Xem <a href="#journey">hành trình đầy đủ ở mục 05</a>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 04 — FAILURE ANALYSIS ================= -->
+<section class="tech" id="failure">
+  <div class="container">
+    <div class="tech__head">
+      <div class="tech__num mono">04 / 06 — FAILURE ANALYSIS</div>
+      <h2 class="tech__title">Diễn tập một sự cố giả định</h2>
+      <p class="tech__sub">Đặt hệ thống vào tình huống xấu nhất trước khi nó xảy ra thật.</p>
+    </div>
+
+    <div class="incident">
+      <div class="incident__bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 21h20L12 2Z"/><line x1="12" y1="9" x2="12" y2="14"/><line x1="12" y1="17" x2="12" y2="17.01"/></svg>
+        Sự cố giả định
+      </div>
+      <div class="incident__body">
+        <div class="incident__row">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h4l3 8 4-16 3 8h4"/></svg>
+          <div>
+            <div class="incident__row-label">Giả định</div>
+            <p>Nhà mạng cam kết một tốc độ đường truyền internet — nhưng tốc độ thực tế không ổn định như cam kết.</p>
+          </div>
+        </div>
+        <div class="incident__row">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>
+          <div>
+            <div class="incident__row-label">Bài học rút ra</div>
+            <p>Không thể đặt cược độ tin cậy của hệ thống vào cam kết băng thông của nhà mạng.</p>
+          </div>
+        </div>
+        <div class="incident__quote">
+          “Không thể tin tưởng cam kết tốc độ internet — nên cần kỹ thuật nén tốt, để dùng ít băng thông hơn
+          nhưng vẫn giữ được chất lượng tín hiệu.”
+        </div>
+        <div class="incident__arrow">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/></svg>
+          Bài học này vẫn đúng ở kiến trúc cuối cùng — nhưng phần "kỹ thuật nén tốt" đọng lại thành lớp ABR
+          trong kiến trúc đã chốt (mục 06), chứ không phải lý do để giữ Bonding.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 05 — DECISION JOURNEY ================= -->
+<section class="tech" id="journey">
+  <div class="container">
+    <div class="tech__head">
+      <div class="tech__num mono">05 / 06 — HÀNH TRÌNH QUYẾT ĐỊNH</div>
+      <h2 class="tech__title">Từ Bonding song song, đến điểm-điểm đơn giản</h2>
+      <p class="tech__sub">Không phải mọi quyết định giữa phiên đều sống sót đến cuối phiên. Đây là log sửa
+      sóng — ghi lại đúng thứ tự phiên đã đi qua, kể cả khúc cua.</p>
+    </div>
+
+    <div class="journey">
+      <div class="jbeat" style="--beat-color:var(--tech); --beat-soft:var(--tech-soft);">
+        <div class="jbeat__node"></div>
+        <span class="jbeat__tag">Giữa phiên · Morphological Analysis</span>
+        <div class="jbeat__title">Chọn tổ hợp: 2 đường internet + SRT Bonding</div>
+        <p class="jbeat__desc">Tổ hợp ban đầu dùng failover đơn thuần cho dự phòng, sau đó được nâng cấp ngay
+        trong phiên thành <b>SRT Connection Bonding</b> — gửi song song trên 2 đường internet, chuyển đổi không
+        giật hình.</p>
+      </div>
+      <div class="jbeat" style="--beat-color:var(--tech); --beat-soft:var(--tech-soft);">
+        <div class="jbeat__node"></div>
+        <span class="jbeat__tag">Giữa phiên · Failure Analysis</span>
+        <div class="jbeat__title">Sự cố ISP củng cố thêm cho hướng Bonding</div>
+        <p class="jbeat__desc">Bài học "không thể tin cam kết tốc độ ISP" được đọc như một lý do ủng hộ thêm
+        cho việc gửi song song 2 đường. Tổng hợp tạm thời tại thời điểm này: kiến trúc phòng thủ
+        <b>3 lớp</b> — ABR → SRT Bonding → cảnh báo khi cả 2 đường cùng nghẽn.</p>
+      </div>
+      <div class="jbeat" style="--beat-color:var(--warn); --beat-soft:var(--warn-soft);">
+        <div class="jbeat__node"></div>
+        <span class="jbeat__tag">Addendum cuối phiên</span>
+        <div class="jbeat__title">Trả lời Q3: "Không cần" đường dự phòng / 2 nhà mạng</div>
+        <p class="jbeat__desc">Khi làm rõ lại các câu hỏi mở của Question Storming, câu trả lời cho Q3 là
+        <b>không cần</b> — vì đài địa phương chỉ là một máy tính cài phần mềm, và modem của trung tâm đã đảm
+        bảo đường truyền. Câu trả lời này gieo hạt cho bước tiếp theo.</p>
+      </div>
+      <div class="jbeat" style="--beat-color:var(--crit); --beat-soft:var(--crit-soft);">
+        <div class="jbeat__node"></div>
+        <span class="jbeat__tag">Addendum cuối phiên · phát hiện mâu thuẫn</span>
+        <div class="jbeat__title">"Không cần dự phòng" mâu thuẫn với "2 đường + Bonding"</div>
+        <p class="jbeat__desc">Câu trả lời Q3 đối chọi trực tiếp với tổ hợp đã chọn ở Morphological Analysis.
+        Không thể vừa "không cần đường dự phòng" vừa "cần 2 đường internet song song + Bonding" — cần người
+        dùng xác nhận lại hướng nào đúng trước khi đóng phiên.</p>
+      </div>
+      <div class="jbeat" style="--beat-color:var(--signal); --beat-soft:var(--signal-soft);">
+        <div class="jbeat__node"></div>
+        <span class="jbeat__tag">Chốt phạm vi</span>
+        <div class="jbeat__title">Kiến trúc thật sự: kết nối điểm-điểm giữa 2 máy tính</div>
+        <p class="jbeat__desc">Mâu thuẫn được giải quyết bằng cách tách đúng lớp trách nhiệm: phần mềm chỉ là
+        <b>1 kết nối SRT điểm-điểm</b> giữa máy tính đài địa phương và máy tính trung tâm — ở tầng ứng dụng.
+        Việc đảm bảo đường truyền (dự phòng, dual-ISP, bonding vật lý) là việc của <b>hạ tầng mạng bên dưới</b>,
+        nằm ngoài phạm vi phần mềm. SRT Bonding — ý tưởng nâng cấp thú vị giữa phiên — vì vậy bị loại khỏi phạm
+        vi; ABR vẫn giữ nguyên vì đó là trách nhiệm của tầng ứng dụng.</p>
+      </div>
+    </div>
+
+    <div class="pivot">
+      <div class="pivot__panel pivot__old">
+        <div class="pivot__label">Trong phiên · Morphological Analysis</div>
+        <div class="pivot__title">2 đường internet song song + SRT Bonding</div>
+        <div class="pivot__diagram" aria-hidden="true">
+          <svg width="220" height="90" viewBox="0 0 220 90">
+            <rect x="6" y="34" width="30" height="22" rx="3" fill="none" stroke="var(--crit)" stroke-width="2"/>
+            <path d="M36 40 L120 16" stroke="var(--crit)" stroke-width="2" fill="none"/>
+            <path d="M36 50 L120 74" stroke="var(--crit)" stroke-width="2" fill="none"/>
+            <circle cx="128" cy="16" r="9" fill="none" stroke="var(--crit)" stroke-width="2"/>
+            <circle cx="128" cy="74" r="9" fill="none" stroke="var(--crit)" stroke-width="2"/>
+            <path d="M137 18 C165 30 165 45 182 45" stroke="var(--crit)" stroke-width="2" fill="none"/>
+            <path d="M137 72 C165 60 165 45 182 45" stroke="var(--crit)" stroke-width="2" fill="none"/>
+            <rect x="182" y="34" width="30" height="22" rx="3" fill="none" stroke="var(--crit)" stroke-width="2"/>
+          </svg>
+        </div>
+        <p class="pivot__desc">Đài địa phương gửi song song trên 2 hạ tầng mạng khác nhau; phần mềm tự bonding
+        hai luồng thành một tín hiệu liền mạch tại trung tâm.</p>
+        <span class="pivot__stamp">✕ RA KHỎI PHẠM VI PHẦN MỀM</span>
+        <p class="pivot__caption">Không phải một sai lầm — một hướng khám phá thú vị bị thu hẹp phạm vi khi
+        hiểu rõ hơn bối cảnh triển khai thực tế.</p>
+      </div>
+
+      <div class="pivot__arrow" aria-hidden="true">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg>
+      </div>
+
+      <div class="pivot__panel pivot__new">
+        <div class="pivot__label">Chốt cuối phiên · Addendum</div>
+        <div class="pivot__title">Kết nối điểm-điểm — máy tính + Blackmagic SDI mỗi đầu</div>
+        <div class="pivot__diagram" aria-hidden="true">
+          <svg width="220" height="90" viewBox="0 0 220 90">
+            <rect x="6" y="34" width="30" height="22" rx="3" fill="none" stroke="var(--signal)" stroke-width="2.5"/>
+            <line x1="36" y1="45" x2="182" y2="45" stroke="var(--signal)" stroke-width="2.5" stroke-dasharray="1 0"/>
+            <circle cx="109" cy="45" r="4" fill="var(--signal)"/>
+            <rect x="182" y="34" width="30" height="22" rx="3" fill="none" stroke="var(--signal)" stroke-width="2.5"/>
+          </svg>
+        </div>
+        <p class="pivot__desc">Một kết nối SRT trực tiếp giữa 2 máy tính. Đảm bảo đường truyền là việc của hạ
+        tầng mạng bên dưới — nằm ngoài phạm vi phần mềm.</p>
+        <span class="pivot__stamp">✓ ĐÃ CHỐT</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 06 — SYNTHESIS — CLIMAX ================= -->
+<section class="tech synthesis" id="synthesis">
+  <div class="container">
+    <div class="tech__head">
+      <div class="tech__num mono" style="color:var(--signal)">06 / 06 — TỔNG HỢP CUỐI CÙNG</div>
+      <h2 class="tech__title">Kiến trúc đã chốt</h2>
+      <p class="tech__sub">Kết nối điểm-điểm giữa 2 máy tính, được bọc bởi 2 lớp phòng thủ tầng ứng dụng —
+      còn hạ tầng mạng bên dưới là chuyện của đội mạng, không phải của phần mềm này.</p>
+    </div>
+
+    <div class="p2p brackets brackets--accent grid-tex">
+      <span class="p2p__scale">× 34 tỉnh thành</span>
+      <div class="p2p__row">
+        <div class="p2p__node">
+          <div class="p2p__node-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="13" rx="1.5"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="16" x2="12" y2="21"/></svg>
+          </div>
+          <div class="p2p__node-label">Đài địa phương</div>
+          <div class="p2p__node-sub mono">MÁY TÍNH + BLACKMAGIC (SDI I/O)</div>
+        </div>
+        <div class="p2p__link">
+          <div class="p2p__link-label mono">SRT · ĐIỂM-ĐIỂM</div>
+          <div class="p2p__link-line" aria-hidden="true">
+            <svg viewBox="0 0 200 12" preserveAspectRatio="none"><line x1="0" y1="6" x2="200" y2="6" stroke="var(--signal)" stroke-width="2.5"/><circle cx="100" cy="6" r="4" fill="var(--signal)"/></svg>
+          </div>
+        </div>
+        <div class="p2p__node">
+          <div class="p2p__node-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="13" rx="1.5"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="16" x2="12" y2="21"/></svg>
+          </div>
+          <div class="p2p__node-label">Trung tâm VTCDigital</div>
+          <div class="p2p__node-sub mono">MÁY TÍNH + BLACKMAGIC (SDI I/O)</div>
+        </div>
+      </div>
+      <p class="p2p__oos"><b>Ngoài phạm vi phần mềm:</b> đảm bảo đường truyền (redundancy, dual-ISP, bonding vật
+      lý…) — trách nhiệm của hạ tầng mạng bên dưới, không phải tính năng cần build.</p>
+    </div>
+
+    <div class="panel" style="margin-top: var(--sp-5); padding: var(--sp-5) var(--sp-5);">
+      <div class="context-card__label" style="color:var(--tech)">Chuỗi tín hiệu SDI ↔ IP — đính chính addendum cuối phiên</div>
+      <p style="color:var(--text-muted); font-size:.88rem; max-width:65ch; margin-bottom: var(--sp-4);">
+        Đầu vào/ra <b>không phải</b> "chỉ là máy tính cài phần mềm, không phần cứng chuyên dụng" như mô tả
+        trước đó. Thực tế: mỗi đầu đều có <b>card Blackmagic (SDI I/O)</b> làm cầu nối phần cứng giữa tín hiệu
+        SDI và máy tính/phần mềm.
+      </p>
+      <div style="overflow-x:auto;">
+        <svg viewBox="0 0 860 132" style="min-width:640px" role="img" aria-label="Sơ đồ chuỗi tín hiệu: SDI vào, qua card Blackmagic, máy tính xử lý và encode, truyền qua internet bằng SRT, máy tính trung tâm nhận và xử lý, qua card Blackmagic, xuất ra SDI">
+          <!-- box 1: SDI vào -->
+          <rect x="6" y="38" width="82" height="52" rx="3" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <text x="47" y="60" text-anchor="middle" font-family="var(--mono)" font-size="10" font-weight="700" fill="var(--text)">SDI</text>
+          <text x="47" y="74" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">TÍN HIỆU VÀO</text>
+          <!-- arrow 1 -->
+          <line x1="88" y1="64" x2="118" y2="64" stroke="var(--tech)" stroke-width="2"/>
+          <polyline points="112,58 118,64 112,70" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <!-- box 2: Blackmagic -->
+          <rect x="118" y="38" width="92" height="52" rx="3" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <text x="164" y="58" text-anchor="middle" font-family="var(--mono)" font-size="9" font-weight="700" fill="var(--text)">BLACKMAGIC</text>
+          <text x="164" y="70" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">CAPTURE CARD</text>
+          <text x="164" y="82" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">SDI I/O</text>
+          <!-- arrow 2 -->
+          <line x1="210" y1="64" x2="240" y2="64" stroke="var(--tech)" stroke-width="2"/>
+          <polyline points="234,58 240,64 234,70" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <!-- box 3: PC dai dia phuong -->
+          <rect x="240" y="30" width="112" height="68" rx="3" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <text x="296" y="52" text-anchor="middle" font-family="var(--mono)" font-size="9" font-weight="700" fill="var(--text)">MÁY TÍNH</text>
+          <text x="296" y="65" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">ĐÀI ĐỊA PHƯƠNG</text>
+          <text x="296" y="78" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">PHẦN MỀM ENCODE</text>
+          <!-- link: SRT internet -->
+          <line x1="352" y1="64" x2="508" y2="64" stroke="var(--signal)" stroke-width="2.5"/>
+          <circle cx="430" cy="64" r="4" fill="var(--signal)"/>
+          <polyline points="500,58 508,64 500,70" fill="none" stroke="var(--signal)" stroke-width="2.5"/>
+          <text x="430" y="46" text-anchor="middle" font-family="var(--mono)" font-size="9" font-weight="700" fill="var(--signal)">SRT · INTERNET</text>
+          <!-- box 4: PC trung tam -->
+          <rect x="508" y="30" width="112" height="68" rx="3" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <text x="564" y="52" text-anchor="middle" font-family="var(--mono)" font-size="9" font-weight="700" fill="var(--text)">MÁY TÍNH</text>
+          <text x="564" y="65" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">TRUNG TÂM VTCDIGITAL</text>
+          <text x="564" y="78" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">PHẦN MỀM XỬ LÝ</text>
+          <!-- arrow 3 -->
+          <line x1="620" y1="64" x2="650" y2="64" stroke="var(--tech)" stroke-width="2"/>
+          <polyline points="644,58 650,64 644,70" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <!-- box 5: Blackmagic -->
+          <rect x="650" y="38" width="92" height="52" rx="3" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <text x="696" y="58" text-anchor="middle" font-family="var(--mono)" font-size="9" font-weight="700" fill="var(--text)">BLACKMAGIC</text>
+          <text x="696" y="70" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">PLAYOUT CARD</text>
+          <text x="696" y="82" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">SDI I/O</text>
+          <!-- arrow 4 -->
+          <line x1="742" y1="64" x2="772" y2="64" stroke="var(--tech)" stroke-width="2"/>
+          <polyline points="766,58 772,64 766,70" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <!-- box 6: SDI ra -->
+          <rect x="772" y="38" width="82" height="52" rx="3" fill="none" stroke="var(--tech)" stroke-width="2"/>
+          <text x="813" y="60" text-anchor="middle" font-family="var(--mono)" font-size="10" font-weight="700" fill="var(--text)">SDI</text>
+          <text x="813" y="74" text-anchor="middle" font-family="var(--mono)" font-size="8" fill="var(--text-faint)">TÍN HIỆU RA</text>
+          <text x="47" y="114" text-anchor="middle" font-family="var(--mono)" font-size="7.5" fill="var(--text-faint)">ĐÀI ĐỊA PHƯƠNG</text>
+          <text x="813" y="114" text-anchor="middle" font-family="var(--mono)" font-size="7.5" fill="var(--text-faint)">UPLINK VỆ TINH</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat__value">34</div>
+        <div class="stat__label">đài địa phương — 34 kết nối điểm-điểm độc lập</div>
+      </div>
+      <div class="stat">
+        <div class="stat__value">1 ↔ 1</div>
+        <div class="stat__label">máy tính + card Blackmagic (SDI I/O) mỗi đầu</div>
+      </div>
+      <div class="stat">
+        <div class="stat__value">2</div>
+        <div class="stat__label">lớp phòng thủ ở tầng ứng dụng: ABR + che bảng màu</div>
+      </div>
+    </div>
+
+    <div class="defense">
+      <div class="defense__layer defense__layer--1 brackets">
+        <div class="defense__num">1</div>
+        <div class="defense__title">Lớp 1 — <em>ABR chủ động</em></div>
+        <p class="defense__desc">Hệ thống tự hạ bitrate ngay khi phát hiện băng thông đường truyền suy yếu,
+        thay vì chờ tín hiệu vỡ khối mới phản ứng. Đây là trách nhiệm của tầng ứng dụng — vẫn giữ nguyên sau khi
+        chốt lại phạm vi.</p>
+        <div class="defense__viz" aria-hidden="true">
+          <svg width="200" height="40" viewBox="0 0 200 40">
+            <rect x="0" y="6" width="18" height="34" fill="var(--tech)" opacity="0.9"/>
+            <rect x="26" y="6" width="18" height="34" fill="var(--tech)" opacity="0.9"/>
+            <rect x="52" y="14" width="18" height="26" fill="var(--tech)" opacity="0.7"/>
+            <rect x="78" y="14" width="18" height="26" fill="var(--tech)" opacity="0.7"/>
+            <rect x="104" y="22" width="18" height="18" fill="var(--tech)" opacity="0.5"/>
+            <rect x="130" y="22" width="18" height="18" fill="var(--tech)" opacity="0.5"/>
+            <rect x="156" y="30" width="18" height="10" fill="var(--tech)" opacity="0.35"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="defense__connector" aria-hidden="true">
+        <svg width="16" height="26" viewBox="0 0 16 26"><line x1="8" y1="0" x2="8" y2="18" stroke="currentColor" stroke-width="2"/><polyline points="2,14 8,20 14,14" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
+
+      <div class="defense__layer defense__layer--2 brackets">
+        <div class="defense__num">2</div>
+        <div class="defense__title">Lớp 2 — <em>Che bảng màu khi mất kết nối hoàn toàn</em></div>
+        <p class="defense__desc">Khi ABR không còn gì để hạ và kết nối điểm-điểm mất hoàn toàn, đầu nhận hiển
+        thị <b>bảng màu chuẩn (color bars)</b> thay vì đứng hình hoặc màn hình đen. <b>Đội trực sóng 24/7</b> của
+        VTCDigital chủ động phát hiện sự cố ngay tại đây — không phụ thuộc đài địa phương báo lên.</p>
+        <div class="defense__viz" aria-hidden="true">
+          <svg width="200" height="40" viewBox="0 0 200 40">
+            <rect x="0" y="0" width="25" height="40" fill="#EDEDED"/>
+            <rect x="25" y="0" width="25" height="40" fill="#D9C400"/>
+            <rect x="50" y="0" width="25" height="40" fill="#00B8C4"/>
+            <rect x="75" y="0" width="25" height="40" fill="#3FAE4A"/>
+            <rect x="100" y="0" width="25" height="40" fill="#C63FA6"/>
+            <rect x="125" y="0" width="25" height="40" fill="#C4423C"/>
+            <rect x="150" y="0" width="25" height="40" fill="#2E4FC4"/>
+            <rect x="175" y="0" width="25" height="40" fill="#1A1A1A"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="decision-log">
+      <div class="decision-log__head">
+        <div class="eyebrow">Nhật ký quyết định — trạng thái cuối phiên</div>
+      </div>
+
+      <div class="dl-item">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 6-6"/></svg>
+        <div>
+          <div class="dl-item__title">Mô hình vận hành do VTCDigital chủ động cấu hình</div>
+          <div class="dl-item__desc">Không self-service cho đài địa phương — quyền kỹ thuật vẫn giữ ở trung tâm.</div>
+        </div>
+        <span class="dl-item__pill">Đã chốt</span>
+      </div>
+
+      <div class="dl-item">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 6-6"/></svg>
+        <div>
+          <div class="dl-item__title">Kiến trúc là kết nối điểm-điểm giữa 2 máy tính</div>
+          <div class="dl-item__desc">Đài địa phương ↔ trung tâm, ở tầng ứng dụng — không qua trung gian bonding phần mềm.</div>
+        </div>
+        <span class="dl-item__pill">Đã chốt</span>
+      </div>
+
+      <div class="dl-item">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 6-6"/></svg>
+        <div>
+          <div class="dl-item__title">Đảm bảo đường truyền = trách nhiệm hạ tầng mạng bên dưới</div>
+          <div class="dl-item__desc">Dự phòng, dual-ISP, bonding vật lý — nằm ngoài phạm vi phần mềm.</div>
+        </div>
+        <span class="dl-item__pill">Đã chốt</span>
+      </div>
+
+      <div class="dl-item">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 6-6"/></svg>
+        <div>
+          <div class="dl-item__title">Thiết bị đầu vào/ra: card Blackmagic (SDI I/O) ở cả 2 đầu — không phải chỉ phần mềm</div>
+          <div class="dl-item__desc">Đính chính addendum cuối phiên: SDI → Blackmagic → máy tính/phần mềm → SRT (đài địa phương); SRT → máy tính/phần mềm → Blackmagic → SDI (trung tâm). Mô tả trước đó ("chỉ là máy tính, không phần cứng chuyên dụng") không chính xác.</div>
+        </div>
+        <span class="dl-item__pill">Đã đính chính</span>
+      </div>
+
+      <div class="dl-item dl-item--descoped">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="8" y1="8" x2="16" y2="16"/><line x1="16" y1="8" x2="8" y2="16"/></svg>
+        <div>
+          <div class="dl-item__title">SRT Connection Bonding</div>
+          <div class="dl-item__desc">Ý tưởng nâng cấp giữa phiên ở Morphological Analysis — loại khỏi phạm vi phần mềm sau khi làm rõ kiến trúc điểm-điểm.</div>
+        </div>
+        <span class="dl-item__pill">Ngoài phạm vi</span>
+      </div>
+
+      <div class="dl-item">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 6-6"/></svg>
+        <div>
+          <div class="dl-item__title">ABR chủ động hạ bitrate</div>
+          <div class="dl-item__desc">Giữ nguyên sau khi chốt phạm vi — vì là trách nhiệm của tầng ứng dụng/phần mềm.</div>
+        </div>
+        <span class="dl-item__pill">Đã chốt</span>
+      </div>
+
+      <div class="dl-item">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 6-6"/></svg>
+        <div>
+          <div class="dl-item__title">Che bảng màu khi mất kết nối hoàn toàn, đội trực 24/7 phát hiện</div>
+          <div class="dl-item__desc">Thay thế lớp cảnh báo cũ — VTCDigital chủ động phát hiện, không phụ thuộc đài địa phương báo.</div>
+        </div>
+        <span class="dl-item__pill">Đã chốt</span>
+      </div>
+
+      <div class="dl-item">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 6-6"/></svg>
+        <div>
+          <div class="dl-item__title">Tự động hoá cấu hình kênh qua Portal / API nội bộ</div>
+          <div class="dl-item__desc">Giải quyết trực tiếp nỗi đau "thủ tục chậm" khi cần thêm kênh gấp.</div>
+        </div>
+        <span class="dl-item__pill">Đã chốt</span>
+      </div>
+
+      <div class="dl-item dl-item--open">
+        <svg class="dl-item__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16" x2="12" y2="16.01"/></svg>
+        <div>
+          <div class="dl-item__title">Dashboard có mở view riêng cho đài địa phương không?</div>
+          <div class="dl-item__desc">Chưa quyết định: cho đài địa phương xem tín hiệu của chính họ, hay giữ kín nội bộ VTCDigital.</div>
+        </div>
+        <span class="dl-item__pill">Còn mở</span>
+      </div>
+    </div>
+
+    <div class="finale brackets brackets--accent">
+      <div class="finale__eyebrow">Chốt phạm vi — sẵn sàng thiết kế chi tiết</div>
+      <h3 class="finale__title">Point-to-point · ABR · Che bảng màu · Portal/API · Giám sát 24/7</h3>
+      <div class="finale__pillars">
+        <div class="finale__pillar">
+          <div class="finale__pillar-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="4" cy="12" r="2.5"/><line x1="6.5" y1="12" x2="17.5" y2="12"/><circle cx="20" cy="12" r="2.5"/></svg></div>
+          <div class="finale__pillar-num mono">01</div>
+          <div class="finale__pillar-label">Point-to-point</div>
+          <div class="finale__pillar-sub">1 kết nối SRT trực tiếp, 2 máy tính, không trung gian bonding</div>
+        </div>
+        <div class="finale__pillar">
+          <div class="finale__pillar-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20 L9 8 L13 14 L17 6 L21 20"/></svg></div>
+          <div class="finale__pillar-num mono">02</div>
+          <div class="finale__pillar-label">ABR chủ động</div>
+          <div class="finale__pillar-sub">Tự hạ bitrate khi băng thông suy yếu</div>
+        </div>
+        <div class="finale__pillar">
+          <div class="finale__pillar-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="1.5"/><line x1="3" y1="12" x2="21" y2="12"/></svg></div>
+          <div class="finale__pillar-num mono">03</div>
+          <div class="finale__pillar-label">Che bảng màu</div>
+          <div class="finale__pillar-sub">Color bars khi mất kết nối hoàn toàn</div>
+        </div>
+        <div class="finale__pillar">
+          <div class="finale__pillar-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="16" x2="12" y2="16"/></svg></div>
+          <div class="finale__pillar-num mono">04</div>
+          <div class="finale__pillar-label">Portal / API</div>
+          <div class="finale__pillar-sub">Tự động hoá cấu hình kênh, VTCDigital giữ quyền kỹ thuật</div>
+        </div>
+        <div class="finale__pillar">
+          <div class="finale__pillar-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></div>
+          <div class="finale__pillar-num mono">05</div>
+          <div class="finale__pillar-label">Giám sát 24/7</div>
+          <div class="finale__pillar-sub">Đội trực sóng VTCDigital chủ động phát hiện sự cố</div>
+        </div>
+      </div>
+      <p class="finale__sub">Áp dụng cho <b>34 tỉnh thành / 34 đài địa phương</b> — mỗi đài là một kết nối
+      điểm-điểm độc lập về trung tâm. Phần mềm chịu trách nhiệm tầng ứng dụng; đảm bảo đường truyền là việc của
+      hạ tầng mạng bên dưới.</p>
+    </div>
+
+    <div class="stamp">
+      <div class="stamp__eyebrow">Ghi chú kỹ thuật</div>
+      <div class="stamp__title">Tự build trên <code>libSRT</code> + custom orchestration</div>
+      <div class="stamp__sub">Không dùng nguyên bản Haivision SRT hay wrapper có sẵn</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer__inner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 6-6"/></svg>
+    Phiên brainstorm kết thúc — 27/08/2026 · 15:52 — 4/4 kỹ thuật + 3 addendum làm rõ & đính chính phạm vi kiến trúc
+  </div>
+</footer>

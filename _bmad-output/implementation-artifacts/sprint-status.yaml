@@ -1,0 +1,406 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 08-31-2026 00:00
+last_updated: 09-23-2026 20:30
+project: TranferFiles
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: done
+  1-1-khởi-tạo-transport-core-cấu-hình-kết-nối-kết-nối-srt-điểm-đi: done
+  1-2-state-machine-reconnect-vô-hạn-khi-mất-mạng: done
+  1-3-color-bars-tự-động-khi-mất-kết-nối-hoàn-toàn: done
+  1-4-nhánh-reject-riêng-khi-sai-passphrase-log-audit: done
+  1-5-sinh-lưu-trữ-passphrase-an-toàn-qua-dpapi: done
+  1-6-capture-playout-sdi-qua-blackmagic-decklink-studio-4k: done
+  1-7-abr-chủ-động-hạ-bitrate-h-264-khi-mạng-xấu: done
+  1-8-telemetry-thô-vu-meter-snapshot-heartbeat-qua-lan-có-xác-thự: done
+  epic-1-retrospective: done
+
+  epic-2: in-progress
+  2-1-dashboard-backend-ranh-giới-telemetry-thô-trạng-thái-tính-to: done
+  2-2-channel-registry-hot-reload-nguồn-liệt-kê-kênh-vị-trí-lưới-c: done
+  2-3-design-tokens-lưới-tổng-quan-cố-định-vị-trí-cold-load: done
+  2-4-trạng-thái-ô-kênh-ok-warning-critical-alert-badge: done
+  2-5-vu-meter-thumbnail-color-bars-theo-trạng-thái: done
+  2-6-cập-nhật-trạng-thái-kênh-event-driven-qua-websocket: done
+  2-7-xử-lý-mất-kết-nối-dữ-liệu-giám-sát-disconnected-máy-trung-tâ: done
+  epic-2-retrospective: done
+
+  epic-3: in-progress
+  3-1-ring-buffer-lịch-sử-bitrate-historyport-tri-state: done
+  3-2-panel-chi-tiết-kênh-detail-panel: done
+  3-3-xác-nhận-tiếp-nhận-cảnh-báo-ack: done
+  epic-3-retrospective: done
+
+  epic-4: in-progress
+  4-1-âm-báo-động-tại-chỗ-khi-có-cảnh-báo-mới: done
+  4-2-đẩy-telegram-cho-mức-chú-ý-abr-warning-tới-đội-trực: done
+  4-3-đẩy-telegram-email-cho-mức-cảnh-báo-chủ-động-critical-tới-độ: done
+  4-4-thông-báo-phục-hồi-gửi-ngay-lập-tức-bỏ-qua-cooldown: done
+  epic-4-retrospective: done
+
+  epic-5: in-progress
+  5-1-điều-hướng-đầy-đủ-bằng-bàn-phím: done
+  5-2-xác-thực-hoàn-thiện-accessibility-không-phụ-thuộc-màu-đơn-lẻ: done
+  epic-5-retrospective: done
+action_items:
+  - id: "epic-1-retro-item-1-commit-merge-7-patch-round-2-của-story-1"
+    epic: 1
+    action: "Commit + merge 7 patch round-2 của Story 1.8 đang uncommitted trong transport-core
+      working tree (H264Decoder, BlackmagicSource, ChannelActor, SnapshotEncoder,
+      TelemetryWsClient + 2 test file); merge branch story-1-8-telemetry-... vào main.
+      Khuyến nghị làm trước khi Epic 2 bắt đầu."
+    owner: "dev"
+    status:           
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-1-retro-item-2-sửa-thứ-tự-reset-backoff-trong-channelac"
+    epic: 1
+    action: "Sửa thứ tự reset backoff trong ChannelActor::runStation(): chỉ reset
+      currentBackoff_/currentRejectBackoff_ sau khi setup source/encoder/mux thành
+      công, không phải ngay sau setState(CONNECTED) — tránh busy-loop reconnect ~1s
+      vĩnh viễn khi setup cục bộ hỏng dai dẳng. Thêm regression test."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-1-retro-item-3-bọc-try-catch-quanh-h264decoder-decoder"
+    epic: 1
+    action: "Bọc try/catch quanh H264Decoder decoder; decoder.open(); trong ChannelActor::runCenter(),
+      route lỗi qua RECONNECTING như mọi lỗi khác trong hàm — hiện exception thoát
+      ra ngoài, kết thúc actor Center vĩnh viễn."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-1-retro-item-4-verify-guard-xung-đột-thiết-bị-duplex-tr"
+    epic: 1
+    action: "Verify/guard xung đột thiết bị duplex trên Center: sink_ (BlackmagicPlayoutSink,
+      output) và audioMonitorSource_ (BlackmagicSource, input) cùng mở cfg_.blackmagic_device
+      đồng thời — cần hardware DeckLink thật để verify, hoặc thêm field cấu hình device
+      audio-monitor riêng nếu duplex không hỗ trợ."
+    owner: "dev+ops"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-1-retro-item-5-mở-story-mới-forward-frame-decode-thật-v"
+    epic: 1
+    action: "Mở story mới: forward frame decode thật vào PlayoutSink (Story 1.6 AC#2)
+      — RealSignal mode hiện không ghi thêm packet nào ra card sau lần chuyển mode
+      đầu tiên, SDI output sẽ đóng băng dù telemetry báo RealSignal."
+    owner: "pm"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-1-retro-item-6-gộp-3-điểm-blocking-call-không-timeout-s"
+    epic: 1
+    action: "Gộp 3 điểm blocking-call-không-timeout (sendAccessUnit() đói ABR, listener.accept()
+      chặn heartbeat, pumpForAudioLevelMetering()'s av_read_frame() có thể treo cả
+      thread runCenter()) thành 1 story chuyển sang SRT epoll/non-blocking, thay vì
+      vá rời rạc từng điểm."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-1-retro-item-7-quy-trình-ask-first-trong-frozen-boundar"
+    epic: 1
+    action: "Quy trình: \"Ask First\" trong frozen Boundaries của spec phải là HALT
+      thật (dừng hẳn, hỏi người dùng TRƯỚC khi triển khai phần liên quan), không phải
+      lời nhắc cân nhắc kỹ hơn rồi tự quyết. Story 1.6 có 2/2 mục Ask First bị bỏ
+      qua theo đúng khuôn mẫu này, chỉ bị code review round 3 phát hiện, không tự
+      nhận ra."
+    owner: "process-owner"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-1-retro-item-8-quy-trình-checklist-đóng-story-bmad-buil"
+    epic: 1
+    action: "Quy trình: checklist đóng story (bmad-build/dev-agent) thêm bước xác
+      nhận git status sạch (mọi thay đổi đã commit, message mang đúng story id) trước
+      khi set status: done — 2 dấu hiệu trong epic này (commit e9540d1 không mang
+      story id, 7 patch của 1.8 chưa commit khi story đã done)."
+    owner: "process-owner"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-1-retro-item-9-dọn-nhóm-finding-mức-thấp-khi-quay-lại-l"
+    epic: 1
+    action: "Dọn nhóm finding mức thấp khi quay lại làm item duplex-device/RealSignal:
+      rtt_ms clamp lẫn \"chưa có mẫu\" với \"0ms thật\"; BlackmagicSource::open()
+      đòi video stream ngay cả khi chỉ audio-monitor; setPlayoutSinkForTesting() thiếu
+      null-check (đối xứng setSourceFactoryForTesting()); snapshotConversionFailureLogged_
+      không reset mỗi phiên CONNECTED mới; 2 gap test coverage cho patch uncommitted
+      (nhánh lỗi convert-snapshot, nhánh gate audio-monitor)."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-02.md"
+  - id: "epic-2-retro-item-10-gộp-4-điểm-map-không-prune-theo-channel"
+    epic: 2
+    action: "Gộp 4 điểm Map không prune theo channel-registry hot-reload (channelState.ts
+      channels; wsUiAdapter.ts seenChannels/lastState; frontend channelDisplayStates/channelMachineOffline)
+      thành 1 cơ chế dọn dẹp duy nhất khi channel_id bị gỡ khỏi registry."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-09-07.md"
+  - id: "epic-2-retro-item-11-dời-displaystate-hiện-định-nghĩa-trong-c"
+    epic: 2
+    action: "Dời DisplayState (hiện định nghĩa trong ChannelGridCell.tsx, bị channelStore.ts/uiWsClient.ts
+      import ngược) sang 1 module type trung lập phía frontend."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-09-07.md"
+  - id: "epic-2-retro-item-12-gộp-hằng-số-kích-thước-lưới-grid_size-20"
+    epic: 2
+    action: "Gộp hằng số kích thước lưới (GRID_SIZE=20 ChannelGrid.tsx, GRID_COLUMNS=5
+      ChannelGridCell.tsx, GRID_POSITION_MIN/MAX=0/19 fileChannelRegistryAdapter.ts)
+      về 1 nguồn dùng chung, làm cùng lúc với việc dọn dẹp orphan-Map."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-09-07.md"
+  - id: "epic-2-retro-item-13-điều-tra-lỗi-node-test-ipc-unable-to-des"
+    epic: 2
+    action: "Điều tra lỗi node:test IPC (Unable to deserialize cloned data) tái hiện
+      ổn định ở dashboard-backend/tests/installService.test.ts trên Node v24.18.0
+      trước khi tin lại test xanh trên toolchain hiện tại."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-09-07.md"
+  - id: "epic-2-retro-item-14-lên-lịch-1-checkpoint-tích-hợp-thật-giữa"
+    epic: 2
+    action: "Lên lịch 1 checkpoint tích hợp thật giữa TelemetryWsClient (transport-core,
+      Epic 1) và wsTelemetryAdapter (dashboard-backend, Epic 2) trước khi pilot 1
+      kênh thật chạy — hiện 2 phía chỉ test qua mock lẫn nhau, chưa từng chạy chung."
+    owner: "architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-09-07.md"
+  - id: "epic-2-retro-item-15-tái-khẳng-định-epic-1-retro-item-7-ask-f"
+    epic: 2
+    action: "Tái khẳng định epic-1-retro-item-7: Ask-First trong frozen Boundaries
+      phải HALT thật trước khi code — Story 2.1 và Story 2.2 (vòng 1) của Epic 2 vẫn
+      lặp lại anti-pattern resolve-sau-khi-code; Story 2.7 là ví dụ đúng quy trình
+      cần nhân rộng."
+    owner: "process-owner"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-09-07.md"
+  - id: "epic-2-retro-item-16-tái-khẳng-định-epic-1-retro-item-8-check"
+    epic: 2
+    action: "Tái khẳng định epic-1-retro-item-8: checklist đóng story phải xác nhận
+      git status sạch trước khi set done — tái diễn 1 lần ở Story 2.7 patch round
+      2 (tự sửa cùng ngày, nhưng cùng gốc lỗi quy trình)."
+    owner: "process-owner"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-09-07.md"
+  - id: "epic-3-retro-item-17-sửa-câu-chữ-tự-mâu-thuẫn-trong-spec-3-3"
+    epic: 3
+    action: "Sửa câu chữ tự mâu thuẫn trong spec-3-3-...md Change Log dòng 142 (\"\
+      Backend 181/181 test pass sau patch\" trong khi tự thừa nhận 1 fail pre-existing
+      ngay sau đó) cho khớp thực tế 180/181."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-09-12.md"
+  - id: "epic-3-retro-item-18-thêm-1-test-tích-hợp-ws-thật-mirror-patt"
+    epic: 3
+    action: "Thêm 1 test tích hợp WS thật (mirror pattern wsUiAdapter.test.ts client
+      connect MUỘN... replay) cho kịch bản reconnect làm mất ack-label (patch round
+      4 commit f64dfeb hiện chỉ có test store-unit-level)."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-09-12.md"
+  - id: "epic-3-retro-item-19-thực-thi-thật-epic-2-retro-item-10-gộp-p"
+    epic: 3
+    action: "Thực thi thật epic-2-retro-item-10 (gộp prune Map theo channel-registry
+      hot-reload) — giờ là 6 Map cùng root cause (channels, seenChannels, lastState,
+      channelDisplayStates/channelMachineOffline, bitrateHistory history Map, channelStore
+      channelHistory Map), Epic 3 thêm 2 Map mới mà chưa xử lý gốc."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-09-12.md"
+  - id: "epic-3-retro-item-20-thực-thi-thật-epic-2-retro-item-11-dời-d"
+    epic: 3
+    action: "Thực thi thật epic-2-retro-item-11 (dời DisplayState sang module type
+      trung lập) và epic-2-retro-item-12 (gộp hằng số lặp xuyên frontend/backend)
+      — Epic 3 thêm 2 cặp hằng số mới (HISTORY_RETENTION_MS, MAX_OPERATOR_LABEL_LENGTH)
+      vào đúng nhóm lỗi."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-09-12.md"
+  - id: "epic-3-retro-item-21-chuyển-bước-đóng-story-bmad-build-bmad-d"
+    epic: 3
+    action: "Chuyển bước đóng story (bmad-build/bmad-dev-story) từ nhắc nhở sang gate
+      cơ chế: tự kiểm git status --short rỗng trước khi cho phép set status: done
+      — tái diễn lần 3 (Epic 1 item-8, Epic 2 item-16, Epic 3 finding A5, lần này
+      nghiêm trọng nhất vì patch round-4 của story 3.3 suýt mất hẳn dù spec tự khẳng
+      định đã test pass)."
+    owner: "process-owner"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-09-12.md"
+  - id: "epic-3-retro-item-22-thêm-bước-đối-chiếu-status-frontmatter-c"
+    epic: 3
+    action: "Thêm bước đối chiếu status frontmatter của story spec với sprint-status.yaml
+      trước khi tin bất kỳ nguồn nào là done — phát hiện lệch ở Story 3.1 (spec: done,
+      sprint-status: review) mà không ai phát hiện cho tới retro."
+    owner: "process-owner"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-09-12.md"
+  - id: "epic-4-retro-item-23-sửa-handleheartbeat-resume-republish-cha"
+    epic: 4
+    action: "Sửa handleHeartbeat resume-republish (channelState.ts:339-356) để không
+      kích hoạt lại pipeline cảnh báo mới khi resume vẫn warning/critical, và đảm
+      bảo audience critical vẫn nhận phục hồi khi record.committed từng dừng ở warning
+      trước khi về ok. Cần renegotiate Boundaries Story 2.7/4.4 với người dùng trước
+      khi code. Thêm 2 test tích hợp cho 2 kịch bản này."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-23.md"
+  - id: "epic-4-retro-item-24-gộp-khối-fail-fast-telegram-story-4-2-ma"
+    epic: 4
+    action: "Gộp khối fail-fast Telegram Story 4.2 (main.ts:377-401) vào cùng 1 mảng
+      lỗi tổng hợp-rồi-throw-1-lần với story43Errors của Story 4.3 (main.ts:438-511)
+      - deploy lần đầu thiếu cả 9 biến chỉ cần 1 vòng sửa/restart."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-23.md"
+  - id: "epic-4-retro-item-25-thêm-subtype-vào-cooldown-key-của-telegr"
+    epic: 4
+    action: "Thêm subType vào cooldown key của TelegramAlertAdapter/EmailAlertAdapter
+      cho nhánh critical, tránh 1 escalation thật (đổi subType) bị cooldown của subType
+      cũ nuốt."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-23.md"
+  - id: "epic-4-retro-item-26-validate-hình-dạng-số-nguyên-cho-dashboa"
+    epic: 4
+    action: "Validate hình dạng số nguyên cho DASHBOARD_TELEGRAM_CHAT_ID/DASHBOARD_TELEGRAM_LEADERSHIP_CHAT_ID,
+      mirror pattern EMAIL_SHAPE_REGEX/parseSmtpPort đã áp dụng cho các biến khác
+      cùng Story 4.3."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-23.md"
+  - id: "epic-4-retro-item-27-readme-ghi-chú-dashboard_email_critical_"
+    epic: 4
+    action: "README: ghi chú DASHBOARD_EMAIL_CRITICAL_RECIPIENTS dedupe không phân
+      biệt hoa/thường giả định provider mail case-insensitive."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-23.md"
+  - id: "epic-4-retro-item-28-quy-trình-khi-renegotiate-boundaries-vì"
+    epic: 4
+    action: "Quy trình: khi renegotiate Boundaries vì 1 story cũ phát ra giá trị field
+      bất ngờ ở 1 nhánh cụ thể, review phải kiểm tra đủ mọi giá trị khác của field/điều
+      kiện đó - Story 4.4 round 1 chỉ renegotiate đúng nhánh displayState===ok, bỏ
+      sót nhánh warning/critical của cùng 1 re-publish path (handleHeartbeat resume),
+      khiến finding cross-story không bị phát hiện tới tận retro epic."
+    owner: "process-owner"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-23.md"
+  - id: "epic-5-retro-item-29-thêm-panel-focus-visible-outline-2px-sol"
+    epic: 5
+    action: "Thêm .panel:focus-visible { outline: 2px solid var(--color-focus-ring);
+      outline-offset: 2px; } vào DetailPanel.module.css, mirror pattern .cell/.ackInput/.ackButton
+      đã có — dialog chính của dashboard hiện không có viền focus themed khi nhận
+      focus bằng bàn phím. [DetailPanel.module.css:27]"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-23.md"
+  - id: "epic-5-retro-item-30-thêm-test-khoá-cell-focus-visible-đọc-so"
+    epic: 5
+    action: "Thêm test khoá .cell:focus-visible (đọc source text ChannelGridCell.module.css,
+      mirror pattern Story 5.2 đã dùng cho --color-cell-border ở ChannelGridCell.test.tsx:567-584)
+      — AC cốt lõi của Story 5.1 (viền focus 20 ô) hiện có thể bị xoá/đổi màu sai
+      AA mà 276/276 test vẫn xanh."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-23.md"
+  - id: "epic-5-retro-item-31-thêm-dev-time-validate-warning-cho-gridp"
+    epic: 5
+    action: "Thêm dev-time validate/warning cho gridPosition trùng lặp tại ChannelGrid.tsx
+      (trước .sort()/trước khi dùng làm React key), hoặc đổi key sang channel.channelId
+      — hiện key={channel.gridPosition} khiến 2 kênh trùng position rớt hẳn 1 kênh
+      khỏi màn hình giám sát 24/7 (không chỉ sai thứ tự như spec's Ask-First clause
+      giả định), zero defense ở frontend dù backend có enforce. [ChannelGrid.tsx:113]"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-23.md"
+  - id: "epic-5-retro-item-32-thêm-aria-hidden-true-cho-marker-zone-vu"
+    epic: 5
+    action: "Thêm aria-hidden=\"true\" cho marker zone vu-meter (⚠/✕), mirror colorBars/thumbnail
+      cùng file — glyph trần hiện lọt ra ngoài AT duyệt theo ký tự, đúng nhóm người
+      dùng epic 5 nhắm tới bị ảnh hưởng nhiều nhất. [ChannelGridCell.tsx:358-380]"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-23.md"
+  - id: "epic-5-retro-item-33-color-cell-border-alias-color-text-secon"
+    epic: 5
+    action: "--color-cell-border alias --color-text-secondary không có test tính contrast
+      WCAG thật (chỉ regex khoá tên biến) — thêm 1 test tiện ích tính relative luminance
+      thật. [tokens.css:26]"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-23.md"
+  - id: "epic-5-retro-item-34-thresholdmark-giảm-bề-rộng-6px-3px-khi-n"
+    epic: 5
+    action: ".thresholdMark giảm bề rộng 6px→3px khi nhường chỗ marker mới, chưa re-validate
+      độ nhận diện trên màn hình thật."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-23.md"
+  - id: "epic-5-retro-item-35-chưa-có-integration-test-grid-panel-thật"
+    epic: 5
+    action: "Chưa có integration test grid+panel thật cùng lúc (test hiện dùng <button>
+      giả lập thay vì render ChannelGrid thật) — không cần dependency mới để làm."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-23.md"
+  - id: "epic-5-retro-item-36-quy-trình-khi-1-frozen-ask-first-clause"
+    epic: 5
+    action: "Quy trình: khi 1 frozen Ask-First clause không trigger trong 1 story,
+      story phải tự hỏi thêm 1 bước \"giả sử điều kiện này xảy ra thật, có cơ chế
+      nào (runtime hoặc test) bắt được không, hay đang dựa vào dữ liệu sạch may mắn?\"\
+      \ — Story 5.1's Ask-First clause (gridPosition trùng) giả định hậu quả là sai
+      thứ tự, nhưng finding thật (React key collision) cho thấy hậu quả là rớt hẳn
+      1 kênh; không trigger nên không ai kiểm chứng được giả định nền có đúng không.
+      Đề xuất riêng: epic-1-retro-item-8 (git-status sạch trước khi done) nên chuyển
+      từ nhắc nhở sang gate cơ chế thật — epic 5 là epic thứ 2 liên tiếp (sau epic
+      4) giữ kỷ luật thủ công ổn định."
+    owner: "process-owner"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-23.md"
+  - id: "story-1-8-patch-2026-09-24-bitrate-telemetry-sai-field-srt"
+    epic: 1
+    action: "Story 1.8 patch sau-Done (phát hiện ngoài code-review round, lúc build/
+      chạy end-to-end thật trên máy dev): sendTelemetry() báo cáo bitrate_kbps bằng
+      SrtSocket::estimatedBandwidthMbps() (mbpsBandwidth - băng thông ƯỚC LƯỢNG
+      đường truyền, đúng chỗ dùng cho AbrController nhưng sai cho báo cáo bitrate
+      thực tế) khiến bitrate_pct phía dashboard-backend ra số phi lý (~50485%).
+      Sửa: thêm SrtSocket::actualRecvRateMbps() (field mbpsRecvRate - tốc độ NHẬN
+      thực tế, đúng vì sendTelemetry() chỉ chạy ở Center/bên nhận), dùng thay thế
+      trong sendTelemetry(); estimatedBandwidthMbps() giữ nguyên cho AbrController.
+      Build sạch + 201/201 test pass, verify qua WS client thật (bitrate_pct ~240-
+      250% sau fix). Commit a9c058a (transport-core, branch story-2-2-channel-
+      registry-hot-reload) - gộp chung 1 thay đổi khác không liên quan (fallback
+      JSON plaintext trong ChannelConfig::loadFromFile(), người dùng xác nhận giữ)."
+    owner: "dev"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/spec-1-8-telemetry-thô-vu-meter-snapshot-heartbeat-qua-lan-có-xác-thực.md"
