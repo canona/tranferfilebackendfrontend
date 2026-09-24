@@ -2,7 +2,7 @@
 title: 'Epic 2 hardening (item-10): dọn Map orphan khi gỡ kênh khỏi channel-registry'
 type: 'chore'
 created: '2026-09-24'
-status: 'in-review'
+status: 'done'
 baseline_commit: '8506ab953db2350726b9e76813d35832ff19b720'
 review_loop_iteration: 0
 context: ['{project-root}/_bmad-output/implementation-artifacts/epic-2-context.md']
@@ -79,3 +79,60 @@ Frontend không cần cơ chế push riêng vì `registry-snapshot` vốn đã f
 - `cd dashboard-backend && npm test` -- pass, cover `pruneChannel`/`onEntriesRemoved` diff (gỡ kênh, đổi metadata, reload lỗi).
 - `cd dashboard-frontend && npm test` -- pass, cover `applyRegistrySnapshot` pruning.
 - `cd dashboard-backend && npm run build && cd ../dashboard-frontend && npm run build` -- build sạch cả 2 phía.
+
+## Suggested Review Order
+
+**Phát hiện kênh bị gỡ (entry point)**
+
+- Điểm phát hiện duy nhất: diff registry cũ/mới ngay sau khi `reload()` hoán đổi Map thành công, chỉ tính khi thực sự có kênh bị gỡ.
+  [`fileChannelRegistryAdapter.ts:338`](../../dashboard-backend/src/adapters/outbound/fileChannelRegistryAdapter.ts#L338)
+
+- Đăng ký listener + Map lưu trữ - hỗ trợ nhiều listener, không giới hạn 1 caller.
+  [`fileChannelRegistryAdapter.ts:259`](../../dashboard-backend/src/adapters/outbound/fileChannelRegistryAdapter.ts#L259)
+
+- Cô lập lỗi từng listener (patch review) - 1 listener throw không mislog thành `registry_reload_error`, không chặn listener sau nó.
+  [`fileChannelRegistryAdapter.ts:349`](../../dashboard-backend/src/adapters/outbound/fileChannelRegistryAdapter.ts#L349)
+
+**Fan-out dọn dẹp backend (cô lập lỗi từng kênh)**
+
+- `createEntriesRemovedHandler` - hàm export riêng (mirror `createCompositeAlertPort`), test được bằng fake nhẹ không cần `startApp()`.
+  [`main.ts:213`](../../dashboard-backend/app/main.ts#L213)
+
+- `PruneChannelPort` - interface cấu trúc tối thiểu, không ràng buộc 3 concrete class cụ thể.
+  [`main.ts:200`](../../dashboard-backend/app/main.ts#L200)
+
+- Wiring thật tại composition root - đặt SAU khi cả 3 service đã khởi tạo xong.
+  [`main.ts:723`](../../dashboard-backend/app/main.ts#L723)
+
+**3 điểm `pruneChannel()` backend**
+
+- `ChannelStateService.pruneChannel` - xoá record debounce/heartbeat/ack nội bộ.
+  [`channelState.ts:509`](../../dashboard-backend/src/core/channelState.ts#L509)
+
+- `BitrateHistoryService.pruneChannel` - xoá ring buffer bitrate.
+  [`bitrateHistory.ts:72`](../../dashboard-backend/src/core/bitrateHistory.ts#L72)
+
+- `WsUiAdapterHandle.pruneChannel` - xoá cả 4 Map cache replay-on-connect, không broadcast.
+  [`wsUiAdapter.ts:653`](../../dashboard-backend/src/adapters/outbound/wsUiAdapter.ts#L653)
+
+**Lọc state phía frontend (registry-snapshot)**
+
+- `applyRegistrySnapshot` - build `nextIds`, lọc 5 field qua `filterByIds`, giữ nguyên reset `channelAck`.
+  [`channelStore.ts:227`](../../dashboard-frontend/src/state/channelStore.ts#L227)
+
+- `filterByIds` (patch review: gộp từ 2 hàm trùng lặp Map/Set) - chỉ copy khi thực sự có key bị lọc.
+  [`channelStore.ts:135`](../../dashboard-frontend/src/state/channelStore.ts#L135)
+
+**Peripherals - tests**
+
+- Test cô lập lỗi: 1 listener throw vẫn giữ `registry_reload_success`, listener sau vẫn chạy.
+  [`fileChannelRegistryAdapter.test.ts:668`](../../dashboard-backend/tests/fileChannelRegistryAdapter.test.ts#L668)
+
+- Test `createEntriesRemovedHandler`: all-succeed / 1-throw-giữa-2 / all-throw / rỗng.
+  [`main.test.ts:788`](../../dashboard-backend/tests/main.test.ts#L788)
+
+- Test tích hợp thật qua `startApp()`: hot-reload gỡ kênh dọn cả 3 service + WS UI client mới không còn replay.
+  [`main.test.ts:1605`](../../dashboard-backend/tests/main.test.ts#L1605)
+
+- Test `applyRegistrySnapshot` lọc đúng 5 field, giữ reference khi registry không đổi thành viên.
+  [`channelStore.test.ts:61`](../../dashboard-frontend/tests/channelStore.test.ts#L61)
