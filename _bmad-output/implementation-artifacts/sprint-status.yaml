@@ -404,3 +404,19 @@ action_items:
     owner: "dev"
     status: done
     ref: "_bmad-output/implementation-artifacts/spec-1-8-telemetry-thô-vu-meter-snapshot-heartbeat-qua-lan-có-xác-thực.md"
+  - id: "story-3-3-fix-flaky-installservice-test-timeout-50ms"
+    epic: 3
+    action: "installService.test.js bị flaky thật (xác nhận thực nghiệm 2026-09-24,
+      10 lần chạy tại 2 commit khác nhau qua git worktree riêng - xem deferred-
+      work.md mục CONFIRMED): test đầu tiên (dòng 83-104) đua giữa 2 setImmediate
+      lồng nhau với startTimeoutMs=50ms (dòng 15, dùng trong installService.ts:174-
+      182's setTimeout) - dưới tải CPU thật (chạy cùng 187 test khác), timeout đôi
+      khi thắng trước setImmediate. Không chỉ pass/fail lật mà cả TỔNG SỐ test báo
+      cáo cũng đổi (1/2/2/2/9 test) - cơ chế chính xác gây mất test chưa rõ. Fix
+      đề xuất: tăng SHORT_TIMEOUT_MS (hiện 50ms, thử 500ms-1s) hoặc bỏ phụ thuộc
+      wall-clock timing thật (dùng node:test's mock timer thay setImmediate/
+      setTimeout đua nhau). Toàn bộ số liệu 'X/Y test pass' lịch sử trong spec-3-3
+      Change Log không đáng tin cậy vì lý do này, không phải lỗi số học."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/deferred-work.md"

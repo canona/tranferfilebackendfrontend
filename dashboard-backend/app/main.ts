@@ -192,6 +192,57 @@ export function createCompositeAlertPort(ports: readonly AlertOutboundPort[], lo
   };
 }
 
+// spec-epic2-item-10-12: cấu trúc tối thiểu 3 service backend cần dọn khi 1
+// channel_id bị gỡ khỏi channel-registry (hot-reload) đều phải thoả - dùng
+// interface cấu trúc riêng (KHÔNG phải `ChannelStateService`/`HistoryPort`/
+// `WsUiAdapterHandle` cụ thể) để hàm dưới đây test được bằng fake nhẹ, không
+// cần start cả `startApp()`.
+export interface PruneChannelPort {
+  pruneChannel(channelId: string): void;
+}
+
+// Code review [patch]: extracted riêng khỏi wiring inline ở `startApp()` -
+// mirror `createCompositeAlertPort` phía trên ("Vẫn export riêng ... để test
+// được hành vi cô lập lỗi từng nhánh mà không cần start cả startApp()").
+//
+// Boundaries (I/O matrix): "Không throw, 1 kênh lỗi không chặn kênh khác" - 1
+// channel_id trong batch `ids` mà 1 trong 3 `pruneChannel()` throw KHÔNG được
+// chặn các channel_id CÒN LẠI trong CÙNG batch khỏi được prune/log - cô lập
+// riêng từng `id` bằng try/catch của chính nó (mirror `createCompositeAlertPort`'s
+// try/catch riêng từng port + try/catch riêng cho chính `logger.log(...)`).
+export function createEntriesRemovedHandler(
+  channelStateService: PruneChannelPort,
+  bitrateHistoryService: PruneChannelPort,
+  ui: PruneChannelPort,
+  logger: Logger
+): (ids: readonly string[]) => void {
+  return (ids: readonly string[]): void => {
+    for (const id of ids) {
+      try {
+        channelStateService.pruneChannel(id);
+        bitrateHistoryService.pruneChannel(id);
+        ui.pruneChannel(id);
+        logger.log({
+          channel_id: id,
+          event_type: 'registry_channel_pruned',
+          reason: 'channel_id bị gỡ khỏi channel-registry (hot-reload) - đã dọn state theo-channelId ở backend',
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        try {
+          logger.log({
+            channel_id: id,
+            event_type: 'channel_prune_error',
+            reason: `pruneChannel throw cho channel_id này, các channel_id còn lại trong cùng batch vẫn tiếp tục được xử lý: ${message}`,
+          });
+        } catch {
+          // intentionally swallowed - mirror createCompositeAlertPort
+        }
+      }
+    }
+  };
+}
+
 export interface AppHandle {
   ws: WsTelemetryAdapterHandle;
   ui: WsUiAdapterHandle;
@@ -669,18 +720,7 @@ export async function startApp(config?: {
   // tạo xong - `registryPort.onEntriesRemoved()` chỉ phát khi 1 lần `reload()`
   // THÀNH CÔNG thực sự gỡ >=1 channel_id (không phát khi reload chỉ đổi
   // metadata, không phát khi reload lỗi validate - `fileChannelRegistryAdapter.ts`).
-  registryPort.onEntriesRemoved((ids) => {
-    for (const id of ids) {
-      channelStateService.pruneChannel(id);
-      bitrateHistoryService.pruneChannel(id);
-      ui.pruneChannel(id);
-      logger.log({
-        channel_id: id,
-        event_type: 'registry_channel_pruned',
-        reason: 'channel_id bị gỡ khỏi channel-registry (hot-reload) - đã dọn state theo-channelId ở backend',
-      });
-    }
-  });
+  registryPort.onEntriesRemoved(createEntriesRemovedHandler(channelStateService, bitrateHistoryService, ui, logger));
 
   // Story 2.7 (Design Notes): "checkHeartbeatTimeouts() KHÔNG tự quản lý timer
   // nội bộ ... production tự gọi định kỳ từ composition root" - đây CHÍNH là

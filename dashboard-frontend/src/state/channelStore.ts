@@ -125,36 +125,49 @@ type Listener = () => void;
 // THỰC SỰ có >=1 key bị lọc (Boundaries: "tránh re-render thừa") - trường hợp
 // phổ biến nhất (reload chỉ đổi metadata, tập channel_id không đổi) trả về
 // đúng tham chiếu cũ, không kích hoạt copy nào.
-function filterMapByIds<V>(map: ReadonlyMap<string, V>, nextIds: ReadonlySet<string>): ReadonlyMap<string, V> {
+//
+// Code review [patch]: `Map` VÀ `Set` đều có `.keys()` (với `Set`, hệt
+// `.values()`) - dùng chung 1 hàm với 2 overload thay vì lặp lại y hệt logic
+// "quét .keys() tìm key bị lọc" ở 2 hàm riêng biệt (khác biệt DUY NHẤT giữa
+// Map/Set chỉ là bước "rebuild": `.set(k,v)` so với `.add(k)`).
+function filterByIds<V>(collection: ReadonlyMap<string, V>, nextIds: ReadonlySet<string>): ReadonlyMap<string, V>;
+function filterByIds(collection: ReadonlySet<string>, nextIds: ReadonlySet<string>): ReadonlySet<string>;
+function filterByIds<V>(
+  collection: ReadonlyMap<string, V> | ReadonlySet<string>,
+  nextIds: ReadonlySet<string>
+): ReadonlyMap<string, V> | ReadonlySet<string> {
   let needsCopy = false;
-  for (const key of map.keys()) {
+  for (const key of collection.keys()) {
     if (!nextIds.has(key)) {
       needsCopy = true;
       break;
     }
   }
-  if (!needsCopy) return map;
-  const next = new Map<string, V>();
-  for (const [key, value] of map) {
-    if (nextIds.has(key)) next.set(key, value);
+  if (!needsCopy) return collection;
+
+  // Code review [patch]: dùng type predicate riêng (`is`) thay vì
+  // `collection instanceof Map` trực tiếp trong thân hàm generic - TS không
+  // luôn giữ được narrowing của union `ReadonlyMap<string, V> |
+  // ReadonlySet<string>` xuyên qua `instanceof` inline khi tham số kiểu `V`
+  // còn generic (vòng lặp `for...of` bên dưới suy ra sai kiểu phần tử là
+  // `string | [string, V]`). 1 type guard function tường minh buộc TS narrow
+  // đúng theo khai báo `collection is ReadonlyMap<string, V>`.
+  if (isMap(collection)) {
+    const next = new Map<string, V>();
+    for (const [key, value] of collection) {
+      if (nextIds.has(key)) next.set(key, value);
+    }
+    return next;
+  }
+  const next = new Set<string>();
+  for (const key of collection) {
+    if (nextIds.has(key)) next.add(key);
   }
   return next;
 }
 
-function filterSetByIds(set: ReadonlySet<string>, nextIds: ReadonlySet<string>): ReadonlySet<string> {
-  let needsCopy = false;
-  for (const key of set) {
-    if (!nextIds.has(key)) {
-      needsCopy = true;
-      break;
-    }
-  }
-  if (!needsCopy) return set;
-  const next = new Set<string>();
-  for (const key of set) {
-    if (nextIds.has(key)) next.add(key);
-  }
-  return next;
+function isMap<V>(collection: ReadonlyMap<string, V> | ReadonlySet<string>): collection is ReadonlyMap<string, V> {
+  return collection instanceof Map;
 }
 
 const EMPTY_STATE: ChannelStoreState = {
@@ -217,11 +230,11 @@ export class ChannelStore {
       ...this.state,
       channels,
       channelAck: new Map(),
-      channelDisplayStates: filterMapByIds(this.state.channelDisplayStates, nextIds),
-      channelMachineOffline: filterSetByIds(this.state.channelMachineOffline, nextIds),
-      channelSnapshots: filterMapByIds(this.state.channelSnapshots, nextIds),
-      channelHistory: filterMapByIds(this.state.channelHistory, nextIds),
-      seenChannelIds: filterSetByIds(this.state.seenChannelIds, nextIds),
+      channelDisplayStates: filterByIds(this.state.channelDisplayStates, nextIds),
+      channelMachineOffline: filterByIds(this.state.channelMachineOffline, nextIds),
+      channelSnapshots: filterByIds(this.state.channelSnapshots, nextIds),
+      channelHistory: filterByIds(this.state.channelHistory, nextIds),
+      seenChannelIds: filterByIds(this.state.seenChannelIds, nextIds),
     });
   }
 

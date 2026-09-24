@@ -661,6 +661,47 @@ test('onEntriesRemoved(): hỗ trợ đăng ký nhiều listener -> mọi listen
   }
 });
 
+// Code review [patch]: 1 listener throw KHÔNG được: (a) rơi ra ngoài, lọt vào
+// catch của `loadAndValidate` bên ngoài (mislog 1 lần reload ĐÃ THÀNH CÔNG
+// thành registry_reload_error dù Map đã hoán đổi xong), (b) chặn các listener
+// đăng ký SAU nó không được gọi trong cùng batch.
+test('onEntriesRemoved(): 1 listener throw -> vẫn log registry_reload_success (KHÔNG lẫn thành registry_reload_error), listener đăng ký SAU vẫn được gọi, log entries_removed_listener_error riêng', () => {
+  const { filePath, cleanup } = writeTempRegistryFile(
+    JSON.stringify({
+      'chan-a': validEntry({ grid_position: 0 }),
+      'chan-b': validEntry({ grid_position: 1 }),
+    })
+  );
+  try {
+    const logger = new FakeLogger();
+    const adapter = new FileChannelRegistryAdapter(filePath, logger);
+    const afterCalls: (readonly string[])[] = [];
+    adapter.onEntriesRemoved(() => {
+      throw new Error('lỗi giả lập từ listener đầu tiên');
+    });
+    adapter.onEntriesRemoved((ids) => afterCalls.push(ids));
+
+    writeFileSync(filePath, JSON.stringify({ 'chan-a': validEntry({ grid_position: 0 }) }), 'utf8');
+    assert.doesNotThrow(() => adapter.reload());
+
+    // Map đã hoán đổi xong THẬT (reload() bản chất vẫn thành công) - phải log
+    // registry_reload_success, KHÔNG phải registry_reload_error.
+    assert.equal(logger.events.filter((e) => e.event_type === 'registry_reload_success').length, 1);
+    assert.equal(logger.events.filter((e) => e.event_type === 'registry_reload_error').length, 0);
+    assert.equal(adapter.getEntry('chan-b'), undefined, 'registry vẫn thực sự hoán đổi dù listener throw');
+
+    // Listener đăng ký SAU listener throw vẫn phải được gọi trong CÙNG batch.
+    assert.equal(afterCalls.length, 1);
+    assert.deepEqual([...afterCalls[0]!], ['chan-b']);
+
+    const listenerErrorEvents = logger.events.filter((e) => e.event_type === 'entries_removed_listener_error');
+    assert.equal(listenerErrorEvents.length, 1);
+    assert.ok(listenerErrorEvents[0]?.reason?.includes('lỗi giả lập từ listener đầu tiên'));
+  } finally {
+    cleanup();
+  }
+});
+
 test('stop(): đóng watcher -> ghi file sau đó không còn kích hoạt reload nào nữa', async () => {
   const { filePath, cleanup } = writeTempRegistryFile(JSON.stringify({ 'chan-a': validEntry({ grid_position: 0 }) }));
   try {

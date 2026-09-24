@@ -337,8 +337,25 @@ export class FileChannelRegistryAdapter implements ChannelRegistryPort {
       // đổi metadata, không gỡ kênh -> không gọi listener/log gì thêm").
       const removed = [...previousRegistry.keys()].filter((id) => !next.has(id));
       if (removed.length > 0) {
+        // Code review [patch]: mảng hỗ trợ nhiều listener - 1 listener throw
+        // (bug tương lai ở caller, vd `main.ts`'s wiring) KHÔNG được: (a) thoát
+        // ra ngoài rơi vào catch bên dưới (vốn dành riêng cho lỗi
+        // `loadAndValidate`, sẽ mislog 1 lần reload ĐÃ THÀNH CÔNG thành
+        // `registry_reload_error` dù Map đã hoán đổi xong), (b) chặn các
+        // listener đăng ký SAU nó trong cùng batch này không được gọi. Cô lập
+        // từng listener bằng try/catch riêng - mirror pattern
+        // `handleTelemetry`/`clearAckIfAcknowledged` ở `channelState.ts` (log
+        // rõ ràng, không rethrow, tiếp tục vòng lặp).
         for (const listener of this.entriesRemovedListeners) {
-          listener(removed);
+          try {
+            listener(removed);
+          } catch (err) {
+            this.logger.log({
+              channel_id: '',
+              event_type: 'entries_removed_listener_error',
+              reason: `1 onEntriesRemoved listener throw, các listener còn lại vẫn tiếp tục nhận removed=[${removed.join(',')}]: ${(err as Error)?.message ?? String(err)}`,
+            });
+          }
         }
       }
     } catch (err) {

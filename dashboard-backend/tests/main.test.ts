@@ -25,6 +25,8 @@ import {
   parseSmtpPort,
   startApp,
   createCompositeAlertPort,
+  createEntriesRemovedHandler,
+  type PruneChannelPort,
 } from '../app/main.js';
 import type { AlertOutboundPort, ChannelStateChange } from '../src/ports/AlertOutboundPort.js';
 import type { Logger, LogEvent } from '../src/logging/logger.js';
@@ -759,6 +761,109 @@ test('createCompositeAlertPort: ports rỗng ([]) -> publishStateChange no-op, K
 
   const change: ChannelStateChange = { channelId: 'chan-1', displayState: 'ok', timestamp: '2026-09-06T00:00:00.000Z' };
   assert.doesNotThrow(() => composite.publishStateChange(change));
+  assert.equal(logger.events.length, 0);
+});
+
+// spec-epic2-item-10-12 (code review patch): `createEntriesRemovedHandler`
+// extracted khỏi wiring inline của `startApp()` (mirror `createCompositeAlertPort`
+// - test được bằng fake nhẹ, không cần start cả app thật/chờ watcher hot-reload).
+class FakePruneTarget implements PruneChannelPort {
+  calls: string[] = [];
+  pruneChannel(channelId: string): void {
+    this.calls.push(channelId);
+  }
+}
+
+class ThrowingPruneTarget implements PruneChannelPort {
+  calls: string[] = [];
+  constructor(private readonly failFor: Set<string>) {}
+  pruneChannel(channelId: string): void {
+    this.calls.push(channelId);
+    if (this.failFor.has(channelId)) {
+      throw new Error(`lỗi giả lập pruneChannel(${channelId})`);
+    }
+  }
+}
+
+test('createEntriesRemovedHandler: gọi ĐỦ CẢ 3 target + log registry_channel_pruned cho MỖI channel_id trong batch', () => {
+  const channelStateService = new FakePruneTarget();
+  const bitrateHistoryService = new FakePruneTarget();
+  const ui = new FakePruneTarget();
+  const logger = new FakeLogger();
+  const handler = createEntriesRemovedHandler(channelStateService, bitrateHistoryService, ui, logger);
+
+  handler(['chan-1', 'chan-2']);
+
+  assert.deepEqual(channelStateService.calls, ['chan-1', 'chan-2']);
+  assert.deepEqual(bitrateHistoryService.calls, ['chan-1', 'chan-2']);
+  assert.deepEqual(ui.calls, ['chan-1', 'chan-2']);
+  const prunedEvents = logger.events.filter((e) => e.event_type === 'registry_channel_pruned');
+  assert.equal(prunedEvents.length, 2);
+  assert.deepEqual(
+    prunedEvents.map((e) => e.channel_id).sort(),
+    ['chan-1', 'chan-2']
+  );
+});
+
+// Code review [patch]: 1 trong 3 `pruneChannel()` throw cho 1 channel_id
+// KHÔNG được chặn các channel_id CÒN LẠI trong CÙNG batch khỏi được
+// prune/log (I/O matrix "Không throw, 1 kênh lỗi không chặn kênh khác").
+test('createEntriesRemovedHandler: 1 pruneChannel throw cho 1 channel_id (giữa >=2 channel_id bị gỡ) -> KHÔNG throw ra ngoài, log channel_prune_error cho channel_id lỗi, channel_id còn lại VẪN được prune/log registry_channel_pruned bình thường', () => {
+  const channelStateService = new FakePruneTarget();
+  const bitrateHistoryService = new ThrowingPruneTarget(new Set(['chan-1']));
+  const ui = new FakePruneTarget();
+  const logger = new FakeLogger();
+  const handler = createEntriesRemovedHandler(channelStateService, bitrateHistoryService, ui, logger);
+
+  assert.doesNotThrow(() => handler(['chan-1', 'chan-2']));
+
+  // chan-1: channelStateService đã chạy TRƯỚC khi bitrateHistoryService throw
+  // (thứ tự lệnh trong try) - nhưng `ui.pruneChannel('chan-1')` không bao giờ
+  // chạy tới (đúng hành vi "1 try/catch bọc cả 3 lệnh + log/id", không phải
+  // cô lập riêng từng lệnh trong CÙNG 1 id - khớp yêu cầu review).
+  assert.deepEqual(channelStateService.calls, ['chan-1', 'chan-2']);
+  assert.deepEqual(bitrateHistoryService.calls, ['chan-1', 'chan-2']);
+  assert.deepEqual(ui.calls, ['chan-2'], 'ui.pruneChannel("chan-1") không được gọi vì bitrateHistoryService đã throw trước đó trong CÙNG try');
+
+  const pruneErrorEvents = logger.events.filter((e) => e.event_type === 'channel_prune_error');
+  assert.equal(pruneErrorEvents.length, 1);
+  assert.equal(pruneErrorEvents[0]?.channel_id, 'chan-1');
+  assert.ok(pruneErrorEvents[0]?.reason?.includes('lỗi giả lập pruneChannel(chan-1)'));
+
+  // chan-2 (channel_id còn lại trong CÙNG batch) hoàn toàn không bị ảnh hưởng -
+  // vẫn prune đủ cả 3 target + log registry_channel_pruned bình thường.
+  const prunedEvents = logger.events.filter((e) => e.event_type === 'registry_channel_pruned');
+  assert.equal(prunedEvents.length, 1);
+  assert.equal(prunedEvents[0]?.channel_id, 'chan-2');
+});
+
+test('createEntriesRemovedHandler: TẤT CẢ pruneChannel throw -> mỗi channel_id log đúng 1 channel_prune_error, KHÔNG log registry_channel_pruned nào, KHÔNG throw ra ngoài', () => {
+  const failAll = new ThrowingPruneTarget(new Set(['chan-1', 'chan-2']));
+  const channelStateService = failAll;
+  const bitrateHistoryService = new FakePruneTarget();
+  const ui = new FakePruneTarget();
+  const logger = new FakeLogger();
+  const handler = createEntriesRemovedHandler(channelStateService, bitrateHistoryService, ui, logger);
+
+  assert.doesNotThrow(() => handler(['chan-1', 'chan-2']));
+
+  const pruneErrorEvents = logger.events.filter((e) => e.event_type === 'channel_prune_error');
+  assert.equal(pruneErrorEvents.length, 2);
+  assert.deepEqual(
+    pruneErrorEvents.map((e) => e.channel_id).sort(),
+    ['chan-1', 'chan-2']
+  );
+  assert.equal(logger.events.filter((e) => e.event_type === 'registry_channel_pruned').length, 0);
+});
+
+test('createEntriesRemovedHandler: ids rỗng ([]) -> no-op, không throw, không log gì', () => {
+  const channelStateService = new FakePruneTarget();
+  const bitrateHistoryService = new FakePruneTarget();
+  const ui = new FakePruneTarget();
+  const logger = new FakeLogger();
+  const handler = createEntriesRemovedHandler(channelStateService, bitrateHistoryService, ui, logger);
+
+  assert.doesNotThrow(() => handler([]));
   assert.equal(logger.events.length, 0);
 });
 

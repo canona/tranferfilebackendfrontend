@@ -2,7 +2,7 @@
 title: 'Epic 2 hardening (item-10): dọn Map orphan khi gỡ kênh khỏi channel-registry'
 type: 'chore'
 created: '2026-09-24'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '8506ab953db2350726b9e76813d35832ff19b720'
 review_loop_iteration: 0
 context: ['{project-root}/_bmad-output/implementation-artifacts/epic-2-context.md']
@@ -54,13 +54,13 @@ context: ['{project-root}/_bmad-output/implementation-artifacts/epic-2-context.m
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `fileChannelRegistryAdapter.ts` -- `onEntriesRemoved()` + diff -- điểm phát hiện duy nhất khi gỡ kênh.
-- [ ] `channelState.ts` -- `pruneChannel()` -- dọn Map core debounce/heartbeat/ack.
-- [ ] `bitrateHistory.ts` -- `pruneChannel()` -- dọn ring buffer bitrate.
-- [ ] `wsUiAdapter.ts` -- `pruneChannel()` -- dọn 4 Map cache replay-on-connect.
-- [ ] `main.ts` -- wiring gọi 3 `pruneChannel` -- kích hoạt cơ chế production.
-- [ ] `channelStore.ts` -- lọc 6 Map/Set -- dọn phía frontend.
-- [ ] Test theo I/O matrix cả 2 phía.
+- [x] `fileChannelRegistryAdapter.ts` -- `onEntriesRemoved()` + diff -- điểm phát hiện duy nhất khi gỡ kênh.
+- [x] `channelState.ts` -- `pruneChannel()` -- dọn Map core debounce/heartbeat/ack.
+- [x] `bitrateHistory.ts` -- `pruneChannel()` -- dọn ring buffer bitrate.
+- [x] `wsUiAdapter.ts` -- `pruneChannel()` -- dọn 4 Map cache replay-on-connect.
+- [x] `main.ts` -- wiring gọi 3 `pruneChannel` -- kích hoạt cơ chế production.
+- [x] `channelStore.ts` -- lọc 6 Map/Set -- dọn phía frontend.
+- [x] Test theo I/O matrix cả 2 phía.
 
 **Acceptance Criteria:**
 - Given 1 channel_id có đầy đủ state rồi bị gỡ khỏi registry, when hot-reload thành công, then cả 3 service backend không còn record của channel_id đó.

@@ -54,6 +54,87 @@ describe('ChannelStore', () => {
     expect(state.channels[0]?.channelId).toBe('chan-2');
   });
 
+  // spec-epic2-item-10-12: registry gỡ hẳn 1 channel_id đã có state đầy đủ ở
+  // NHIỀU Map/Set khác nhau -> filter phải chạm đúng cả 5 field (channelAck
+  // đã có coverage riêng ở describe('applyAckChange') phía dưới - reset
+  // unconditional, không đổi).
+  it('applyRegistrySnapshot: channel_id bị gỡ khỏi danh sách mới -> lọc bỏ khỏi channelDisplayStates/channelMachineOffline/channelSnapshots/channelHistory/seenChannelIds', () => {
+    const store = createChannelStore();
+    store.applyRegistrySnapshot([
+      { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '0900000001', gridPosition: 0 },
+      { channelId: 'chan-2', stationName: 'Đài 2', contactName: 'B', contactPhone: '0900000002', gridPosition: 1 },
+    ]);
+    store.applyChannelSeen('chan-1');
+    store.applyChannelSeen('chan-2');
+    store.applyChannelDisplayStateChange('chan-1', 'warning');
+    store.applyChannelDisplayStateChange('chan-2', 'critical', 'machine-offline');
+    store.applyChannelSnapshot('chan-1', 'ZmFrZQ==');
+    store.applyChannelSnapshot('chan-2', 'ZmFrZQ==');
+    store.applyHistorySnapshot('chan-1', { state: 'loaded', points: [{ timestampMs: 0, bitratePct: 50 }] });
+    store.applyHistorySnapshot('chan-2', { state: 'loaded', points: [{ timestampMs: 0, bitratePct: 50 }] });
+
+    // Snapshot mới chỉ còn chan-2 - chan-1 bị gỡ hẳn.
+    store.applyRegistrySnapshot([
+      { channelId: 'chan-2', stationName: 'Đài 2', contactName: 'B', contactPhone: '0900000002', gridPosition: 1 },
+    ]);
+
+    const state = store.getState();
+    expect(state.channelDisplayStates.has('chan-1')).toBe(false);
+    expect(state.channelMachineOffline.has('chan-1')).toBe(false);
+    expect(state.channelSnapshots.has('chan-1')).toBe(false);
+    expect(state.channelHistory.has('chan-1')).toBe(false);
+    expect(state.seenChannelIds.has('chan-1')).toBe(false);
+
+    // chan-2 (còn trong danh sách mới) hoàn toàn không bị ảnh hưởng.
+    expect(state.channelDisplayStates.get('chan-2')).toBe('critical');
+    expect(state.channelMachineOffline.has('chan-2')).toBe(true);
+    expect(state.channelSnapshots.has('chan-2')).toBe(true);
+    expect(state.channelHistory.has('chan-2')).toBe(true);
+    expect(state.seenChannelIds.has('chan-2')).toBe(true);
+  });
+
+  it('applyRegistrySnapshot: tập channel_id giữ nguyên -> KHÔNG tạo Map/Set mới nào (tránh re-render thừa)', () => {
+    const store = createChannelStore();
+    store.applyRegistrySnapshot([
+      { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '0900000001', gridPosition: 0 },
+    ]);
+    store.applyChannelSeen('chan-1');
+    store.applyChannelDisplayStateChange('chan-1', 'warning');
+    store.applyChannelSnapshot('chan-1', 'ZmFrZQ==');
+    store.applyHistorySnapshot('chan-1', { state: 'loaded', points: [] });
+
+    const before = store.getState();
+
+    // Reload chỉ đổi metadata (station_name), tập channel_id không đổi.
+    store.applyRegistrySnapshot([
+      { channelId: 'chan-1', stationName: 'Đài 1 - đổi tên', contactName: 'A', contactPhone: '0900000001', gridPosition: 0 },
+    ]);
+
+    const after = store.getState();
+    expect(after.channelDisplayStates).toBe(before.channelDisplayStates);
+    expect(after.channelMachineOffline).toBe(before.channelMachineOffline);
+    expect(after.channelSnapshots).toBe(before.channelSnapshots);
+    expect(after.channelHistory).toBe(before.channelHistory);
+    expect(after.seenChannelIds).toBe(before.seenChannelIds);
+    // `channels` (metadata) VẪN phải ghi đè - đây là field snapshot chính.
+    expect(after.channels[0]?.stationName).toBe('Đài 1 - đổi tên');
+  });
+
+  it('applyRegistrySnapshot: danh sách rỗng -> lọc bỏ TOÀN BỘ state của mọi channel_id đã có', () => {
+    const store = createChannelStore();
+    store.applyRegistrySnapshot([
+      { channelId: 'chan-1', stationName: 'Đài 1', contactName: 'A', contactPhone: '0900000001', gridPosition: 0 },
+    ]);
+    store.applyChannelSeen('chan-1');
+    store.applyChannelDisplayStateChange('chan-1', 'critical');
+
+    store.applyRegistrySnapshot([]);
+
+    const state = store.getState();
+    expect(state.channelDisplayStates.size).toBe(0);
+    expect(state.seenChannelIds.size).toBe(0);
+  });
+
   it('applyChannelSeen: thêm channelId vào seenChannelIds', () => {
     const store = createChannelStore();
     store.applyChannelSeen('chan-1');
