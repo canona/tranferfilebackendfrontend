@@ -119,6 +119,44 @@ export interface ChannelStoreState {
 
 type Listener = () => void;
 
+// spec-epic2-item-10-12: helper dùng chung cho `applyRegistrySnapshot` - lọc
+// bỏ mọi key KHÔNG còn trong `nextIds` (channel_id đã bị gỡ khỏi
+// channel-registry ở lần snapshot mới nhất). Chỉ tạo bản sao Map/Set MỚI khi
+// THỰC SỰ có >=1 key bị lọc (Boundaries: "tránh re-render thừa") - trường hợp
+// phổ biến nhất (reload chỉ đổi metadata, tập channel_id không đổi) trả về
+// đúng tham chiếu cũ, không kích hoạt copy nào.
+function filterMapByIds<V>(map: ReadonlyMap<string, V>, nextIds: ReadonlySet<string>): ReadonlyMap<string, V> {
+  let needsCopy = false;
+  for (const key of map.keys()) {
+    if (!nextIds.has(key)) {
+      needsCopy = true;
+      break;
+    }
+  }
+  if (!needsCopy) return map;
+  const next = new Map<string, V>();
+  for (const [key, value] of map) {
+    if (nextIds.has(key)) next.set(key, value);
+  }
+  return next;
+}
+
+function filterSetByIds(set: ReadonlySet<string>, nextIds: ReadonlySet<string>): ReadonlySet<string> {
+  let needsCopy = false;
+  for (const key of set) {
+    if (!nextIds.has(key)) {
+      needsCopy = true;
+      break;
+    }
+  }
+  if (!needsCopy) return set;
+  const next = new Set<string>();
+  for (const key of set) {
+    if (nextIds.has(key)) next.add(key);
+  }
+  return next;
+}
+
 const EMPTY_STATE: ChannelStoreState = {
   channels: [],
   seenChannelIds: new Set(),
@@ -167,8 +205,24 @@ export class ChannelStore {
   // nó, vi phạm AC2 ("...ack-label tự biến mất ở MỌI client"). Reset ở đây rồi
   // để đúng luồng replay `acknowledged===true` điền lại dữ liệu hiện tại ngay
   // sau đó (mirror ngữ nghĩa "snapshot" - bắt đầu lại từ đầu mỗi lần connect).
+  // spec-epic2-item-10-12: registry gỡ hẳn 1 channel_id (khác reload chỉ đổi
+  // metadata, tập channel_id giữ nguyên) -> lọc bỏ mọi state còn lưu lại của
+  // channel_id đó khỏi 6 Map/Set liên quan, cùng 1 lượt `setState`. Diễn giải
+  // hẹp lại Boundary "seenChannelIds chỉ cộng thêm" của Story 2.3: boundary đó
+  // chỉ áp dụng cho `applyChannelSeen()`, KHÔNG áp dụng ở đây (registry thực
+  // sự gỡ hẳn 1 channel_id là tình huống Story 2.3 chưa xét - Design Notes).
   applyRegistrySnapshot(channels: ReadonlyArray<ChannelRegistryEntry>): void {
-    this.setState({ ...this.state, channels, channelAck: new Map() });
+    const nextIds = new Set(channels.map((c) => c.channelId));
+    this.setState({
+      ...this.state,
+      channels,
+      channelAck: new Map(),
+      channelDisplayStates: filterMapByIds(this.state.channelDisplayStates, nextIds),
+      channelMachineOffline: filterSetByIds(this.state.channelMachineOffline, nextIds),
+      channelSnapshots: filterMapByIds(this.state.channelSnapshots, nextIds),
+      channelHistory: filterMapByIds(this.state.channelHistory, nextIds),
+      seenChannelIds: filterSetByIds(this.state.seenChannelIds, nextIds),
+    });
   }
 
   // `channel-seen` chỉ CỘNG THÊM vào tập đã seen - idempotent (gọi lại cho

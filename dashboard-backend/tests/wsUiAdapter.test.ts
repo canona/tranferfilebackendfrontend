@@ -1273,3 +1273,81 @@ test('publishAckChange gọi lại (đổi label khác, vẫn acknowledged=true)
     await handle.close();
   }
 });
+
+// --- spec-epic2-item-10-12: pruneChannel() - dọn 4 Map cache replay-on-connect
+// (seenChannels/lastState/lastSnapshot/lastAckState) khi 1 channel_id bị gỡ
+// khỏi channel-registry (hot-reload). Không broadcast gì - verify gián tiếp
+// qua replay lúc 1 client MỚI connect SAU khi prune. ---
+
+test('pruneChannel(): kênh đã seen/state/snapshot/ack đầy đủ -> client connect SAU prune KHÔNG còn nhận replay nào của kênh đó (KHÔNG throw)', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    handle.publishChannelSeen('chan-0', '2026-09-24T00:00:00.000Z');
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'warning', timestamp: '2026-09-24T00:00:00.000Z' });
+    handle.publishSnapshot('chan-0', 'ZmFrZQ==', '2026-09-24T00:00:00.000Z');
+    handle.publishAckChange('chan-0', true, 'NV.A');
+
+    assert.doesNotThrow(() => handle.pruneChannel('chan-0'));
+
+    const { ws, messages } = await openClientAllMessages(handle.port);
+    // registry-snapshot(1) + channel-history-snapshot/kênh (2, makeEntries(2))
+    // - đợi đủ số message replay tối thiểu cố định này rồi chờ thêm 1 nhịp để
+    // chắc chắn không có message trễ nào khác (mirror pattern các test khác).
+    await waitUntil(() => messages.length >= 3);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const chan0Messages = messages.filter((m) => (m as { channel_id?: string }).channel_id === 'chan-0');
+    assert.ok(
+      chan0Messages.every((m) => (m as { type: string }).type === 'channel-history-snapshot'),
+      `chan-0 không được có replay channel-seen/channel-state-change/channel-snapshot/channel-ack-change nào sau prune, nhận: ${JSON.stringify(chan0Messages)}`
+    );
+    // chan-1 (không bị prune) không hề có state nào được publish ở test này -
+    // cũng không có replay gì ngoài channel-history-snapshot, đúng baseline.
+    assert.ok(messages.every((m) => (m as { type: string }).type !== 'channel-ack-change'));
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});
+
+test('pruneChannel(): kênh chưa từng có state nào (chưa seen/chưa state-change/chưa snapshot/chưa ack) -> no-op, không throw', async () => {
+  const { handle } = await startTestServer(makeEntries(1));
+  try {
+    assert.doesNotThrow(() => handle.pruneChannel('chan-0'));
+  } finally {
+    await handle.close();
+  }
+});
+
+test('pruneChannel(): 1 kênh bị prune KHÔNG ảnh hưởng cache/replay của kênh khác', async () => {
+  const { handle } = await startTestServer(makeEntries(2));
+  try {
+    handle.publishChannelSeen('chan-0', '2026-09-24T00:00:00.000Z');
+    handle.publishChannelSeen('chan-1', '2026-09-24T00:00:00.000Z');
+    handle.publishStateChange({ channelId: 'chan-0', displayState: 'ok', timestamp: '2026-09-24T00:00:00.000Z' });
+    handle.publishStateChange({ channelId: 'chan-1', displayState: 'warning', timestamp: '2026-09-24T00:00:00.000Z' });
+
+    handle.pruneChannel('chan-0');
+
+    const { ws, messages } = await openClientAllMessages(handle.port);
+    await waitUntil(() =>
+      messages.some((m) => (m as { channel_id?: string; type: string }).channel_id === 'chan-1' && (m as { type: string }).type === 'channel-state-change')
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const chan0Messages = messages.filter((m) => (m as { channel_id?: string }).channel_id === 'chan-0');
+    assert.ok(chan0Messages.every((m) => (m as { type: string }).type === 'channel-history-snapshot'));
+
+    const chan1Seen = messages.some((m) => (m as { type: string; channel_id?: string }).type === 'channel-seen' && (m as { channel_id?: string }).channel_id === 'chan-1');
+    const chan1StateChange = messages.some(
+      (m) => (m as { type: string; channel_id?: string; display_state?: string }).type === 'channel-state-change' && (m as { channel_id?: string }).channel_id === 'chan-1'
+    );
+    assert.ok(chan1Seen, 'chan-1 (không bị prune) vẫn phải replay channel-seen bình thường');
+    assert.ok(chan1StateChange, 'chan-1 (không bị prune) vẫn phải replay channel-state-change bình thường');
+
+    ws.close();
+  } finally {
+    await handle.close();
+  }
+});

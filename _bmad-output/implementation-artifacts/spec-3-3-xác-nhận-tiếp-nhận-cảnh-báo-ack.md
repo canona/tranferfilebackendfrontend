@@ -139,7 +139,7 @@ context: ['{project-root}/_bmad-output/implementation-artifacts/epic-3-context.m
   - **[patch] Log `envelope_invalid` ghi sai "thiếu channel_id" khi field có mặt nhưng sai kiểu** — nitpick từ blind-hunter, đã sửa message + thêm test `wsUiAdapter.test.ts`.
   - 1 `defer` (không patch): `checkOneChannelHeartbeatTimeout` không xoá ack khi kênh bị gỡ khỏi registry lúc đang acknowledged=true (edge-case-hunter) — pre-existing/ngoài scope, ghi vào `deferred-work.md`.
   - 10 finding dismiss (đã cân nhắc, không phải noise ngẫu nhiên): type-looseness ack_label+acknowledged không có caller thật; double-click gửi ack trùng (idempotent, đã reject round 1/3); trùng lặp envelope-parsing/`rawDataToString` giữa 2 adapter (quyết định KEEP tường minh round 1); trùng hằng số `MAX_OPERATOR_LABEL_LENGTH` FE/BE (đã reject round 2); input không tự clear sau ack (đã reject round 1); thiếu feedback khi gửi lỗi lúc mất kết nối (đã reject round 3); audit log thiếu network origin (đã reject round 3); core không validate lại nội dung operatorLabel (quyết định kiến trúc tường minh ở Design Notes); thiếu sanitize nội dung tự do (rủi ro đã chấp nhận LAN-only); thiếu test tổ hợp ack-status+showAckControls (đã verify qua code, không có bug tương tác).
-  - Backend 181/181 test pass sau patch (`npm run build && node --test "dist/tests/**/*.test.js"`; 1 fail pre-existing `installService.test.js` không liên quan, tracked `epic-2-retro-item-13`). Frontend 221/221 test pass (`npm test`), `npx tsc --noEmit` sạch, `npx next build` sạch.
+  - Backend 180/181 test pass sau patch (`npm run build && node --test "dist/tests/**/*.test.js"`; 1 fail pre-existing `installService.test.js` không liên quan, tracked `epic-2-retro-item-13`). Frontend 221/221 test pass (`npm test`), `npx tsc --noEmit` sạch, `npx next build` sạch.
 
 ## Design Notes
 
@@ -150,7 +150,7 @@ context: ['{project-root}/_bmad-output/implementation-artifacts/epic-3-context.m
 ## Verification
 
 **Commands:**
-- `cd dashboard-backend && npm run build && node --test "dist/tests/**/*.test.js"` -- expected: toàn bộ test pass.
+- `cd dashboard-backend && npm run build && node --test "dist/tests/**/*.test.js"` -- expected: toàn bộ test pass, trừ 1 fail pre-existing đã biết `installService.test.js` (không liên quan, tracked `epic-2-retro-item-13`).
 - `cd dashboard-frontend && npm test` -- expected: toàn bộ test pass, gồm test ack mới.
 - `cd dashboard-frontend && npx tsc --noEmit && npx next build` -- expected: sạch, không lỗi type/build.
 

@@ -197,6 +197,12 @@
   summary: Khả năng phân biệt thị giác giữa marker "warning" (9px) và "critical" (11px + bold) chưa được xác nhận trên màn hình TV wall thật theo khoảng cách xem thực tế phòng trực — chỉ mới đúng theo thiết kế trên giấy.
   evidence: Cùng nhóm với hạng mục TV-wall sizing đã defer ở heading phía trên của cùng story này (2026-09-23) — cần đo vật lý ngoài khả năng agent code, không phải lỗi thiết kế.
 
+## Deferred from: bmad-build clarify (spec-epic2-item-10-12-don-map-orphan-gop-hang-so-luoi, 2026-09-24)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic2-item-10-12-don-map-orphan-gop-hang-so-luoi.md`
+  summary: Gộp 3 hằng số kích thước lưới hiện định nghĩa độc lập (`GRID_SIZE` `ChannelGrid.tsx`, `GRID_COLUMNS` `ChannelGridCell.tsx`, `GRID_POSITION_MIN/MAX` backend `fileChannelRegistryAdapter.ts`) về 1 nguồn duy nhất phía frontend (`constants/grid.ts`), kèm comment cross-reference sang backend (epic-2-retro-item-12).
+  evidence: Gộp chung với cơ chế dọn Map orphan (item-10) khiến spec vượt 3632 token (gấp ~2.3x ngưỡng 1600 đề xuất) — 2 việc độc lập nhau (item-12 không phụ thuộc cơ chế prune của item-10), tách ra để mỗi spec giữ đúng single-goal/scope, item-10 ưu tiên trước vì mức độ nghiêm trọng cao hơn (rò rỉ bộ nhớ 24/7) theo [[project-post-epic5-hardening-plan]].
+
 ## Deferred from: code review of spec-2-7-xử-lý-mất-kết-nối-dữ-liệu-giám-sát-disconnected-máy-trung-tâm-chết-machine-offline (/bmad-code-review, 4-lớp, 2026-09-06)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-7-xử-lý-mất-kết-nối-dữ-liệu-giám-sát-disconnected-máy-trung-tâm-chết-machine-offline.md`
@@ -358,3 +364,33 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1-điều-hướng-đầy-đủ-bằng-bàn-phím.md`
   summary: Focus-restore qua click CHUỘT (khác đường bàn phím Enter/Space) có thể không hoạt động trên Safari — `channel-grid-cell` là `<div tabIndex=0>` (non-form element, `ChannelGridCell.tsx:199-215`); Safari lịch sử không tự đưa focus vào phần tử non-form khi click chuột, nên bước LƯU `document.activeElement` lúc panel mở (`DetailPanel.tsx:158`) có thể lưu sai phần tử ngay từ đầu trên trình duyệt đó.
   evidence: Blind-hunter review layer phát hiện (finding mới, khác góc với item "disabled/hidden check" đã defer ở round 2 — item đó nói về bước TRẢ focus, item này nói về bước LƯU). Đường bàn phím Enter/Space không bị ảnh hưởng (đã verify `onKeyDown` chỉ fire khi cell đã có focus, nên `document.activeElement` luôn đúng cell trên đường này). Ngoài phạm vi AC của Story 5.1 (AC mô tả luồng bàn phím, không phải click chuột) — chưa có bằng chứng thực nghiệm trên Safari thật, chỉ phát hiện qua đọc code.
+
+## Deferred from: bmad-build multi-goal split (epic 3 action_items, 2026-09-24)
+
+- source_spec: none
+  summary: Thêm 1 test tích hợp WS thật cho kịch bản reconnect làm mất ack-label (epic-3-retro-item-18, patch round 4 commit f64dfeb hiện chỉ có test store-unit-level).
+  evidence: Người dùng chọn split — chỉ làm epic-3-retro-item-17 (sửa câu chữ mâu thuẫn spec-3-3) trong lượt này. Item này độc lập, merge/test riêng được, để lại cho lượt sau.
+- source_spec: none
+  summary: Gộp prune logic của 6 Map cùng root cause (epic-3-retro-item-19 — channels/seenChannels/lastState/channelDisplayStates/channelMachineOffline ở channelState.ts, bitrateHistory Map, channelStore channelHistory Map — thực thi thật epic-2-retro-item-10).
+  evidence: Người dùng chọn split — chỉ làm epic-3-retro-item-17 trong lượt này. Refactor cross-cutting (đụng cả dashboard-backend lẫn dashboard-frontend), tách biệt khỏi item-17, để lại cho lượt sau.
+- source_spec: none
+  summary: Dời `DisplayState` sang module type trung lập + gộp hằng số lặp `HISTORY_RETENTION_MS`/`MAX_OPERATOR_LABEL_LENGTH` xuyên frontend/backend (epic-3-retro-item-20 — thực thi thật epic-2-retro-item-11/12).
+  evidence: Người dùng chọn split — chỉ làm epic-3-retro-item-17 trong lượt này. Refactor cross-cutting khác, độc lập với item-17 và item-19, để lại cho lượt sau.
+
+## Deferred from: code review of epic-3-retro-item-17 fix (spec-3-3 test-count wording), 2026-09-24
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-xác-nhận-tiếp-nhận-cảnh-báo-ack.md`
+  summary: 2 mốc Change Log khác (dòng 124 "Backend 186/186 test pass", dòng 128 "187/187 test pass sau patch") có cùng dạng tự-mâu-thuẫn vừa được sửa ở dòng 142 (181/181→180/181) — cả 2 đều công bố PASS tuyệt đối dù `installService.test.js` đã được ghi nhận pre-existing fail ngay từ dòng 110, nhưng chưa được lan sửa theo (có thể phải là 185/186 và 186/186).
+  evidence: Blind-hunter phát hiện khi review lại toàn bộ Change Log sau patch dòng 142. Ngoài scope epic-3-retro-item-17 (chỉ định rõ sửa dòng 142) — cần xác nhận lại số liệu thật của 2 mốc này trước khi sửa (không có log test chạy thật tại các mốc 2026-09-12 cũ để đối chiếu).
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-xác-nhận-tiếp-nhận-cảnh-báo-ack.md`
+  summary: Tổng test backend "nhảy" không giải thích được giữa các mốc Change Log — round 2 báo 187/187, round 4 chỉ thêm đúng 1 test backend mới (`wsUiAdapter.test.ts`, patch #2) nhưng tổng lại còn 181 (dòng 142) — thiếu 6 test không rõ lý do. Số "180/181" vừa sửa tự nhất quán nội bộ nhưng chưa đối chiếu được với lịch sử 187 trước đó.
+  evidence: Blind-hunter phát hiện. Con số "180/181" là giá trị epic-3-retro-item-17 chỉ định sẵn (retro đã chốt) nên giữ nguyên theo đúng phạm vi item đó, nhưng khoảng trống 187→181 cần điều tra riêng (có thể do đổi cấu trúc file test / gộp describe block giữa các round, không nhất thiết là lỗi số liệu) trước khi tin tưởng hoàn toàn bất kỳ mốc nào trong chuỗi.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-xác-nhận-tiếp-nhận-cảnh-báo-ack.md`
+  summary: Frontend test tụt từ 220/220 (dòng 110, lần implement đầu) xuống 218/218 (dòng 124, sau revert+implement lại) dù bản sau là superset tính năng của bản đầu (thêm 6 fix mới: maxLength, loaded-gate, replay...) — về lý thuyết số test phải ≥ 220, không thể tụt.
+  evidence: Blind-hunter phát hiện, độc lập với 2 finding trên (không liên quan `installService.test.js`). Ngoài scope epic-3-retro-item-17.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-xác-nhận-tiếp-nhận-cảnh-báo-ack.md`
+  summary: Entry Change Log round 3 (dòng 132-135) là entry DUY NHẤT thiếu dòng "Backend X/Y test pass" mà mọi entry khác đều có, phá vỡ format nhất quán; dòng 120 cũng gộp nhiều lý do reject/defer khác nhau vào 1 câu dài không tách bạch item nào reject vs defer, giảm khả năng truy vết so với cách trình bày rõ ràng hơn ở round 3 (dòng 134).
+  evidence: Blind-hunter phát hiện, 2 nitpick về format/khả năng truy vết, không phải lỗi số liệu.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-xác-nhận-tiếp-nhận-cảnh-báo-ack.md`
+  summary: Frontmatter `review_loop_iteration: 1` có vẻ stale — nội dung Change Log ghi nhận ít nhất 4 review round độc lập + 1 lần bad_spec loopback, không khớp giá trị 1. "Suggested Review Order" (mục đánh số #2/#3) cũng hoán đổi thứ tự trình bày so với mô tả 3 điểm gọi `clearAckIfAcknowledged` ở phần Code Map (dòng 63) — nội dung không sai, chỉ thứ tự lệch.
+  evidence: Blind-hunter phát hiện, 2 nitpick độc lập không ảnh hưởng đúng/sai chức năng.

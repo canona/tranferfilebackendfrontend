@@ -662,6 +662,26 @@ export async function startApp(config?: {
   // tuyến đúng vào instance thật này.
   ackCommandTarget = channelStateService;
 
+  // spec-epic2-item-10-12 (epic-2-retro-item-10): channel_id bị gỡ khỏi
+  // channel-registry qua hot-reload trước đây không bao giờ được dọn khỏi 5
+  // Map theo-channelId (rò rỉ bộ nhớ dài hạn khi vận hành 24/7). Wiring đặt
+  // SAU KHI cả 3 (`channelStateService`/`ui`/`bitrateHistoryService`) đã khởi
+  // tạo xong - `registryPort.onEntriesRemoved()` chỉ phát khi 1 lần `reload()`
+  // THÀNH CÔNG thực sự gỡ >=1 channel_id (không phát khi reload chỉ đổi
+  // metadata, không phát khi reload lỗi validate - `fileChannelRegistryAdapter.ts`).
+  registryPort.onEntriesRemoved((ids) => {
+    for (const id of ids) {
+      channelStateService.pruneChannel(id);
+      bitrateHistoryService.pruneChannel(id);
+      ui.pruneChannel(id);
+      logger.log({
+        channel_id: id,
+        event_type: 'registry_channel_pruned',
+        reason: 'channel_id bị gỡ khỏi channel-registry (hot-reload) - đã dọn state theo-channelId ở backend',
+      });
+    }
+  });
+
   // Story 2.7 (Design Notes): "checkHeartbeatTimeouts() KHÔNG tự quản lý timer
   // nội bộ ... production tự gọi định kỳ từ composition root" - đây CHÍNH là
   // composition root đó. 1s (khớp Code Map) - đủ mịn so với ngưỡng 15000ms

@@ -65,9 +65,18 @@ export interface WsUiAdapterOptions {
 // `SnapshotOutboundPort` - mirror lý do Story 2.6 đã thêm `AlertOutboundPort`
 // vào đây (cùng 1 object phát cả 3 loại message tới cùng tập client WS UI,
 // 3 port vẫn tách biệt về type/semantic).
+// spec-epic2-item-10-12: `WsUiAdapterHandle` PHẢI đổi interface (khác 3 concrete
+// class còn lại của spec này) - biến `ui` ở `main.ts` khai kiểu interface này
+// (Boundaries), không phải class cụ thể như `registryPort`/`channelStateService`/
+// `bitrateHistoryService`.
 export interface WsUiAdapterHandle extends UiOutboundPort, AlertOutboundPort, SnapshotOutboundPort {
   readonly port: number;
   close(): Promise<void>;
+  // Dọn 4 Map cache replay-on-connect (`seenChannels`/`lastState`/
+  // `lastSnapshot`/`lastAckState`) của 1 channel_id VỪA bị gỡ khỏi
+  // channel-registry (hot-reload) - không broadcast gì (client tự đồng bộ
+  // qua `registry-snapshot` đầy đủ lần connect kế tiếp, Design Notes).
+  pruneChannel(channelId: string): void;
 }
 
 // Envelope gửi tới dashboard-frontend - snake_case để đối xứng với envelope
@@ -633,6 +642,19 @@ export function startWsUiAdapter(options: WsUiAdapterOptions): Promise<WsUiAdapt
           for (const client of wss.clients) {
             send(client, message);
           }
+        },
+
+        // spec-epic2-item-10-12: caller duy nhất là `main.ts`'s
+        // `registryPort.onEntriesRemoved()` wiring. Xoá khỏi CẢ 4 Map cache
+        // replay-on-connect - 1 channel_id đã gỡ hẳn khỏi registry không còn
+        // gì để replay cho client connect muộn nữa (registry-snapshot lần
+        // connect kế tiếp cũng không còn liệt kê nó). Không broadcast gì
+        // (Boundaries) - khác 3 method publish* phía trên.
+        pruneChannel(channelId: string): void {
+          seenChannels.delete(channelId);
+          lastState.delete(channelId);
+          lastSnapshot.delete(channelId);
+          lastAckState.delete(channelId);
         },
 
         close: () =>

@@ -523,6 +523,144 @@ test('start(): watcher phát "error" (lỗi hệ thống) -> log registry_watch_
   }
 });
 
+// --- spec-epic2-item-10-12: onEntriesRemoved() + diff trong reload() ---
+
+test('reload(): gỡ 1 channel_id khỏi file -> onEntriesRemoved() nhận đúng channelId bị gỡ, listener gọi 1 lần', () => {
+  const { filePath, cleanup } = writeTempRegistryFile(
+    JSON.stringify({
+      'chan-a': validEntry({ grid_position: 0 }),
+      'chan-b': validEntry({ grid_position: 1 }),
+    })
+  );
+  try {
+    const adapter = new FileChannelRegistryAdapter(filePath, new FakeLogger());
+    const removedCalls: (readonly string[])[] = [];
+    adapter.onEntriesRemoved((ids) => removedCalls.push(ids));
+
+    writeFileSync(filePath, JSON.stringify({ 'chan-a': validEntry({ grid_position: 0 }) }), 'utf8');
+    adapter.reload();
+
+    assert.equal(removedCalls.length, 1);
+    assert.deepEqual([...removedCalls[0]!], ['chan-b']);
+  } finally {
+    cleanup();
+  }
+});
+
+test('reload(): gỡ >=2 channel_id cùng lúc -> listener nhận đủ mọi channelId bị gỡ trong 1 lần gọi', () => {
+  const { filePath, cleanup } = writeTempRegistryFile(
+    JSON.stringify({
+      'chan-a': validEntry({ grid_position: 0 }),
+      'chan-b': validEntry({ grid_position: 1 }),
+      'chan-c': validEntry({ grid_position: 2 }),
+    })
+  );
+  try {
+    const adapter = new FileChannelRegistryAdapter(filePath, new FakeLogger());
+    const removedCalls: (readonly string[])[] = [];
+    adapter.onEntriesRemoved((ids) => removedCalls.push(ids));
+
+    writeFileSync(filePath, JSON.stringify({ 'chan-a': validEntry({ grid_position: 0 }) }), 'utf8');
+    adapter.reload();
+
+    assert.equal(removedCalls.length, 1);
+    assert.deepEqual([...removedCalls[0]!].sort(), ['chan-b', 'chan-c']);
+  } finally {
+    cleanup();
+  }
+});
+
+test('reload(): chỉ đổi metadata (station_name), tập channel_id giữ nguyên -> KHÔNG gọi onEntriesRemoved listener', () => {
+  const { filePath, cleanup } = writeTempRegistryFile(JSON.stringify({ 'chan-a': validEntry({ grid_position: 0 }) }));
+  try {
+    const adapter = new FileChannelRegistryAdapter(filePath, new FakeLogger());
+    const removedCalls: (readonly string[])[] = [];
+    adapter.onEntriesRemoved((ids) => removedCalls.push(ids));
+
+    writeFileSync(
+      filePath,
+      JSON.stringify({ 'chan-a': validEntry({ station_name: 'Đài đổi tên', grid_position: 0 }) }),
+      'utf8'
+    );
+    adapter.reload();
+
+    assert.equal(removedCalls.length, 0, 'reload chỉ đổi metadata, không gỡ kênh -> không được gọi listener');
+  } finally {
+    cleanup();
+  }
+});
+
+test('reload(): thêm kênh mới (không gỡ kênh nào) -> KHÔNG gọi onEntriesRemoved listener', () => {
+  const { filePath, cleanup } = writeTempRegistryFile(JSON.stringify({ 'chan-a': validEntry({ grid_position: 0 }) }));
+  try {
+    const adapter = new FileChannelRegistryAdapter(filePath, new FakeLogger());
+    const removedCalls: (readonly string[])[] = [];
+    adapter.onEntriesRemoved((ids) => removedCalls.push(ids));
+
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        'chan-a': validEntry({ grid_position: 0 }),
+        'chan-b': validEntry({ grid_position: 1 }),
+      }),
+      'utf8'
+    );
+    adapter.reload();
+
+    assert.equal(removedCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('reload(): lỗi validate (giữ registry cũ) -> KHÔNG tính diff, KHÔNG gọi onEntriesRemoved listener', () => {
+  const { filePath, cleanup } = writeTempRegistryFile(
+    JSON.stringify({
+      'chan-a': validEntry({ grid_position: 0 }),
+      'chan-b': validEntry({ grid_position: 1 }),
+    })
+  );
+  try {
+    const adapter = new FileChannelRegistryAdapter(filePath, new FakeLogger());
+    const removedCalls: (readonly string[])[] = [];
+    adapter.onEntriesRemoved((ids) => removedCalls.push(ids));
+
+    // JSON hỏng - reload() rơi vào catch, giữ nguyên registry cũ.
+    writeFileSync(filePath, '{not-valid-json', 'utf8');
+    adapter.reload();
+
+    assert.equal(removedCalls.length, 0, 'reload lỗi validate không được tính diff/gọi listener nào');
+  } finally {
+    cleanup();
+  }
+});
+
+test('onEntriesRemoved(): hỗ trợ đăng ký nhiều listener -> mọi listener đều được gọi khi gỡ kênh', () => {
+  const { filePath, cleanup } = writeTempRegistryFile(
+    JSON.stringify({
+      'chan-a': validEntry({ grid_position: 0 }),
+      'chan-b': validEntry({ grid_position: 1 }),
+    })
+  );
+  try {
+    const adapter = new FileChannelRegistryAdapter(filePath, new FakeLogger());
+    const firstCalls: (readonly string[])[] = [];
+    const secondCalls: (readonly string[])[] = [];
+    adapter.onEntriesRemoved((ids) => firstCalls.push(ids));
+    adapter.onEntriesRemoved((ids) => secondCalls.push(ids));
+
+    writeFileSync(filePath, JSON.stringify({ 'chan-a': validEntry({ grid_position: 0 }) }), 'utf8');
+    adapter.reload();
+
+    assert.equal(firstCalls.length, 1);
+    assert.equal(secondCalls.length, 1);
+    assert.deepEqual([...firstCalls[0]!], ['chan-b']);
+    assert.deepEqual([...secondCalls[0]!], ['chan-b']);
+  } finally {
+    cleanup();
+  }
+});
+
 test('stop(): đóng watcher -> ghi file sau đó không còn kích hoạt reload nào nữa', async () => {
   const { filePath, cleanup } = writeTempRegistryFile(JSON.stringify({ 'chan-a': validEntry({ grid_position: 0 }) }));
   try {

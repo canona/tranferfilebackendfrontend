@@ -218,8 +218,8 @@ action_items:
       Backend 181/181 test pass sau patch\" trong khi tự thừa nhận 1 fail pre-existing
       ngay sau đó) cho khớp thực tế 180/181."
     owner: "dev"
-    status: open
-    ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-09-12.md"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/spec-epic-3-retro-item-17-sửa-số-liệu-test-mâu-thuẫn-spec-3-3.md"
   - id: "epic-3-retro-item-18-thêm-1-test-tích-hợp-ws-thật-mirror-patt"
     epic: 3
     action: "Thêm 1 test tích hợp WS thật (mirror pattern wsUiAdapter.test.ts client

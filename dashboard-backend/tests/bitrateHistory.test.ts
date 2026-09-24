@@ -136,3 +136,35 @@ test('getHistory() trả bản sao (snapshot) - recordBitrate() sau đó KHÔNG 
 
   assert.equal(data!.length, lengthAtSnapshot, 'mảng data lấy trước đó phải giữ nguyên độ dài tại thời điểm snapshot');
 });
+
+// --- spec-epic2-item-10-12: pruneChannel() - dọn ring buffer khi 1 channel_id
+// bị gỡ khỏi channel-registry (hot-reload). ---
+
+test('pruneChannel(): kênh đã có mẫu -> getHistory trả no-history-data sau khi prune', () => {
+  const service = new BitrateHistoryService();
+
+  service.recordBitrate('chan-1', 90, 0);
+  assert.equal(service.getHistory('chan-1').state, 'loaded');
+
+  service.pruneChannel('chan-1');
+
+  assert.deepEqual(service.getHistory('chan-1'), { state: 'no-history-data' });
+});
+
+test('pruneChannel(): kênh chưa từng có mẫu -> no-op, không throw', () => {
+  const service = new BitrateHistoryService();
+
+  assert.doesNotThrow(() => service.pruneChannel('chan-khong-ton-tai'));
+});
+
+test('pruneChannel(): 1 kênh bị prune KHÔNG ảnh hưởng ring buffer của kênh khác', () => {
+  const service = new BitrateHistoryService();
+
+  service.recordBitrate('chan-1', 90, 0);
+  service.recordBitrate('chan-2', 50, 0);
+
+  service.pruneChannel('chan-1');
+
+  assert.deepEqual(service.getHistory('chan-1'), { state: 'no-history-data' });
+  assert.equal(service.getHistory('chan-2').state, 'loaded');
+});

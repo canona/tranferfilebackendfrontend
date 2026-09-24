@@ -221,6 +221,13 @@ export class FileChannelRegistryAdapter implements ChannelRegistryPort {
   private registry: Map<string, ChannelRegistryEntry>;
   private watcher: FSWatcher | undefined;
   private debounceTimer: NodeJS.Timeout | undefined;
+  // spec-epic2-item-10-12: listener(s) gọi khi 1 lần reload() THÀNH CÔNG gỡ
+  // bỏ >=1 channel_id khỏi registry (hoán đổi Map cũ -> mới) - dọn Map
+  // theo-channelId ở nơi khác (ChannelStateService/BitrateHistoryService/
+  // WsUiAdapterHandle) không bao giờ tự biết registry vừa gỡ kênh nào nếu
+  // không có điểm phát tín hiệu duy nhất này. Mảng thường (không Set) - hỗ
+  // trợ đăng ký nhiều listener, giữ đúng thứ tự đăng ký.
+  private readonly entriesRemovedListeners: Array<(ids: readonly string[]) => void> = [];
 
   constructor(filePath: string, logger: Logger, options?: FileChannelRegistryAdapterOptions) {
     this.filePath = filePath;
@@ -242,6 +249,15 @@ export class FileChannelRegistryAdapter implements ChannelRegistryPort {
   // bị ảnh hưởng (đã copy ra Array, không giữ tham chiếu Map).
   listEntries(): ReadonlyArray<ChannelRegistryEntry & { channelId: string }> {
     return Array.from(this.registry.entries()).map(([channelId, entry]) => ({ channelId, ...entry }));
+  }
+
+  // spec-epic2-item-10-12: đăng ký listener nhận danh sách channel_id vừa bị
+  // gỡ khỏi registry (chỉ gọi từ `reload()`, nhánh THÀNH CÔNG, khi
+  // `removed.length > 0` - nhánh lỗi validate/giữ registry cũ KHÔNG bao giờ
+  // gọi). Hỗ trợ đăng ký nhiều listener (`main.ts` là caller duy nhất hiện
+  // tại, nhưng không giới hạn 1).
+  onEntriesRemoved(listener: (ids: readonly string[]) => void): void {
+    this.entriesRemovedListeners.push(listener);
   }
 
   // Watch file bằng `chokidar` (code review vòng 2 - xem comment đầu file) -
@@ -302,6 +318,7 @@ export class FileChannelRegistryAdapter implements ChannelRegistryPort {
   // timer thật.
   reload(): void {
     try {
+      const previousRegistry = this.registry;
       const next = loadAndValidate(this.filePath);
       // Hoán đổi tham chiếu - Map cũ (`this.registry` trước dòng này) không
       // bị mutate, lookup đang chạy song song giữ tham chiếu Map cũ vẫn đọc
@@ -312,6 +329,18 @@ export class FileChannelRegistryAdapter implements ChannelRegistryPort {
         event_type: 'registry_reload_success',
         reason: String(next.size),
       });
+
+      // spec-epic2-item-10-12: diff registry CŨ (trước hoán đổi) với registry
+      // MỚI (`next`, đã hoán đổi ở trên) - channel_id nào có ở cũ nhưng không
+      // còn ở mới nghĩa là VỪA bị gỡ khỏi lần reload thành công này. Chỉ tính
+      // toán/gọi listener khi thực sự có kênh bị gỡ (Boundaries: "Reload chỉ
+      // đổi metadata, không gỡ kênh -> không gọi listener/log gì thêm").
+      const removed = [...previousRegistry.keys()].filter((id) => !next.has(id));
+      if (removed.length > 0) {
+        for (const listener of this.entriesRemovedListeners) {
+          listener(removed);
+        }
+      }
     } catch (err) {
       // Sau khi đã chạy: lỗi -> GIỮ NGUYÊN Map đang phục vụ (`this.registry`
       // không đổi), chỉ log, KHÔNG throw/crash process.

@@ -1462,3 +1462,223 @@ test('startApp(): forwarder AckCommandPort wiring thật - client WS UI gửi ac
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- spec-epic2-item-10-12: wiring registryPort.onEntriesRemoved() gọi 3
+// pruneChannel + log registry_channel_pruned (integration THẬT, không fake -
+// mirror pattern "wiring thật composite alertPort" phía trên: nếu dòng wiring
+// ở main.ts bị revert/xoá, test này phải fail). Registry adapter chỉ hot-reload
+// qua watcher + debounce THẬT (300ms default, không có seam config riêng cho
+// registry - khác `debounceMs` của `ChannelStateService`), nên test ghi file
+// mới rồi `waitUntil` polling thay vì sleep cố định. ---
+
+function writeTwoChannelRegistryFile(): { dir: string; filePath: string } {
+  const dir = mkdtempSync(path.join(tmpdir(), 'dashboard-backend-main-test-'));
+  const filePath = path.join(dir, 'channel-registry.json');
+  writeFileSync(
+    filePath,
+    JSON.stringify({
+      'chan-1': {
+        station_name: 'Đài 1',
+        contact_name: 'Nguyễn Văn A',
+        contact_phone: '0900000001',
+        grid_position: 0,
+        baseline_kbps: 4000,
+      },
+      'chan-2': {
+        station_name: 'Đài 2',
+        contact_name: 'Nguyễn Văn B',
+        contact_phone: '0900000002',
+        grid_position: 1,
+        baseline_kbps: 4000,
+      },
+    }),
+    'utf8'
+  );
+  return { dir, filePath };
+}
+
+test('startApp(): hot-reload gỡ 1 channel_id khỏi channel-registry -> wiring thật dọn CẢ 3 service (channelStateService/bitrateHistoryService/ui), log registry_channel_pruned, kênh còn lại KHÔNG bị ảnh hưởng', async () => {
+  const { dir, filePath } = writeTwoChannelRegistryFile();
+  const logger = new FakeLogger();
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+    debounceMs: 10,
+    logger,
+    ...FAKE_ALERT_CONFIG,
+  });
+
+  try {
+    // WS UI client THẬT - populate cache replay-on-connect (seenChannels/
+    // lastState) cho CẢ 2 kênh, để có thể verify pruneChannel('chan-1') thật
+    // sự dọn cache của đúng kênh đó (qua 1 client connect SAU đó, phía dưới).
+    const uiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const uiMessages: { type: string; channel_id?: string; display_state?: string }[] = [];
+    uiWs.on('message', (data) => uiMessages.push(JSON.parse(data.toString())));
+    await new Promise<void>((resolve, reject) => {
+      uiWs.once('open', resolve);
+      uiWs.once('error', reject);
+    });
+    await waitUntil(() => uiMessages.some((m) => m.type === 'registry-snapshot'));
+
+    const telemetryWs = new WebSocket(`ws://127.0.0.1:${app.ws.port}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    await new Promise<void>((resolve, reject) => {
+      telemetryWs.once('open', resolve);
+      telemetryWs.once('error', reject);
+    });
+    const sendTelemetry = (channelId: string) =>
+      telemetryWs.send(
+        JSON.stringify({
+          schema_version: 1,
+          channel_id: channelId,
+          timestamp: new Date().toISOString(),
+          event_type: 'telemetry',
+          payload: { bitrate_kbps: 4000, rtt_ms: 10, connection_state: 'CONNECTED', audio_level: [-20, -18] },
+        })
+      );
+    // 2 lần/kênh, cách nhau > debounceMs=10ms, để channelState.ts thực sự
+    // chốt (`committed`) trạng thái 'ok' cho CẢ 2 kênh - xác nhận có state
+    // đầy đủ để prune, không phải record rỗng.
+    sendTelemetry('chan-1');
+    sendTelemetry('chan-2');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    sendTelemetry('chan-1');
+    sendTelemetry('chan-2');
+    await waitUntil(() => uiMessages.filter((m) => m.type === 'channel-state-change').length >= 2);
+
+    assert.deepEqual(app.channelStateService.getDisplayState('chan-1'), { state: 'ok' });
+    assert.deepEqual(app.channelStateService.getDisplayState('chan-2'), { state: 'ok' });
+    assert.equal(app.bitrateHistoryService.getHistory('chan-1').state, 'loaded');
+
+    // Ghi lại file registry, gỡ hẳn chan-1 (chỉ còn chan-2) - watcher +
+    // debounce THẬT (300ms default) sẽ tự kích hoạt reload().
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        'chan-2': {
+          station_name: 'Đài 2',
+          contact_name: 'Nguyễn Văn B',
+          contact_phone: '0900000002',
+          grid_position: 1,
+          baseline_kbps: 4000,
+        },
+      }),
+      'utf8'
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'registry_channel_pruned'), 5000);
+
+    const prunedEvents = logger.events.filter((e) => e.event_type === 'registry_channel_pruned');
+    assert.equal(prunedEvents.length, 1);
+    assert.equal(prunedEvents[0]?.channel_id, 'chan-1');
+
+    // 3 service backend đã thực sự dọn record của chan-1.
+    assert.equal(app.channelStateService.getDisplayState('chan-1'), undefined, 'channelStateService phải đã prune chan-1');
+    assert.deepEqual(
+      app.bitrateHistoryService.getHistory('chan-1'),
+      { state: 'no-history-data' },
+      'bitrateHistoryService phải đã prune chan-1'
+    );
+    // chan-2 (không bị gỡ) hoàn toàn không bị ảnh hưởng.
+    assert.deepEqual(app.channelStateService.getDisplayState('chan-2'), { state: 'ok' });
+    assert.equal(app.bitrateHistoryService.getHistory('chan-2').state, 'loaded');
+
+    // `ui` (WsUiAdapterHandle) đã prune cache replay-on-connect của chan-1 -
+    // verify qua 1 client UI MỚI connect sau đó: không còn replay
+    // channel-seen/channel-state-change nào cho chan-1.
+    const lateUiWs = new WebSocket(`ws://127.0.0.1:${app.ui.port}`);
+    const lateMessages: { type: string; channel_id?: string }[] = [];
+    lateUiWs.on('message', (data) => lateMessages.push(JSON.parse(data.toString())));
+    await new Promise<void>((resolve, reject) => {
+      lateUiWs.once('open', resolve);
+      lateUiWs.once('error', reject);
+    });
+    await waitUntil(() => lateMessages.some((m) => m.channel_id === 'chan-2' && m.type === 'channel-state-change'));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const registrySnapshot = lateMessages.find((m) => m.type === 'registry-snapshot') as
+      | { channels?: { channel_id: string }[] }
+      | undefined;
+    assert.ok(registrySnapshot, 'phải nhận registry-snapshot');
+    assert.deepEqual(
+      registrySnapshot!.channels?.map((c) => c.channel_id),
+      ['chan-2'],
+      'registry-snapshot mới không còn liệt kê chan-1'
+    );
+    assert.ok(
+      lateMessages.every((m) => m.channel_id !== 'chan-1'),
+      `client connect SAU prune không được nhận bất kỳ replay nào của chan-1, nhận: ${JSON.stringify(lateMessages)}`
+    );
+
+    telemetryWs.close();
+    uiWs.close();
+    lateUiWs.close();
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('startApp(): hot-reload chỉ đổi metadata (station_name), không gỡ kênh nào -> KHÔNG log registry_channel_pruned, KHÔNG pruneChannel nào bị gọi', async () => {
+  const { dir, filePath } = writeValidRegistryFile(); // chan-1
+  const logger = new FakeLogger();
+  const app = await startApp({
+    port: 0,
+    host: '127.0.0.1',
+    uiPort: 0,
+    uiHost: '127.0.0.1',
+    validBearerTokens: new Set(['test-token']),
+    channelRegistryFilePath: filePath,
+    debounceMs: 10,
+    logger,
+    ...FAKE_ALERT_CONFIG,
+  });
+
+  try {
+    // Code review [flaky, patch]: chokidar/`fs.watch` trên Windows cần 1
+    // khoảng ngắn để watcher THỰC SỰ bind xong ngay sau khi `start()` vừa
+    // gọi (registryPort.start() chạy bên trong `startApp()` phía trên) - ghi
+    // file NGAY LẬP TỨC sau khi `startApp()` resolve có xác suất bị watcher
+    // bỏ lỡ hoàn toàn (không phải trễ - mất HẲN, `waitUntil` polling 5s vẫn
+    // timeout). Test "hot-reload gỡ 1 channel_id" phía trên không gặp race
+    // này vì đã có sẵn 1 khoảng trễ tự nhiên (mở 2 WS client + gửi telemetry)
+    // trước lần ghi file đầu tiên - thêm 1 khoảng đệm tương tự ở đây.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        'chan-1': {
+          station_name: 'Đài 1 - tên đổi',
+          contact_name: 'Nguyễn Văn A',
+          contact_phone: '0900000000',
+          grid_position: 0,
+          baseline_kbps: 4000,
+        },
+      }),
+      'utf8'
+    );
+
+    await waitUntil(() => logger.events.some((e) => e.event_type === 'registry_reload_success'), 5000);
+
+    // Buffer thêm 1 nhịp để chắc chắn không có registry_channel_pruned nào
+    // tới trễ (chỉ log ngay sau registry_reload_success trong CÙNG lần
+    // reload nếu có, không phải 1 quá trình async riêng biệt).
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    assert.equal(
+      logger.events.filter((e) => e.event_type === 'registry_channel_pruned').length,
+      0,
+      'reload chỉ đổi metadata, không gỡ kênh nào -> không được log registry_channel_pruned'
+    );
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

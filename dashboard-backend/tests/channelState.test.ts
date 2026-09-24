@@ -1115,3 +1115,62 @@ test('handleHeartbeat (nhánh recovery): kênh KHÔNG acknowledged -> resume v�
   assert.equal(ui.ackChangeCalls.length, 0, 'kênh chưa từng ack -> không publishAckChange nào ở nhánh recovery');
   assert.equal(alert.changes.at(-1)?.displayState, 'warning', 're-publish committed vẫn hoạt động bình thường');
 });
+
+// --- spec-epic2-item-10-12: pruneChannel() - dọn record nội bộ khi 1
+// channel_id bị gỡ khỏi channel-registry (hot-reload). ---
+
+test('pruneChannel(): kênh đã có state đầy đủ (đã chốt committed) -> getDisplayState trả undefined sau khi prune', () => {
+  const { clock, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent());
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent());
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' }, 'phải đã chốt trước khi prune');
+
+  service.pruneChannel('chan-1');
+
+  assert.equal(service.getDisplayState('chan-1'), undefined, 'record nội bộ phải bị xoá hoàn toàn sau prune');
+});
+
+test('pruneChannel(): kênh không tồn tại (chưa từng có record) -> no-op, không throw', () => {
+  const { service } = makeService({ 'chan-1': 4000 });
+
+  assert.doesNotThrow(() => service.pruneChannel('chan-khong-ton-tai'));
+});
+
+test('pruneChannel(): 1 kênh bị prune KHÔNG ảnh hưởng record/state của kênh khác', () => {
+  const { clock, service } = makeService({ 'chan-1': 4000, 'chan-2': 4000 });
+
+  service.handleTelemetry(makeEvent({ channelId: 'chan-1' }));
+  service.handleTelemetry(makeEvent({ channelId: 'chan-2' }));
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent({ channelId: 'chan-1' }));
+  service.handleTelemetry(makeEvent({ channelId: 'chan-2' }));
+
+  service.pruneChannel('chan-1');
+
+  assert.equal(service.getDisplayState('chan-1'), undefined);
+  assert.deepEqual(service.getDisplayState('chan-2'), { state: 'ok' }, 'kênh khác không bị ảnh hưởng');
+});
+
+test('pruneChannel(): kênh bị prune xong nhưng vẫn còn trong registry, telemetry mới tới -> xử lý lại từ đầu (pending mới, không mang state cũ)', () => {
+  const { clock, alert, service } = makeService({ 'chan-1': 4000 });
+
+  service.handleTelemetry(makeEvent());
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent());
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' });
+
+  service.pruneChannel('chan-1');
+
+  // Telemetry mới ngay sau prune - phải bắt đầu lại pending mới (chưa đủ 5s
+  // ổn định), KHÔNG được coi là "vẫn đang committed 'ok'" từ trước prune.
+  service.handleTelemetry(makeEvent());
+  assert.equal(service.getDisplayState('chan-1'), undefined, 'phải bắt đầu lại từ đầu, không giữ committed cũ');
+
+  clock.advance(5000);
+  service.handleTelemetry(makeEvent());
+  assert.deepEqual(service.getDisplayState('chan-1'), { state: 'ok' });
+  // 2 alert cho 'ok': 1 lần trước prune, 1 lần sau khi xử lý lại từ đầu.
+  assert.equal(alert.changes.filter((c) => c.displayState === 'ok').length, 2);
+});

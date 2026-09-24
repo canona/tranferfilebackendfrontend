@@ -64,4 +64,12 @@ export class BitrateHistoryService implements HistoryPort {
     // từng điểm (`{ ...p }`) để `data` hoàn toàn độc lập với state nội bộ.
     return { state: 'loaded', data: points.map((p) => ({ ...p })) };
   }
+
+  // spec-epic2-item-10-12: dọn ring buffer bitrate của 1 channel_id VỪA bị
+  // gỡ khỏi channel-registry (hot-reload) - caller duy nhất là `main.ts`'s
+  // `registryPort.onEntriesRemoved()` wiring (mirror `channelState.ts`'s
+  // `pruneChannel()`).
+  pruneChannel(channelId: string): void {
+    this.history.delete(channelId);
+  }
 }

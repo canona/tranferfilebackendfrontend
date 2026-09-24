@@ -499,6 +499,16 @@ export class ChannelStateService implements TelemetryInboundPort, HeartbeatInbou
   getDisplayState(channelId: string): DisplayCandidate | undefined {
     return this.channels.get(channelId)?.committed;
   }
+
+  // spec-epic2-item-10-12: dọn record nội bộ (debounce/heartbeat/ack) của 1
+  // channel_id VỪA bị gỡ khỏi channel-registry (hot-reload) - caller duy
+  // nhất là `main.ts`'s `registryPort.onEntriesRemoved()` wiring. Không log/
+  // publish gì ở đây (Boundaries: "không broadcast" là của wsUiAdapter.ts,
+  // nhưng cùng tinh thần - `main.ts` đã log 1 dòng `registry_channel_pruned`
+  // chung cho cả 3 service, không cần lặp lại ở từng method).
+  pruneChannel(channelId: string): void {
+    this.channels.delete(channelId);
+  }
 }
 
 function formatCandidate(candidate: DisplayCandidate): string {
