@@ -307,7 +307,7 @@
  * `calc(var(--vu-meter-width) / 2)` = 3px.
  * Code review [patch]: nền/màu riêng theo zone (mirror
  * `.thumbnailWarningIcon`/`.badgeWarning`/`.badgeCritical`'s cặp
- * on-state-*/state-* đã đo AA) thay vì `color: var(--color-text-primary)` cố
+ * on-state- / state- đã đo AA) thay vì `color: var(--color-text-primary)` cố
  * định - marker luôn đè lên đúng dải màu warning/critical của
  * `.vuMeterFill` tại vị trí nó render (đo được ~1.55:1 với text-primary trên
  * nền warning, dưới AA rất xa) - nền riêng đảm bảo contrast bất kể đang đè
